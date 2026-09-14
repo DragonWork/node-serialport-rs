@@ -1,0 +1,4 @@
+/target/
+/native/
+/node_modules/
+/*.tgz

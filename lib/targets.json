@@ -1,0 +1,16 @@
+[
+  {"target":"x86_64-unknown-linux-gnu","platform":"linux","arch":"x64","libc":"gnu","runner":"ubuntu-26.04","cross":true},
+  {"target":"aarch64-unknown-linux-gnu","platform":"linux","arch":"arm64","libc":"gnu","runner":"ubuntu-26.04","cross":true},
+  {"target":"arm-unknown-linux-gnueabihf","platform":"linux","arch":"arm","arm":6,"libc":"gnu","runner":"ubuntu-26.04","cross":true},
+  {"target":"armv7-unknown-linux-gnueabihf","platform":"linux","arch":"arm","arm":7,"libc":"gnu","runner":"ubuntu-26.04","cross":true},
+  {"target":"x86_64-unknown-linux-musl","platform":"linux","arch":"x64","libc":"musl","runner":"ubuntu-26.04","cross":true},
+  {"target":"aarch64-unknown-linux-musl","platform":"linux","arch":"arm64","libc":"musl","runner":"ubuntu-26.04","cross":true},
+  {"target":"armv7-unknown-linux-musleabihf","platform":"linux","arch":"arm","arm":7,"libc":"musl","runner":"ubuntu-26.04","cross":true},
+  {"target":"aarch64-linux-android","platform":"android","arch":"arm64","runner":"ubuntu-26.04","cross":false},
+  {"target":"armv7-linux-androideabi","platform":"android","arch":"arm","arm":7,"runner":"ubuntu-26.04","cross":false},
+  {"target":"x86_64-apple-darwin","platform":"darwin","arch":"x64","runner":"macos-latest","cross":false},
+  {"target":"aarch64-apple-darwin","platform":"darwin","arch":"arm64","runner":"macos-latest","cross":false},
+  {"target":"x86_64-pc-windows-msvc","platform":"win32","arch":"x64","runner":"windows-latest","cross":false},
+  {"target":"i686-pc-windows-msvc","platform":"win32","arch":"ia32","runner":"windows-latest","cross":false},
+  {"target":"aarch64-pc-windows-msvc","platform":"win32","arch":"arm64","runner":"windows-latest","cross":false}
+]

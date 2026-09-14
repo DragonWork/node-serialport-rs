@@ -1,0 +1,44 @@
+# Copyright 2026 DragonWork
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "node-serialport-rs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+authors = ["DragonWork"]
+description = "Node.js serial streams backed by Rust"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { version = "3.12.4", default-features = false, features = ["napi8"] }
+napi-derive = "3.6.5"
+tokio = { version = "1.53.1", default-features = false, features = ["rt", "net", "sync", "time", "macros"] }
+tokio-serial = { version = "5.5.0", default-features = false }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31.3", default-features = false, features = ["term"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Devices_Communication", "Win32_Foundation"] }
+
+[dev-dependencies]
+mio-serial = { version = "5.0.7", default-features = false }
+mio = { version = "1.2.3", default-features = false, features = ["os-poll"] }
+
+[build-dependencies]
+napi-build = "2.4.2"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"

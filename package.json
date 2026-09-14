@@ -1,0 +1,20 @@
+{
+  "name": "@dragonwork/node-serialport-rs",
+  "version": "0.1.0",
+  "description": "Node.js serial streams backed by Rust",
+  "author": "DragonWork",
+  "license": "Apache-2.0",
+  "repository": {"type": "git", "url": "git+https://github.com/DragonWork/node-serialport-rs.git"},
+  "publishConfig": {"access": "public"},
+  "main": "index.js",
+  "types": "index.d.ts",
+  "engines": {"node": ">=20"},
+  "files": ["index.js", "index.d.ts", "lib", "native", "docs", "bench/results", "LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md"],
+  "scripts": {
+    "build": "node scripts/build.js",
+    "build:debug": "node scripts/build.js --debug",
+    "test": "node --expose-gc --test test/*.test.js",
+    "check": "cargo fmt --check && cargo clippy --all-targets -- -D warnings",
+    "prepack": "node scripts/check-package.js"
+  }
+}

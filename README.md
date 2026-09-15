@@ -15,16 +15,16 @@ One active port starts one I/O worker. More ports share up to four workers, whic
 
 ## Install
 
-Requires Node.js 20 or newer. Get the [latest npm release](https://www.npmjs.com/package/@dragonwork/node-serialport-rs):
+Requires Node.js 20 or newer. Get the [latest npm release](https://www.npmjs.com/package/serialport-rs):
 
 ```sh
-npm install @dragonwork/node-serialport-rs
+npm install serialport-rs
 ```
 
 ## Quick start
 
 ```js
-import {SerialPort, ReadlineParser} from '@dragonwork/node-serialport-rs';
+import {SerialPort, ReadlineParser} from 'serialport-rs';
 
 const port = new SerialPort({path: '/dev/ttyUSB0', baudRate: 115200});
 const lines = port.pipe(new ReadlineParser({delimiter: '\r\n'}));
@@ -38,7 +38,7 @@ port.on('open', () => {
 });
 ```
 
-CommonJS works too: `const {SerialPort} = require('@dragonwork/node-serialport-rs')`.
+CommonJS works too: `const {SerialPort} = require('serialport-rs')`.
 
 ## Documentation
 

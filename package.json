@@ -1,6 +1,6 @@
 {
-  "name": "@dragonwork/node-serialport-rs",
-  "version": "0.1.0",
+  "name": "serialport-rs",
+  "version": "0.1.1",
   "description": "Node.js serial streams backed by Rust",
   "author": "DragonWork",
   "license": "Apache-2.0",

@@ -8,7 +8,7 @@
 ES modules:
 
 ```js
-import {SerialPort, ReadlineParser} from '@dragonwork/node-serialport-rs';
+import {SerialPort, ReadlineParser} from 'serialport-rs';
 
 const port = new SerialPort({path: '/dev/ttyUSB0', baudRate: 115200});
 const lines = port.pipe(new ReadlineParser({delimiter: '\r\n'}));
@@ -29,7 +29,7 @@ port.on('open', () => {
 CommonJS is also supported:
 
 ```js
-const {SerialPort, ReadlineParser} = require('@dragonwork/node-serialport-rs');
+const {SerialPort, ReadlineParser} = require('serialport-rs');
 ```
 
 Opening is automatic unless `autoOpen: false` is passed. Use `open(callback)` and `close(callback)` for explicit lifecycle control. The stream supports `pipe()`, `pause()`, `resume()`, `cork()`, and normal Node.js backpressure. `write()` accepts buffers, strings, and arrays of bytes; when it returns `false`, wait for the stream's `drain` event before submitting more data.
@@ -71,7 +71,7 @@ See [index.d.ts](../index.d.ts) for the exported types and method signatures.
 For code that already manages its own stream layer, `RustBinding` implements the serial binding interface:
 
 ```js
-import {RustBinding} from '@dragonwork/node-serialport-rs';
+import {RustBinding} from 'serialport-rs';
 
 const binding = await RustBinding.open({path: '/dev/ttyUSB0', baudRate: 115200});
 try {

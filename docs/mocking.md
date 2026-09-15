@@ -7,7 +7,7 @@
 
 ```js
 import {once} from 'node:events';
-import {SerialPortMock} from '@dragonwork/node-serialport-rs';
+import {SerialPortMock} from 'serialport-rs';
 
 SerialPortMock.binding.createPort('/mock/device', {echo: true, record: true});
 const port = new SerialPortMock({path: '/mock/device', baudRate: 115200});

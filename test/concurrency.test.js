@@ -218,3 +218,52 @@ test('after receiving data, a waiting read does not busy-spin', {timeout: 5000},
   assert.ok(usage.user + usage.system < 150000, `Idle CPU: ${(usage.user + usage.system) / 1000} ms over 300 ms`);
   await call(port, 'close');
 });
+
+for (const mode of ['binding', 'stream']) {
+  test(`${mode} callbacks advance promises on an otherwise idle event loop`, {timeout: 10000}, async t => {
+    const terminal = await pty(t);
+    // Only the parent owns a watchdog and idle delays. A timer in the child could
+    // hide a missing Node callback scope by flushing otherwise stranded promises.
+    const child = promisify(execFile)(process.execPath, ['-e', `
+      const assert = require('node:assert/strict');
+      const {once} = require('node:events');
+      const {RustBinding, SerialPort} = require(process.argv[1]);
+      const mode = process.argv[3];
+      const call = (port, method, ...args) => new Promise((resolve, reject) => {
+        port[method](...args, error => error ? reject(error) : resolve());
+      });
+      (async () => {
+        const options = {path: process.argv[2], baudRate: 115200, autoOpen: false};
+        const port = mode === 'binding' ? await RustBinding.open(options) : new SerialPort(options);
+        if (mode === 'stream') await call(port, 'open');
+        process.stdout.write('ready');
+        for (let i = 1; i <= 8; i++) {
+          assert(!process.getActiveResourcesInfo().includes('Timeout'));
+          const updated = mode === 'binding' ? port.update({baudRate: 115200}) : call(port, 'update', {baudRate: 115200});
+          const read = mode === 'binding' ? port.readChunk(1) : once(port, 'data').then(([data]) => data);
+          const written = mode === 'binding' ? port.write(Buffer.from([i])) : call(port, 'write', Buffer.from([i]));
+          await Promise.all([updated, written]);
+          assert.deepEqual(await read, Buffer.from([i]));
+          await new Promise(resolve => process.nextTick(resolve));
+          await Promise.resolve();
+        }
+        if (mode === 'binding') { await port.drain(); await port.close(); }
+        else { await call(port, 'drain'); await call(port, 'close'); }
+        process.stdout.write('complete');
+      })().catch(error => { console.error(error); process.exitCode = 1; });
+    `, require.resolve('..'), terminal.path, mode], {timeout: 8000});
+    t.after(() => child.child.kill());
+    const exchange = (async () => {
+      const [ready] = await once(child.child.stdout, 'data');
+      assert.equal(ready.toString(), 'ready');
+      for (let i = 1; i <= 8; i++) {
+        const expected = i.toString(16).padStart(2, '0');
+        assert.equal(await terminal.command('read 1'), expected);
+        await delay(25);
+        await terminal.command(`write ${expected}`);
+      }
+    })();
+    const [{stdout}] = await Promise.all([child, exchange]);
+    assert.equal(stdout, 'readycomplete');
+  });
+}

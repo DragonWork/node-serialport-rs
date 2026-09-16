@@ -3,6 +3,12 @@
 
 # Performance
 
+## 0.2.0 launch comparison
+
+On Linux x64 with Node 26.8.2, serialport-rs 0.2.0 recorded 48.96 µs median and 114.40 µs p99 for continuous 32-byte PTY round trips. The patched C++ binding recorded 89.39 µs and 202.52 µs respectively. [Full comparison, method and trial data](../bench/results/0.2.0-linux-x64-vs-cpp.md).
+
+## Earlier ARM64 measurements
+
 Recorded 32-byte PTY round trips on Linux ARM64, Node 26.8.2, with 20,000 samples after 5,000 warmup exchanges:
 
 | Implementation | Median | p95 | p99 |

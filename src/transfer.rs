@@ -54,9 +54,10 @@ fn poll_read<T: AsyncRead + Unpin>(
         return Poll::Pending;
     };
     let mut buffer = ReadBuf::new(bytes);
-    Pin::new(port)
+    let result = Pin::new(port)
         .poll_read(cx, &mut buffer)
-        .map(|result| result.map(|()| Transfer::Read(buffer.filled().len())))
+        .map(|result| result.map(|()| Transfer::Read(buffer.filled().len())));
+    retry_interrupted(result, cx)
 }
 
 fn poll_write<T: AsyncWrite + Unpin>(
@@ -67,23 +68,51 @@ fn poll_write<T: AsyncWrite + Unpin>(
     let Some(bytes) = bytes else {
         return Poll::Pending;
     };
-    Pin::new(port)
+    let result = Pin::new(port)
         .poll_write(cx, bytes)
-        .map(|result| result.map(Transfer::Write))
+        .map(|result| result.map(Transfer::Write));
+    retry_interrupted(result, cx)
+}
+
+fn retry_interrupted(
+    result: Poll<io::Result<Transfer>>,
+    cx: &Context<'_>,
+) -> Poll<io::Result<Transfer>> {
+    match result {
+        Poll::Ready(Err(error)) if error.kind() == io::ErrorKind::Interrupted => {
+            // Retry on the next poll so the other direction and ports can progress.
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
+        result => result,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::task::Waker;
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        task::{Wake, Waker},
+    };
 
-    struct ReadyPort;
+    #[derive(Default)]
+    struct ReadyPort {
+        read_error: Option<io::ErrorKind>,
+        write_error: Option<io::ErrorKind>,
+    }
     impl AsyncRead for ReadyPort {
         fn poll_read(
             self: Pin<&mut Self>,
             _: &mut Context<'_>,
             buffer: &mut ReadBuf<'_>,
         ) -> Poll<io::Result<()>> {
+            if let Some(error) = self.read_error {
+                return Poll::Ready(Err(error.into()));
+            }
             buffer.put_slice(&[42]);
             Poll::Ready(Ok(()))
         }
@@ -94,6 +123,9 @@ mod tests {
             _: &mut Context<'_>,
             bytes: &[u8],
         ) -> Poll<io::Result<usize>> {
+            if let Some(error) = self.write_error {
+                return Poll::Ready(Err(error.into()));
+            }
             Poll::Ready(Ok(bytes.len()))
         }
         fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -107,7 +139,7 @@ mod tests {
     #[test]
     fn continuously_ready_reads_cannot_starve_writes() {
         let mut poller = TransferPoller::default();
-        let mut port = ReadyPort;
+        let mut port = ReadyPort::default();
         let mut cx = Context::from_waker(Waker::noop());
         for expected in [
             Transfer::Read(1),
@@ -128,7 +160,7 @@ mod tests {
     #[test]
     fn absent_direction_does_not_delay_the_other() {
         let mut poller = TransferPoller::default();
-        let mut port = ReadyPort;
+        let mut port = ReadyPort::default();
         let mut cx = Context::from_waker(Waker::noop());
         let mut buffer = [0];
         assert!(matches!(
@@ -143,5 +175,105 @@ mod tests {
             poller.poll(&mut port, &mut cx, None, Some(&[7])),
             Poll::Ready(Ok(Transfer::Write(1)))
         ));
+    }
+
+    #[derive(Default)]
+    struct WakeCounter(AtomicUsize);
+
+    impl Wake for WakeCounter {
+        fn wake(self: Arc<Self>) {
+            self.wake_by_ref();
+        }
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn interrupted_transfers_yield_and_wake_before_retrying() {
+        for write in [false, true] {
+            let wake = Arc::new(WakeCounter::default());
+            let waker = Waker::from(Arc::clone(&wake));
+            let mut cx = Context::from_waker(&waker);
+            let mut poller = TransferPoller::default();
+            let mut port = ReadyPort {
+                read_error: Some(io::ErrorKind::Interrupted),
+                write_error: Some(io::ErrorKind::Interrupted),
+            };
+            let mut buffer = [0];
+            let result = poller.poll(
+                &mut port,
+                &mut cx,
+                (!write).then_some(buffer.as_mut_slice()),
+                write.then_some(&[7]),
+            );
+            assert!(result.is_pending());
+            assert_eq!(wake.0.load(Ordering::Relaxed), 1);
+            port.read_error = None;
+            port.write_error = None;
+            let result = poller.poll(
+                &mut port,
+                &mut cx,
+                (!write).then_some(buffer.as_mut_slice()),
+                write.then_some(&[7]),
+            );
+            let Poll::Ready(Ok(transfer)) = result else {
+                panic!("No I/O progress after interruption");
+            };
+            assert_eq!(
+                transfer,
+                if write {
+                    Transfer::Write(1)
+                } else {
+                    Transfer::Read(1)
+                }
+            );
+            if !write {
+                assert_eq!(buffer, [42]);
+            }
+        }
+    }
+
+    #[test]
+    fn interruptions_do_not_starve_the_other_direction() {
+        let mut port = ReadyPort {
+            read_error: Some(io::ErrorKind::Interrupted),
+            ..ReadyPort::default()
+        };
+        let mut poller = TransferPoller::default();
+        let mut cx = Context::from_waker(Waker::noop());
+        let mut buffer = [0];
+        assert!(matches!(
+            poller.poll(&mut port, &mut cx, Some(&mut buffer), Some(&[7])),
+            Poll::Ready(Ok(Transfer::Write(1)))
+        ));
+        port.read_error = None;
+        port.write_error = Some(io::ErrorKind::Interrupted);
+        poller.write_first = true;
+        assert!(matches!(
+            poller.poll(&mut port, &mut cx, Some(&mut buffer), Some(&[7])),
+            Poll::Ready(Ok(Transfer::Read(1)))
+        ));
+    }
+
+    #[test]
+    fn permanent_errors_are_reported_without_retrying() {
+        for kind in [io::ErrorKind::BrokenPipe, io::ErrorKind::PermissionDenied] {
+            for write_first in [false, true] {
+                let mut port = ReadyPort {
+                    read_error: Some(kind),
+                    write_error: Some(kind),
+                };
+                let mut poller = TransferPoller { write_first };
+                let mut cx = Context::from_waker(Waker::noop());
+                let mut buffer = [0];
+                let Poll::Ready(Err(error)) =
+                    poller.poll(&mut port, &mut cx, Some(&mut buffer), Some(&[7]))
+                else {
+                    panic!("Permanent I/O error was suppressed");
+                };
+                assert_eq!(error.kind(), kind);
+            }
+        }
     }
 }

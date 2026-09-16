@@ -84,4 +84,31 @@ for (const [name, SerialPortStream] of implementations) {
     await assert.rejects(call(port, 'drain'), error => error === failure);
     assert.equal(port.isOpen, true);
   });
+
+  test(`${name}: a zero-byte binding read ends the readable side once`, async t => {
+    let reads = 0;
+    const port = stream(t, {
+      async read(buffer, offset) {
+        reads++;
+        if (reads === 1) {
+          buffer.write('tail', offset);
+          return {buffer, bytesRead: 4};
+        }
+        if (reads === 2) return {buffer, bytesRead: 0};
+        // Keep a broken implementation from spinning forever on repeated EOF.
+        return new Promise(() => {});
+      },
+    });
+    const received = [];
+    let ends = 0;
+    port.on('end', () => { ends++; });
+    await call(port, 'open');
+    port.on('data', data => { received.push(data); });
+    await nextTurn();
+    assert.equal(port.readableEnded, true);
+    assert.equal(ends, 1);
+    assert.equal(reads, 2);
+    assert.equal(Buffer.concat(received).toString(), 'tail');
+    assert.equal(port.isOpen, true);
+  });
 }

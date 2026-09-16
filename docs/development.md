@@ -36,7 +36,7 @@ SERIALPORT_REFERENCE_STREAM="$PWD/node_modules/@serialport/stream" node --expose
 
 Run `npm run check:types` to check the runtime and the public consumer fixture in `test/types.ts` against the pinned compiler and Node 20 declarations.
 
-The `bench/` directory contains separate latency, throughput, and parser measurement tools. PTY results measure the host software path, not physical UART speed. Throughput records count echoed payload once, exclude echo-helper CPU, and include sampled memory usage.
+The [`bench/` directory](../bench/README.md) contains separate latency, throughput, and parser measurement tools. PTY results measure the host software path, not physical UART speed. Throughput records count echoed payload once, exclude echo-helper CPU, and include sampled memory usage.
 
 ## Releases
 

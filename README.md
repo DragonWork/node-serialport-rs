@@ -6,7 +6,7 @@
 Rust-backed serial ports for Node.js, with a SerialPort 13-compatible API.
 
 - Parallel I/O through a dedicated, bounded Rust worker pool.
-- Consistently lower p95 and p99 latency with a comparable median in recorded Linux ARM64 PTY runs. [Measurements](docs/performance.md).
+- Lower p95 and p99 latency in recorded Linux x64 and ARM64 PTY comparisons. [Measurements](bench/README.md).
 - Streams, parsers, bindings, and a pure-JavaScript mock in one package.
 - No JavaScript runtime dependencies.
 - Bounded read-ahead and explicit ownership of queued buffers.
@@ -48,7 +48,7 @@ CommonJS works too: `const {SerialPort} = require('serialport-rs')`.
 - [Architecture, memory ownership, and lifecycle](docs/architecture.md)
 - [Native build targets](docs/platforms.md)
 - [Development and checks](docs/development.md)
-- [Latency measurements](docs/performance.md)
+- [Benchmarks](bench/README.md)
 
 ## Acknowledgements
 

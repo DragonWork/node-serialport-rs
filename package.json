@@ -9,7 +9,7 @@
   "main": "index.js",
   "types": "index.d.ts",
   "engines": {"node": ">=20"},
-  "files": ["index.js", "index.d.ts", "lib", "native", "docs", "bench/results", "LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md"],
+  "files": ["index.js", "index.d.ts", "lib", "native", "docs", "bench/README.md", "LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md"],
   "scripts": {
     "build": "npm run build:js && node scripts/build.js",
     "build:debug": "npm run build:js && node scripts/build.js --debug",

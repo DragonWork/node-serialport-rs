@@ -113,13 +113,19 @@ jobs:
         run: npm test
       - name: Test portable API on Windows
         if: runner.os == 'Windows'
-        run: node --test test/exports.test.js test/lifecycle.test.js test/mock.test.js test/native.test.js test/parsers.test.js
+        run: node --test test/bytes.test.js test/compatibility.test.js test/exports.test.js test/lifecycle.test.js test/mock.test.js test/native.test.js test/parsers.test.js
       - name: Check Rust
         if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26
         run: |
           cargo fmt --check
           cargo clippy --all-targets --locked -- -D warnings
           cargo test --locked --lib
+      - name: Check SerialPort 13 compatibility
+        if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26
+        run: |
+          npm install --no-save --ignore-scripts --package-lock=false serialport@13.0.0
+          node scripts/compare-parsers.js node_modules/serialport
+          SERIALPORT_REFERENCE_STREAM="$PWD/node_modules/@serialport/stream" node --expose-gc --test test/compatibility.test.js test/consumer.test.js
       - name: Check TypeScript API
         if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26
         run: |

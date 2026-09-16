@@ -1,6 +1,6 @@
 {
   "name": "serialport-rs",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Node.js serial streams backed by Rust",
   "author": "DragonWork",
   "license": "Apache-2.0",
@@ -13,7 +13,6 @@
   "scripts": {
     "build": "npm run build:js && node scripts/build.js",
     "build:debug": "npm run build:js && node scripts/build.js --debug",
-    "build:bench": "npm run build:js && node scripts/build.js --bench",
     "build:js": "node scripts/build-js.js",
     "pretest": "npm run build:js",
     "test": "node --expose-gc --test test/*.test.js",

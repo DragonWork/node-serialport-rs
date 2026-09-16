@@ -9,13 +9,10 @@ const {join, resolve} = require('node:path');
 const {withBuildLock, cleanRelease} = require('./build-state');
 
 const root = join(__dirname, '..');
-if (process.argv.slice(2).some(option => !['--debug', '--bench'].includes(option))) throw new Error('Unknown build option');
+if (process.argv.slice(2).some(option => option !== '--debug')) throw new Error('Unknown build option');
 const debug = process.argv.includes('--debug');
-const bench = process.argv.includes('--bench');
-if (debug && bench) throw new Error('Benchmarks require a release build');
 const buildProfile = debug ? 'debug' : 'release';
 const args = debug ? ['build', '--locked'] : ['build', '--release', '--locked'];
-if (bench) args.push('--lib', '--example', 'echo');
 const targetDirectory = resolve(root, process.env.CARGO_TARGET_DIR || 'target');
 const target = process.env.CARGO_BUILD_TARGET || '';
 if (target && !/^[a-z0-9_]+(?:-[a-z0-9_]+)+$/.test(target)) throw new Error('Pass a Rust target triple in CARGO_BUILD_TARGET');

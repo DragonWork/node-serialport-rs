@@ -3,7 +3,7 @@
 
 # Development and verification
 
-Source builds require Rust/Cargo and a native linker or platform SDK. The crate declares Rust 1.88 as its minimum; the release workflow pins Rust 1.98.1. Release builds use thin LTO and stripped symbols, with an atomic replacement of `native/serialport-rs.node`.
+Source builds require Rust/Cargo and a native linker or platform SDK. The crate declares Rust 1.88 as its minimum; the release workflow pins Rust 1.98.1. Release builds use fat LTO and stripped symbols, with an atomic replacement of `native/serialport-rs.node`. Cargo's `CARGO_PROFILE_RELEASE_LTO=thin` override remains available when comparing toolchains or diagnosing target-specific link failures.
 
 Build the addon and the Unix pseudo-terminal test helper from the source checkout, then run the checks:
 

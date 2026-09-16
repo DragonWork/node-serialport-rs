@@ -1,0 +1,584 @@
+{
+  "sourceCommit": "1ca3c93",
+  "node": "v26.8.2",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "platform": "linux",
+  "arch": "x64",
+  "cpus": "0-2",
+  "nice": 18,
+  "lockSha256": "32decd5c88aec9e6d027ffc19559de13d5b768e6664133f55b328bad1e3f8ef6",
+  "builds": {
+    "thin": {
+      "seconds": 22.8996793480037,
+      "bytes": 913200,
+      "sha256": "e7a01cfd2aa50c05cda5c31d19f6c30f1e510bc5965066e7bf4ac57474a105c1"
+    },
+    "fat": {
+      "seconds": 18.110389593006403,
+      "bytes": 913216,
+      "sha256": "5bc8d4057c5b2e9ed216859c45a001a6309ef0b03cfa12ad9ddb01dfeeb372b1"
+    }
+  },
+  "trials": [
+    {
+      "label": "thin",
+      "samples": 10000,
+      "warmup": 2000,
+      "bytes": 32,
+      "gapMs": 0,
+      "eventUs": {
+        "median": 51,
+        "p95": 98.25,
+        "p99": 512.99,
+        "max": 1584.55
+      },
+      "promiseUs": {
+        "median": 53.42,
+        "p95": 103.08,
+        "p99": 518.19,
+        "max": 1591.95
+      },
+      "writeUs": {
+        "median": 10.17,
+        "p95": 19.69,
+        "p99": 30.52,
+        "max": 514.88
+      },
+      "cpuUsPerRoundTrip": 50.19,
+      "idleCpuMs": 0.43,
+      "trial": 0
+    },
+    {
+      "label": "fat",
+      "samples": 10000,
+      "warmup": 2000,
+      "bytes": 32,
+      "gapMs": 0,
+      "eventUs": {
+        "median": 45.13,
+        "p95": 63.79,
+        "p99": 90.41,
+        "max": 985.49
+      },
+      "promiseUs": {
+        "median": 47.2,
+        "p95": 67.09,
+        "p99": 96.41,
+        "max": 993.04
+      },
+      "writeUs": {
+        "median": 8.62,
+        "p95": 13.36,
+        "p99": 20.17,
+        "max": 247.83
+      },
+      "cpuUsPerRoundTrip": 46.94,
+      "idleCpuMs": 0.53,
+      "trial": 0
+    },
+    {
+      "label": "fat",
+      "samples": 10000,
+      "warmup": 2000,
+      "bytes": 32,
+      "gapMs": 0,
+      "eventUs": {
+        "median": 43.26,
+        "p95": 70.3,
+        "p99": 99.91,
+        "max": 801.83
+      },
+      "promiseUs": {
+        "median": 45.23,
+        "p95": 73.49,
+        "p99": 105.43,
+        "max": 807.41
+      },
+      "writeUs": {
+        "median": 7.93,
+        "p95": 14,
+        "p99": 21.63,
+        "max": 249.42
+      },
+      "cpuUsPerRoundTrip": 45.19,
+      "idleCpuMs": 0.65,
+      "trial": 1
+    },
+    {
+      "label": "thin",
+      "samples": 10000,
+      "warmup": 2000,
+      "bytes": 32,
+      "gapMs": 0,
+      "eventUs": {
+        "median": 55.88,
+        "p95": 92.43,
+        "p99": 153.38,
+        "max": 2063.93
+      },
+      "promiseUs": {
+        "median": 58.53,
+        "p95": 97.57,
+        "p99": 167.65,
+        "max": 2074.52
+      },
+      "writeUs": {
+        "median": 11.12,
+        "p95": 19.72,
+        "p99": 33.42,
+        "max": 121.45
+      },
+      "cpuUsPerRoundTrip": 58.24,
+      "idleCpuMs": 0.48,
+      "trial": 1
+    },
+    {
+      "label": "thin",
+      "samples": 10000,
+      "warmup": 2000,
+      "bytes": 32,
+      "gapMs": 0,
+      "eventUs": {
+        "median": 57.06,
+        "p95": 104.86,
+        "p99": 294.49,
+        "max": 1950.31
+      },
+      "promiseUs": {
+        "median": 59.35,
+        "p95": 111.08,
+        "p99": 300.69,
+        "max": 1958.29
+      },
+      "writeUs": {
+        "median": 11.13,
+        "p95": 29.09,
+        "p99": 60.34,
+        "max": 910.27
+      },
+      "cpuUsPerRoundTrip": 56,
+      "idleCpuMs": 0.48,
+      "trial": 2
+    },
+    {
+      "label": "fat",
+      "samples": 10000,
+      "warmup": 2000,
+      "bytes": 32,
+      "gapMs": 0,
+      "eventUs": {
+        "median": 52.87,
+        "p95": 79.68,
+        "p99": 117.24,
+        "max": 1028.3
+      },
+      "promiseUs": {
+        "median": 54.68,
+        "p95": 83.33,
+        "p99": 127.04,
+        "max": 1035.9
+      },
+      "writeUs": {
+        "median": 9.52,
+        "p95": 16.6,
+        "p99": 23.93,
+        "max": 177.15
+      },
+      "cpuUsPerRoundTrip": 51.23,
+      "idleCpuMs": 0.44,
+      "trial": 2
+    },
+    {
+      "label": "fat",
+      "samples": 10000,
+      "warmup": 2000,
+      "bytes": 32,
+      "gapMs": 0,
+      "eventUs": {
+        "median": 40.84,
+        "p95": 65.63,
+        "p99": 112.36,
+        "max": 1748.24
+      },
+      "promiseUs": {
+        "median": 42.55,
+        "p95": 68.91,
+        "p99": 116.22,
+        "max": 1758.46
+      },
+      "writeUs": {
+        "median": 7.39,
+        "p95": 15.05,
+        "p99": 25.99,
+        "max": 210.58
+      },
+      "cpuUsPerRoundTrip": 41.88,
+      "idleCpuMs": 0.46,
+      "trial": 3
+    },
+    {
+      "label": "thin",
+      "samples": 10000,
+      "warmup": 2000,
+      "bytes": 32,
+      "gapMs": 0,
+      "eventUs": {
+        "median": 42.54,
+        "p95": 61.66,
+        "p99": 90.06,
+        "max": 1104.75
+      },
+      "promiseUs": {
+        "median": 44.68,
+        "p95": 64.65,
+        "p99": 95.14,
+        "max": 1113.3
+      },
+      "writeUs": {
+        "median": 8.58,
+        "p95": 12.29,
+        "p99": 19.56,
+        "max": 195.86
+      },
+      "cpuUsPerRoundTrip": 44.33,
+      "idleCpuMs": 0.52,
+      "trial": 3
+    },
+    {
+      "label": "thin",
+      "samples": 10000,
+      "warmup": 2000,
+      "bytes": 32,
+      "gapMs": 0,
+      "eventUs": {
+        "median": 49.72,
+        "p95": 71.98,
+        "p99": 116.45,
+        "max": 1169.17
+      },
+      "promiseUs": {
+        "median": 51.78,
+        "p95": 75.75,
+        "p99": 122.69,
+        "max": 1175.04
+      },
+      "writeUs": {
+        "median": 9.6,
+        "p95": 14.94,
+        "p99": 24.26,
+        "max": 337.86
+      },
+      "cpuUsPerRoundTrip": 49.99,
+      "idleCpuMs": 0.48,
+      "trial": 4
+    },
+    {
+      "label": "fat",
+      "samples": 10000,
+      "warmup": 2000,
+      "bytes": 32,
+      "gapMs": 0,
+      "eventUs": {
+        "median": 50.03,
+        "p95": 75.22,
+        "p99": 113.82,
+        "max": 1047.04
+      },
+      "promiseUs": {
+        "median": 51.79,
+        "p95": 78.72,
+        "p99": 119.11,
+        "max": 1053.73
+      },
+      "writeUs": {
+        "median": 9.07,
+        "p95": 15.48,
+        "p99": 25.33,
+        "max": 162.29
+      },
+      "cpuUsPerRoundTrip": 49.53,
+      "idleCpuMs": 0.47,
+      "trial": 4
+    },
+    {
+      "label": "thin",
+      "samples": 1000,
+      "warmup": 100,
+      "bytes": 32,
+      "gapMs": 1,
+      "eventUs": {
+        "median": 121.66,
+        "p95": 181.85,
+        "p99": 273.62,
+        "max": 923.33
+      },
+      "promiseUs": {
+        "median": 131.11,
+        "p95": 197.89,
+        "p99": 312.44,
+        "max": 936.15
+      },
+      "writeUs": {
+        "median": 21.79,
+        "p95": 35.96,
+        "p99": 65.94,
+        "max": 92.36
+      },
+      "cpuUsPerRoundTrip": 167.32,
+      "idleCpuMs": 0.21,
+      "trial": 0
+    },
+    {
+      "label": "fat",
+      "samples": 1000,
+      "warmup": 100,
+      "bytes": 32,
+      "gapMs": 1,
+      "eventUs": {
+        "median": 119.21,
+        "p95": 169.19,
+        "p99": 205.2,
+        "max": 782.5
+      },
+      "promiseUs": {
+        "median": 129.43,
+        "p95": 182.9,
+        "p99": 232.42,
+        "max": 794.18
+      },
+      "writeUs": {
+        "median": 22.61,
+        "p95": 36.58,
+        "p99": 56.97,
+        "max": 104.49
+      },
+      "cpuUsPerRoundTrip": 167.29,
+      "idleCpuMs": 0.26,
+      "trial": 0
+    },
+    {
+      "label": "fat",
+      "samples": 1000,
+      "warmup": 100,
+      "bytes": 32,
+      "gapMs": 1,
+      "eventUs": {
+        "median": 128.43,
+        "p95": 190.16,
+        "p99": 257.61,
+        "max": 1389.64
+      },
+      "promiseUs": {
+        "median": 138.19,
+        "p95": 205.23,
+        "p99": 292.75,
+        "max": 1402.14
+      },
+      "writeUs": {
+        "median": 23.61,
+        "p95": 37.5,
+        "p99": 66.01,
+        "max": 114.01
+      },
+      "cpuUsPerRoundTrip": 177.7,
+      "idleCpuMs": 0.23,
+      "trial": 1
+    },
+    {
+      "label": "thin",
+      "samples": 1000,
+      "warmup": 100,
+      "bytes": 32,
+      "gapMs": 1,
+      "eventUs": {
+        "median": 125.08,
+        "p95": 184.33,
+        "p99": 248.05,
+        "max": 482.38
+      },
+      "promiseUs": {
+        "median": 134.79,
+        "p95": 200.89,
+        "p99": 263.8,
+        "max": 496.46
+      },
+      "writeUs": {
+        "median": 22.8,
+        "p95": 40.09,
+        "p99": 54.46,
+        "max": 130.03
+      },
+      "cpuUsPerRoundTrip": 172.43,
+      "idleCpuMs": 0.19,
+      "trial": 1
+    },
+    {
+      "label": "thin",
+      "samples": 1000,
+      "warmup": 100,
+      "bytes": 32,
+      "gapMs": 1,
+      "eventUs": {
+        "median": 128.82,
+        "p95": 196.66,
+        "p99": 293.14,
+        "max": 634.81
+      },
+      "promiseUs": {
+        "median": 138.15,
+        "p95": 209.36,
+        "p99": 337.21,
+        "max": 651.25
+      },
+      "writeUs": {
+        "median": 23.93,
+        "p95": 40.4,
+        "p99": 69.12,
+        "max": 109.57
+      },
+      "cpuUsPerRoundTrip": 178.29,
+      "idleCpuMs": 0.18,
+      "trial": 2
+    },
+    {
+      "label": "fat",
+      "samples": 1000,
+      "warmup": 100,
+      "bytes": 32,
+      "gapMs": 1,
+      "eventUs": {
+        "median": 123.73,
+        "p95": 184.13,
+        "p99": 260.13,
+        "max": 430.58
+      },
+      "promiseUs": {
+        "median": 133.19,
+        "p95": 200.59,
+        "p99": 279.74,
+        "max": 463.86
+      },
+      "writeUs": {
+        "median": 22.91,
+        "p95": 39.62,
+        "p99": 67.05,
+        "max": 128.51
+      },
+      "cpuUsPerRoundTrip": 171.91,
+      "idleCpuMs": 0.17,
+      "trial": 2
+    },
+    {
+      "label": "fat",
+      "samples": 1000,
+      "warmup": 100,
+      "bytes": 32,
+      "gapMs": 1,
+      "eventUs": {
+        "median": 120.58,
+        "p95": 711.32,
+        "p99": 1693.36,
+        "max": 3667.04
+      },
+      "promiseUs": {
+        "median": 132.09,
+        "p95": 727.3,
+        "p99": 1702.39,
+        "max": 3698.19
+      },
+      "writeUs": {
+        "median": 24.76,
+        "p95": 46.37,
+        "p99": 89.47,
+        "max": 426.49
+      },
+      "cpuUsPerRoundTrip": 175.32,
+      "idleCpuMs": 0.24,
+      "trial": 3
+    },
+    {
+      "label": "thin",
+      "samples": 1000,
+      "warmup": 100,
+      "bytes": 32,
+      "gapMs": 1,
+      "eventUs": {
+        "median": 123.8,
+        "p95": 1193.01,
+        "p99": 3407.25,
+        "max": 5610.02
+      },
+      "promiseUs": {
+        "median": 134.69,
+        "p95": 1204.45,
+        "p99": 3420.51,
+        "max": 5627.16
+      },
+      "writeUs": {
+        "median": 30.43,
+        "p95": 111.11,
+        "p99": 995.83,
+        "max": 2306.47
+      },
+      "cpuUsPerRoundTrip": 174.4,
+      "idleCpuMs": 0.23,
+      "trial": 3
+    },
+    {
+      "label": "thin",
+      "samples": 1000,
+      "warmup": 100,
+      "bytes": 32,
+      "gapMs": 1,
+      "eventUs": {
+        "median": 118.94,
+        "p95": 796.52,
+        "p99": 2391.05,
+        "max": 6165.45
+      },
+      "promiseUs": {
+        "median": 127.7,
+        "p95": 822.13,
+        "p99": 2409.46,
+        "max": 6209.03
+      },
+      "writeUs": {
+        "median": 25.26,
+        "p95": 85.78,
+        "p99": 236.9,
+        "max": 2206.86
+      },
+      "cpuUsPerRoundTrip": 186.47,
+      "idleCpuMs": 0.16,
+      "trial": 4
+    },
+    {
+      "label": "fat",
+      "samples": 1000,
+      "warmup": 100,
+      "bytes": 32,
+      "gapMs": 1,
+      "eventUs": {
+        "median": 129.56,
+        "p95": 210.37,
+        "p99": 644.65,
+        "max": 1786.86
+      },
+      "promiseUs": {
+        "median": 138.68,
+        "p95": 231.84,
+        "p99": 656.31,
+        "max": 1801.36
+      },
+      "writeUs": {
+        "median": 25.01,
+        "p95": 45.53,
+        "p99": 72.02,
+        "max": 1155.81
+      },
+      "cpuUsPerRoundTrip": 181.62,
+      "idleCpuMs": 0.2,
+      "trial": 4
+    }
+  ]
+}

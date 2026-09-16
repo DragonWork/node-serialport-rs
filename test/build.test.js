@@ -41,6 +41,15 @@ test('release cleanup preserves caller-managed external caches', t => {
   assert(existsSync(join(root, 'external/release/cache.rlib')));
 });
 
+test('build state handles a symlinked checkout without following cache symlinks', {skip: process.platform === 'win32'}, t => {
+  const {root, file} = fixture(t);
+  file('checkout/target/release/cache.rlib');
+  const alias = join(root, 'alias');
+  symlinkSync(join(root, 'checkout'), alias);
+  withBuildLock(alias, () => cleanRelease(alias, join(alias, 'target')));
+  assert(!existsSync(join(root, 'checkout/target/release')));
+});
+
 test('release cleanup rejects symlinks before removing any build state', {skip: process.platform === 'win32'}, t => {
   const {root, file} = fixture(t);
   file('target/release/cache.rlib');

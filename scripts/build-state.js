@@ -8,6 +8,7 @@ const {existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, writ
 const {isAbsolute, join, relative, resolve, sep} = require('node:path');
 
 function withBuildLock(root, operation) {
+  root = realpathSync(root);
   const target = join(root, 'target');
   mkdirSync(target, {recursive: true});
   assert.equal(realpathSync(target), target, 'Build target must not be a symlink');
@@ -24,8 +25,11 @@ function withBuildLock(root, operation) {
 }
 
 function cleanRelease(root, targetDirectory, target = '') {
+  const withinRoot = relative(resolve(root), resolve(targetDirectory));
+  if (isAbsolute(withinRoot) || withinRoot === '..' || withinRoot.startsWith(`..${sep}`)) return;
+  root = realpathSync(root);
   const base = resolve(root, 'target');
-  const directory = resolve(targetDirectory, target, 'release');
+  const directory = resolve(root, withinRoot, target, 'release');
   const path = relative(base, directory);
   // Caller-provided caches outside this checkout may contain unrelated active lanes.
   if (isAbsolute(path) || path === '..' || path.startsWith(`..${sep}`)) return;

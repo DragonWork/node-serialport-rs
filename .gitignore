@@ -2,6 +2,8 @@
 /native/
 /node_modules/
 /*.tgz
+/*.tar.gz
+/artifacts/
 /index.js
 /index.d.ts
 /lib/*.js

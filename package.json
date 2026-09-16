@@ -13,11 +13,13 @@
   "scripts": {
     "build": "npm run build:js && node scripts/build.js",
     "build:debug": "npm run build:js && node scripts/build.js --debug",
+    "build:bench": "npm run build:js && node scripts/build.js --bench",
     "build:js": "node scripts/build-js.js",
     "pretest": "npm run build:js",
     "test": "node --expose-gc --test test/*.test.js",
     "check:types": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.types.json",
     "check": "npm run check:types && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings",
+    "pack:release": "node scripts/package-release.js",
     "prepack": "npm run build:js && node scripts/check-package.js"
   },
   "devDependencies": {

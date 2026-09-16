@@ -117,7 +117,7 @@ jobs:
         run: npm test
       - name: Test portable API on Windows
         if: runner.os == 'Windows'
-        run: node --test test/bytes.test.js test/compatibility.test.js test/exports.test.js test/lifecycle.test.js test/mock.test.js test/native.test.js test/parsers.test.js
+        run: node --test test/build.test.js test/bytes.test.js test/compatibility.test.js test/exports.test.js test/lifecycle.test.js test/mock.test.js test/native.test.js test/parsers.test.js test/release.test.js
       - name: Check Rust
         if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26
         run: |

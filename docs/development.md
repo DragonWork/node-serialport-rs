@@ -40,8 +40,20 @@ The [`bench/` directory](../bench/README.md) contains separate latency, throughp
 
 ## Releases
 
-Set matching versions in the npm and Cargo manifests and lockfiles. Run the **Publish** workflow at the release commit with `publish` enabled. It builds every target, runs the tests and validates the package before creating a draft release. With `publish` disabled, the workflow produces build artifacts only.
+Releases start only through the manual **Publish** workflow. Choose a branch and set `version` to `auto`, `patch`, `minor`, `major`, or an exact version such as `0.2.0` or `0.3.0-rc.1`. Automatic selection uses Conventional Commits since the latest reachable release tag: breaking changes select major, features select minor, and other changes select patch. `chore:` commits are excluded.
 
-The archive, `serialport-rs-<version>.tar.gz`, contains compiled JavaScript, declarations, prebuilt addons, documentation and licenses. It is attached to a GitHub draft before npm publication. The GitHub release is published after npm succeeds.
+The workflow uses git-cliff 2.14.1 and `cliff.toml` to generate release notes and prepend them to `CHANGELOG.md`. It updates both npm and Cargo manifests and lockfiles together. With `publish` enabled, GitHub records these files in a signed preparation commit on the selected branch before the builds start. A concurrent branch update aborts preparation. With `publish` disabled, the prepared files are used only in the build artifacts.
+
+Every native build, test job and package step uses the same prepared version. A GitHub draft is created only after all builds, tests and package checks pass. The draft body comes from the notes saved with that archive, so a publication retry uses the same changelog.
+
+To prepare and review these files locally with git-cliff installed:
+
+```sh
+npm run release:prepare -- auto
+```
+
+This updates the working tree and writes `artifacts/prepared-release.json`; it creates no local tag or commit. Commit the reviewed changes before starting the manual workflow. Regenerating the same version replaces its changelog section without duplicating it.
+
+The archive, `serialport-rs-<version>.tar.gz`, contains compiled JavaScript, declarations, prebuilt addons, the changelog, documentation and licenses. It is attached to the draft before npm publication. The GitHub release is published after npm succeeds.
 
 Retry failed publication jobs with their original `npm-package` artifact. An existing npm version is accepted only if its archive integrity matches; an existing tag must resolve to the tested commit. A completed immutable release is verified instead of rewritten. A failure before publication leaves its draft available for a retry. A different package under an already published version requires a new version.

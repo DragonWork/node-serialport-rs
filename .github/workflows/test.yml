@@ -12,6 +12,10 @@ on:
         description: Test release artifacts from the calling workflow
         type: boolean
         default: false
+      release-commit:
+        description: Prepared release commit to test
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -82,11 +86,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.release-commit || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: inputs.prebuilt
+        with:
+          name: release-source
+          path: artifacts/
+      - name: Apply prepared release files
+        if: inputs.prebuilt
+        run: node scripts/prepare-release.js --apply artifacts/prepared-release.json
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         if: (inputs.prebuilt && runner.os != 'Windows') || (matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26)
         with:

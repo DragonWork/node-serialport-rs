@@ -9,16 +9,18 @@ const {publishRelease, jsonResponse, liveApi} = require('../scripts/publish-rele
 const {packInfo, checkFiles} = require('../scripts/package-release');
 
 const meta = {name: 'serialport-rs', version: '1.2.3', tag: 'v1.2.3', commit: 'a'.repeat(40),
-  filename: 'serialport-rs-1.2.3.tar.gz', integrity: 'sha512-package', sha256: 'b'.repeat(64), distTag: 'latest'};
+  filename: 'serialport-rs-1.2.3.tar.gz', integrity: 'sha512-package', sha256: 'b'.repeat(64), distTag: 'latest',
+  notes: "## What's Changed in v1.2.3 (2026-09-16)\n\n* fix(io): preserve progress by @DragonWork\n"};
 
 function provider(overrides = {}) {
   const calls = [];
-  const draft = {id: 1, draft: true, target_commitish: meta.commit, assets: []};
+  const draft = {id: 1, draft: true, target_commitish: meta.commit, assets: [], body: meta.notes};
   return {calls, api: {
     async tagCommit() { return null; },
     async npmPackage() { return null; },
     async release() { return null; },
     async createDraft() { calls.push('draft'); return draft; },
+    async updateDraftNotes() { calls.push('notes'); },
     async upload() { calls.push('upload'); },
     async publishNpm() { calls.push('npm'); },
     async publishDraft() { calls.push('publish'); },
@@ -40,7 +42,7 @@ test('npm failure leaves the release unpublished and a retry reuses its draft', 
   const retry = provider({async release() { return {id: 1, draft: true, target_commitish: meta.commit}; },
     async npmPackage() { return {dist: {integrity: meta.integrity}}; }});
   await publishRelease(meta, retry.api);
-  assert.deepEqual(retry.calls, ['upload', 'publish']);
+  assert.deepEqual(retry.calls, ['notes', 'upload', 'publish']);
 });
 
 test('tag and npm version collisions fail before any release mutation', async () => {
@@ -88,11 +90,27 @@ test('draft lookup and annotated tag resolution support publication retries', as
 });
 
 test('pack metadata accepts npm array and keyed formats while rejecting development files', () => {
-  const info = {name: 'serialport-rs', files: ['index.js', 'index.d.ts', 'lib/targets.json', 'LICENSE', 'NOTICE', 'THIRD_PARTY_LICENSES.md'].map(path => ({path}))};
+  const info = {name: 'serialport-rs', files: ['index.js', 'index.d.ts', 'lib/targets.json', 'CHANGELOG.md', 'LICENSE', 'NOTICE', 'THIRD_PARTY_LICENSES.md'].map(path => ({path}))};
   assert.deepEqual(packInfo(JSON.stringify([info])), info);
   assert.deepEqual(packInfo(JSON.stringify({'serialport-rs': info})), info);
   checkFiles(info.files);
   for (const path of ['ts/index.ts', 'src/lib.rs', 'index.js.map', 'test/serial.test.js']) {
     assert.throws(() => checkFiles([...info.files, {path}]));
   }
+});
+
+test('draft creation and retries use archived notes without publishing early', async t => {
+  const requests = [];
+  t.mock.method(global, 'fetch', async (url, options) => {
+    requests.push({url, method: options.method, body: JSON.parse(options.body)});
+    return {ok: true, json: async () => ({id: 7, draft: true})};
+  });
+  const api = liveApi(meta, '/unused', 'DragonWork/node-serialport-rs', 'test-token');
+  await api.createDraft();
+  await api.updateDraftNotes({id: 7});
+  assert.equal(requests[0].body.body, meta.notes);
+  assert.equal(requests[0].body.draft, true);
+  assert(!('generate_release_notes' in requests[0].body));
+  assert.deepEqual(requests[1].body, {body: meta.notes});
+  assert.equal(requests[1].method, 'PATCH');
 });

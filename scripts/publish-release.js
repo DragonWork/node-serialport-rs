@@ -20,7 +20,10 @@ async function publishRelease(meta, api) {
     assert(release.assets.some(asset => asset.name === meta.filename && asset.digest === `sha256:${meta.sha256}`),
       'Published release has no matching immutable archive');
   } else {
-    if (release) assert.equal(release.target_commitish, meta.commit, 'Draft belongs to a different commit');
+    if (release) {
+      assert.equal(release.target_commitish, meta.commit, 'Draft belongs to a different commit');
+      if (release.body !== meta.notes) await api.updateDraftNotes(release);
+    }
     else release = await api.createDraft();
     await api.upload(release);
   }
@@ -66,7 +69,10 @@ function liveApi(meta, archive, repository, token) {
     },
     createDraft() {
       return github('releases', {method: 'POST', body: JSON.stringify({tag_name: meta.tag, target_commitish: meta.commit,
-        name: meta.tag, draft: true, prerelease: meta.distTag === 'next', generate_release_notes: true})});
+        name: meta.tag, draft: true, prerelease: meta.distTag === 'next', body: meta.notes})});
+    },
+    updateDraftNotes(release) {
+      return github(`releases/${release.id}`, {method: 'PATCH', body: JSON.stringify({body: meta.notes})});
     },
     upload() { execFileSync('gh', ['release', 'upload', meta.tag, archive, '--clobber', '--repo', repository], {stdio: 'inherit'}); },
     publishNpm() {
@@ -88,7 +94,9 @@ async function main(file) {
   assert(/^[0-9]+\.[0-9]+\.[0-9]+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(meta.version));
   assert.equal(meta.tag, `v${meta.version}`);
   assert.equal(meta.distTag, meta.version.includes('-') ? 'next' : 'latest');
-  assert.equal(meta.commit, process.env.GITHUB_SHA, 'Artifact belongs to a different checkout');
+  assert.equal(meta.commit, process.env.RELEASE_COMMIT || process.env.GITHUB_SHA, 'Artifact belongs to a different checkout');
+  assert.equal(typeof meta.notes, 'string');
+  assert(meta.notes.startsWith(`## What's Changed in ${meta.tag} (`), 'Release notes belong to a different version');
   assert.equal(basename(meta.filename), meta.filename);
   assert(meta.filename.endsWith('.tar.gz'));
   const archive = resolve(dirname(file), meta.filename);

@@ -6,6 +6,10 @@ name: Publish
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: auto, patch, minor, major, or an exact version such as 0.2.0
+        type: string
+        default: auto
       publish:
         description: Publish npm and GitHub releases after all checks succeed
         type: boolean
@@ -24,18 +28,47 @@ env:
 
 jobs:
   targets:
-    if: github.repository == 'DragonWork/node-serialport-rs'
+    if: github.repository == 'DragonWork/node-serialport-rs' && github.ref_type == 'branch'
     runs-on: ubuntu-26.04
+    permissions:
+      contents: write
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      commit: ${{ steps.prepare.outputs.commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
           package-manager-cache: false
+      - name: Install git-cliff
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 https://github.com/orhun/git-cliff/releases/download/v2.14.1/git-cliff-2.14.1-x86_64-unknown-linux-musl.tar.gz --output "$RUNNER_TEMP/git-cliff.tar.gz"
+          echo 'cba6ae86f0a4205784eed8ef049fe53c904138806e33a1bda2e25026b17198eb  git-cliff.tar.gz' | (cd "$RUNNER_TEMP" && sha256sum --check)
+          tar -xzf "$RUNNER_TEMP/git-cliff.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/git-cliff-2.14.1" >> "$GITHUB_PATH"
+      - name: Check release preparation
+        env:
+          GIT_CLIFF: git-cliff
+        run: node --test test/release-preparation.test.js
+      - name: Prepare version and changelog
+        id: prepare
+        env:
+          GIT_CLIFF: git-cliff
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_PUBLISH: ${{ inputs.publish }}
+        run: npm run release:prepare -- "$RELEASE_VERSION" artifacts
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-source
+          path: artifacts/prepared-release.json
+          if-no-files-found: error
       - id: matrix
         run: |
           node -e "require('node:fs').appendFileSync(process.env.GITHUB_OUTPUT, 'matrix=' + JSON.stringify({include: require('./lib/targets.json')}) + '\n')"
@@ -53,11 +86,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.targets.outputs.commit }}
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
           package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-source
+          path: artifacts/
+      - name: Apply prepared release files
+        run: node scripts/prepare-release.js --apply artifacts/prepared-release.json
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: ${{ env.RUST_VERSION }}
@@ -75,10 +115,12 @@ jobs:
           test -x "$serial_ndk_bin/armv7a-linux-androideabi21-clang"
           test -x "$serial_ndk_bin/x86_64-linux-android21-clang"
           test -x "$serial_ndk_bin/i686-linux-android21-clang"
-          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$serial_ndk_bin/aarch64-linux-android21-clang" >> "$GITHUB_ENV"
-          echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$serial_ndk_bin/armv7a-linux-androideabi21-clang" >> "$GITHUB_ENV"
-          echo "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER=$serial_ndk_bin/x86_64-linux-android21-clang" >> "$GITHUB_ENV"
-          echo "CARGO_TARGET_I686_LINUX_ANDROID_LINKER=$serial_ndk_bin/i686-linux-android21-clang" >> "$GITHUB_ENV"
+          {
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$serial_ndk_bin/aarch64-linux-android21-clang"
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$serial_ndk_bin/armv7a-linux-androideabi21-clang"
+            echo "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER=$serial_ndk_bin/x86_64-linux-android21-clang"
+            echo "CARGO_TARGET_I686_LINUX_ANDROID_LINKER=$serial_ndk_bin/i686-linux-android21-clang"
+          } >> "$GITHUB_ENV"
       - name: Cross-compile
         if: matrix.cross
         run: cross build --release --locked --lib --target ${{ matrix.target }}
@@ -94,22 +136,32 @@ jobs:
           if-no-files-found: error
 
   verify:
-    needs: prebuild
+    needs: [targets, prebuild]
     uses: ./.github/workflows/test.yml
     with:
       prebuilt: true
+      release-commit: ${{ needs.targets.outputs.commit }}
 
   package:
-    needs: [prebuild, verify]
+    needs: [targets, prebuild, verify]
     runs-on: ubuntu-26.04
+    env:
+      RELEASE_COMMIT: ${{ needs.targets.outputs.commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.targets.outputs.commit }}
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
           package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-source
+          path: artifacts/
+      - name: Apply prepared release files
+        run: node scripts/prepare-release.js --apply artifacts/prepared-release.json
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: native-*
@@ -126,15 +178,17 @@ jobs:
 
   publish:
     if: inputs.publish && github.repository == 'DragonWork/node-serialport-rs'
-    needs: package
+    needs: [targets, package]
     runs-on: ubuntu-26.04
     permissions:
       contents: write
       id-token: write
+    env:
+      RELEASE_COMMIT: ${{ needs.targets.outputs.commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.targets.outputs.commit }}
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:

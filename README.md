@@ -48,6 +48,7 @@ CommonJS works too: `const {SerialPort} = require('serialport-rs')`.
 - [Architecture, memory ownership, and lifecycle](docs/architecture.md)
 - [Native build targets](docs/platforms.md)
 - [Development and checks](docs/development.md)
+- [Changelog](CHANGELOG.md)
 - [Benchmarks](bench/README.md)
 
 ## Acknowledgements

@@ -5,7 +5,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {readFileSync} = require('node:fs');
+const {readFileSync, mkdtempSync, writeFileSync, rmSync} = require('node:fs');
+const {tmpdir} = require('node:os');
 const {join} = require('node:path');
 const {runInNewContext} = require('node:vm');
 const {loadNative, selectTarget} = require('../lib/native');
@@ -36,9 +37,11 @@ test('every release target maps back to its platform-specific binary', () => {
 test('ARM selection respects the minimum instruction set and libc', () => {
   assert.equal(selectTarget({platform: 'linux', arch: 'arm', arm: 6, libc: 'gnu'}), 'arm-unknown-linux-gnueabihf');
   assert.equal(selectTarget({platform: 'linux', arch: 'arm', arm: 8, libc: 'gnu'}), 'armv7-unknown-linux-gnueabihf');
-  assert.equal(selectTarget({platform: 'linux', arch: 'arm', arm: 6, libc: 'musl'}), undefined);
+  assert.equal(selectTarget({platform: 'linux', arch: 'arm', arm: 6, libc: 'musl'}), 'arm-unknown-linux-musleabihf');
   assert.equal(selectTarget({platform: 'linux', arch: 'x64', libc: 'musl'}), 'x86_64-unknown-linux-musl');
   assert.equal(selectTarget({platform: 'unknown', arch: 'x64'}), undefined);
+  assert.equal(selectTarget({platform: 'linux', arch: 'ppc64', libc: 'gnu', endian: 'BE'}), undefined);
+  assert.equal(selectTarget({platform: 'linux', arch: 's390x', libc: 'gnu', endian: 'BE'}), 's390x-unknown-linux-gnu');
 });
 
 test('the native loader resolves serialport-rs.node', () => {
@@ -63,4 +66,26 @@ test('release validation accepts this binary and rejects a mismatched architectu
   assert(file);
   checkNative(file, {platform: process.platform, arch: process.arch});
   assert.throws(() => checkNative(file, {platform: process.platform, arch: process.arch === 'arm64' ? 'x64' : 'arm64'}), /Wrong (CPU|ELF class)/);
+});
+
+test('ELF validation checks new CPU IDs, word sizes and s390x byte order', t => {
+  const {checkNative} = require('../scripts/check-native');
+  const directory = mkdtempSync(join(tmpdir(), 'serialport-elf-'));
+  t.after(() => rmSync(directory, {recursive: true}));
+  for (const [arch, bits, endian, machine] of [
+    ['ia32', 1, 1, 3], ['ppc64', 2, 1, 21], ['s390x', 2, 2, 22], ['riscv64', 2, 1, 243],
+  ]) {
+    const header = Buffer.alloc(64);
+    header.write('7f454c46', 0, 'hex');
+    header[4] = bits;
+    header[5] = endian;
+    if (endian === 1) header.writeUInt16LE(machine, 18);
+    else header.writeUInt16BE(machine, 18);
+    const file = join(directory, arch);
+    writeFileSync(file, header);
+    checkNative(file, {platform: 'linux', arch});
+    header[5] = endian === 1 ? 2 : 1;
+    writeFileSync(file, header);
+    assert.throws(() => checkNative(file, {platform: 'linux', arch}), /Wrong ELF byte order/);
+  }
 });

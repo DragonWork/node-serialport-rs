@@ -2,3 +2,7 @@
 /native/
 /node_modules/
 /*.tgz
+/index.js
+/index.d.ts
+/lib/*.js
+/lib/parsers/*.js

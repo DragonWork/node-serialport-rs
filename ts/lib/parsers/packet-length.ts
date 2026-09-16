@@ -3,17 +3,23 @@
 
 'use strict';
 
-const {Transform} = require('node:stream');
-const {ByteQueue, integer} = require('./bytes');
+import {Transform, type TransformCallback} from 'node:stream';
+import type {PacketLengthOptions} from '../../public-api';
+import {ByteQueue, integer} from './bytes';
 
 class PacketLengthParser extends Transform {
   #bytes = new ByteQueue();
-  #delimiters;
+  #delimiters: Set<number>;
   #started = false;
   #length = 0;
+  declare delimiterBytes: number;
+  declare lengthBytes: number;
+  declare lengthOffset: number;
+  declare packetOverhead: number;
+  declare maxLen: number;
 
   constructor({delimiter = 0xaa, delimiterBytes = 1, packetOverhead = 2,
-    lengthBytes = 1, lengthOffset = 1, maxLen = 255, ...options} = {}) {
+    lengthBytes = 1, lengthOffset = 1, maxLen = 255, ...options}: PacketLengthOptions = {}) {
     super(options);
     this.delimiterBytes = integer(delimiterBytes, 'delimiterBytes', 1, 6);
     this.lengthBytes = integer(lengthBytes, 'lengthBytes', 1, 6);
@@ -25,7 +31,7 @@ class PacketLengthParser extends Transform {
     for (const value of this.#delimiters) integer(value, 'delimiter', 0, 2 ** (delimiterBytes * 8) - 1);
   }
 
-  _transform(chunk, encoding, callback) {
+  _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
     this.#bytes.append(chunk);
     for (;;) {
       if (!this.#started) {
@@ -53,10 +59,10 @@ class PacketLengthParser extends Transform {
     callback();
   }
 
-  _flush(callback) {
+  _flush(callback: TransformCallback) {
     this.push(this.#bytes.take());
     callback();
   }
 }
 
-module.exports = {PacketLengthParser};
+export {PacketLengthParser};

@@ -7,27 +7,27 @@ const EMPTY = Buffer.alloc(0);
 
 // Keep incoming chunks intact; copy only a frame that spans chunk boundaries.
 class ByteQueue {
-  #chunks = [];
+  #chunks: (Buffer | undefined)[] = [];
   #head = 0;
   #offset = 0;
   length = 0;
 
-  append(buffer) {
+  append(buffer: Buffer) {
     if (buffer.length) {
       this.#chunks.push(buffer);
       this.length += buffer.length;
     }
   }
 
-  peek(length) {
+  peek(length: number): Buffer {
     if (!length) return EMPTY;
     if (length > this.length) throw new RangeError('Not enough buffered bytes');
-    const first = this.#chunks[this.#head];
+    const first = this.#chunks[this.#head]!;
     if (first.length - this.#offset >= length) return first.subarray(this.#offset, this.#offset + length);
     const result = Buffer.allocUnsafe(length);
     let offset = first.copy(result, 0, this.#offset);
     for (let i = this.#head + 1; offset < length; i++) {
-      offset += this.#chunks[i].copy(result, offset, 0, length - offset);
+      offset += this.#chunks[i]!.copy(result, offset, 0, length - offset);
     }
     return result;
   }
@@ -38,11 +38,11 @@ class ByteQueue {
     return result;
   }
 
-  discard(length) {
+  discard(length: number) {
     if (length > this.length || length < 0) throw new RangeError('Invalid byte count');
     this.length -= length;
     while (length) {
-      const available = this.#chunks[this.#head].length - this.#offset;
+      const available = this.#chunks[this.#head]!.length - this.#offset;
       if (length < available) {
         this.#offset += length;
         break;
@@ -67,10 +67,11 @@ class ByteQueue {
 }
 
 class DelimiterMatcher {
-  #prefix;
+  #prefix: Uint32Array;
+  declare delimiter: Buffer;
   #matched = 0;
 
-  constructor(delimiter) {
+  constructor(delimiter: string | Buffer | number[] | undefined) {
     if (delimiter === undefined) throw new TypeError('delimiter is required');
     this.delimiter = Buffer.from(delimiter);
     if (!this.delimiter.length) throw new TypeError('delimiter must not be empty');
@@ -82,7 +83,7 @@ class DelimiterMatcher {
     }
   }
 
-  #advance(byte) {
+  #advance(byte: number) {
     while (this.#matched && byte !== this.delimiter[this.#matched]) this.#matched = this.#prefix[this.#matched - 1];
     if (byte === this.delimiter[this.#matched]) this.#matched++;
     if (this.#matched !== this.delimiter.length) return false;
@@ -91,7 +92,7 @@ class DelimiterMatcher {
   }
 
   // Return the end of the next delimiter, retaining only a partial prefix.
-  find(chunk, offset = 0) {
+  find(chunk: Buffer, offset = 0) {
     while (offset < chunk.length && this.#matched) {
       if (this.#advance(chunk[offset++])) return offset;
     }
@@ -106,9 +107,9 @@ class DelimiterMatcher {
   }
 }
 
-function integer(value, name, min = 1, max = Number.MAX_SAFE_INTEGER) {
-  if (!Number.isSafeInteger(value) || value < min || value > max) throw new TypeError(`Invalid ${name}`);
+function integer(value: unknown, name: string, min = 1, max = Number.MAX_SAFE_INTEGER): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) throw new TypeError(`Invalid ${name}`);
   return value;
 }
 
-module.exports = {ByteQueue, DelimiterMatcher, integer};
+export {ByteQueue, DelimiterMatcher, integer};

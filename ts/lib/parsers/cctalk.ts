@@ -3,19 +3,20 @@
 
 'use strict';
 
-const {Transform} = require('node:stream');
-const {ByteQueue} = require('./bytes');
+import {Transform, type TransformCallback} from 'node:stream';
+import {ByteQueue} from './bytes';
 
 class CCTalkParser extends Transform {
   #bytes = new ByteQueue();
   #last = 0;
+  declare maxDelayBetweenBytesMs: number;
 
   constructor(maxDelayBetweenBytesMs = 50) {
     super();
     this.maxDelayBetweenBytesMs = maxDelayBetweenBytesMs;
   }
 
-  _transform(chunk, encoding, callback) {
+  _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
     if (this.maxDelayBetweenBytesMs > 0) {
       const now = performance.now();
       if (now - this.#last > this.maxDelayBetweenBytesMs) this.#bytes.clear();
@@ -31,4 +32,4 @@ class CCTalkParser extends Transform {
   }
 }
 
-module.exports = {CCTalkParser};
+export {CCTalkParser};

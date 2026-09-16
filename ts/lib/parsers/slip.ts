@@ -3,25 +3,28 @@
 
 'use strict';
 
-const {Transform} = require('node:stream');
-const {ByteQueue, integer} = require('./bytes');
+import {Transform, type TransformCallback} from 'node:stream';
+import type {SlipEncoderOptions} from '../../public-api';
+import {ByteQueue, integer} from './bytes';
 
-function settings(options) {
+type SlipSettings = SlipEncoderOptions & Required<Pick<SlipEncoderOptions, 'ESC' | 'END' | 'ESC_END' | 'ESC_ESC'>>;
+
+function settings(options: SlipEncoderOptions): SlipSettings {
   const result = {...options};
-  for (const [name, value] of Object.entries({ESC: 0xdb, END: 0xc0, ESC_END: 0xdc, ESC_ESC: 0xdd})) {
+  for (const [name, value] of Object.entries({ESC: 0xdb, END: 0xc0, ESC_END: 0xdc, ESC_ESC: 0xdd}) as ['ESC' | 'END' | 'ESC_END' | 'ESC_ESC', number][]) {
     if (result[name] === undefined) result[name] = value;
   }
-  for (const name of ['START', 'ESC', 'END', 'ESC_START', 'ESC_END', 'ESC_ESC']) {
+  for (const name of ['START', 'ESC', 'END', 'ESC_START', 'ESC_END', 'ESC_ESC'] as const) {
     if (result[name] !== undefined) integer(result[name], name, 0, 255);
   }
-  return result;
+  return result as SlipSettings;
 }
 
 class SlipEncoder extends Transform {
   #codes = new Int16Array(256).fill(-1);
-  #options;
+  #options: SlipSettings;
 
-  constructor(options = {}) {
+  constructor(options: SlipEncoderOptions = {}) {
     super(options);
     this.#options = settings(options);
     const {START, END, ESC, ESC_START, ESC_END, ESC_ESC} = this.#options;
@@ -30,7 +33,7 @@ class SlipEncoder extends Transform {
     if (START !== undefined && ESC_START !== undefined) this.#codes[START] = ESC_START;
   }
 
-  _transform(chunk, encoding, callback) {
+  _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
     const {START, END, ESC, bluetoothQuirk} = this.#options;
     if (bluetoothQuirk && !chunk.length) return callback();
     let length = chunk.length + 1 + Number(START !== undefined) + Number(Boolean(bluetoothQuirk));
@@ -52,11 +55,11 @@ class SlipEncoder extends Transform {
 class SlipDecoder extends Transform {
   #bytes = new ByteQueue();
   #codes = new Int16Array(256).fill(-1);
-  #options;
+  #options: SlipSettings;
   #started = false;
   #escaped = false;
 
-  constructor(options = {}) {
+  constructor(options: SlipEncoderOptions = {}) {
     super(options);
     this.#options = settings(options);
     const {START, END, ESC, ESC_START, ESC_END, ESC_ESC} = this.#options;
@@ -65,7 +68,7 @@ class SlipDecoder extends Transform {
     if (START !== undefined && ESC_START !== undefined) this.#codes[ESC_START] = START;
   }
 
-  _transform(chunk, encoding, callback) {
+  _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
     const {START, END, ESC} = this.#options;
     const decoded = Buffer.allocUnsafe(chunk.length);
     let size = 0;
@@ -92,10 +95,10 @@ class SlipDecoder extends Transform {
     callback();
   }
 
-  _flush(callback) {
+  _flush(callback: TransformCallback) {
     this.push(this.#bytes.take());
     callback();
   }
 }
 
-module.exports = {SlipEncoder, SlipDecoder};
+export {SlipEncoder, SlipDecoder};

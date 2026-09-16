@@ -8,6 +8,7 @@ Source builds require Rust/Cargo and a native linker or platform SDK. The crate 
 Build the addon and the Unix pseudo-terminal test helper from the source checkout, then run the checks:
 
 ```sh
+npm ci --ignore-scripts
 npm run build:debug
 cargo build --locked --example pty
 npm test
@@ -16,6 +17,8 @@ cargo test --locked --lib
 ```
 
 Use `npm run build` for an optimized release build. Pull requests use dev builds through `test.yml`; publication runs the same tests against the release artifacts.
+
+Runtime TypeScript lives in `ts/`; `npm run build:js` compiles it in strict mode to the existing `index.js` and `lib/` paths. `ts/public-api.d.ts` defines the public declarations copied to `index.d.ts`. These generated files are ignored by Git. Tests, native build scripts and benchmarks remain JavaScript. `npm test` and `npm pack` compile the runtime first; published packages contain the compiled runtime, declarations, native binaries and documentation/license assets, with no TypeScript compiler or runtime dependency.
 
 Dev builds cache Cargo dependencies and share compiled addons and test helpers across Node versions. Release builds do not restore these caches.
 
@@ -29,6 +32,6 @@ node scripts/compare-parsers.js node_modules/serialport
 SERIALPORT_REFERENCE_STREAM="$PWD/node_modules/@serialport/stream" node --expose-gc --test test/compatibility.test.js test/consumer.test.js
 ```
 
-TypeScript declarations and a consumer fixture live in `index.d.ts` and `test/types.ts`. They can be checked with a compatible TypeScript compiler and Node type definitions using strict NodeNext resolution.
+Run `npm run check:types` to check the runtime and the public consumer fixture in `test/types.ts` against the pinned compiler and Node 20 declarations.
 
 The `bench/` directory contains separate latency, throughput, and parser measurement tools. PTY results measure the host software path, not physical UART speed. Throughput records count echoed payload once, exclude echo-helper CPU, and include sampled memory usage.

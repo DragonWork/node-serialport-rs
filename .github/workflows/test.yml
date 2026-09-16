@@ -45,6 +45,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: ${{ env.RUST_VERSION }}
+      - run: npm ci --ignore-scripts
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: dev-${{ matrix.target }}
@@ -104,7 +105,10 @@ jobs:
         if: ${{ !inputs.prebuilt && runner.os != 'Windows' }}
         run: chmod +x target/debug/examples/pty
       - name: Validate package and addon loading
-        run: node scripts/check-package.js
+        run: |
+          npm ci --ignore-scripts
+          npm run build:js
+          node scripts/check-package.js
       - name: Build pseudo-terminal helper
         if: inputs.prebuilt && runner.os != 'Windows'
         run: cargo build --locked --example pty
@@ -129,5 +133,4 @@ jobs:
       - name: Check TypeScript API
         if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26
         run: |
-          npm install --no-save --ignore-scripts --package-lock=false typescript@6.0.3 @types/node@26.4.0
-          npx --no-install tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 test/types.ts
+          npm run check:types

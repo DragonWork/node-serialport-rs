@@ -16,7 +16,7 @@ function isolatedLoader({platform = 'linux', arch = 'arm64', glibc = true, exist
   const module = {exports: {}};
   let loaded;
   runInNewContext(readFileSync(require.resolve('../lib/native'), 'utf8'), {
-    module, __dirname: join(__dirname, '../lib'),
+    module, exports: module.exports, __dirname: join(__dirname, '../lib'),
     process: {platform, arch, config: {variables: {}}, report: {getReport: () => ({header: {glibcVersionRuntime: glibc && '2.31'}})}},
     require(name) {
       if (name === 'node:fs') return {existsSync: exists};

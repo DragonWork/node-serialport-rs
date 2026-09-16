@@ -121,7 +121,10 @@ jobs:
           merge-multiple: true
           path: native/
       - name: Require the complete native matrix
-        run: node scripts/check-package.js --prebuilds
+        run: |
+          npm ci --ignore-scripts
+          npm run build:js
+          node scripts/check-package.js --prebuilds
       - id: pack
         name: Pack the npm artifact
         run: |

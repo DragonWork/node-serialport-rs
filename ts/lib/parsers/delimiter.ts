@@ -3,21 +3,24 @@
 
 'use strict';
 
-const {Transform} = require('node:stream');
-const {ByteQueue, DelimiterMatcher} = require('./bytes');
+import {Transform, type TransformCallback} from 'node:stream';
+import type {DelimiterOptions} from '../../public-api';
+import {ByteQueue, DelimiterMatcher} from './bytes';
 
 class DelimiterParser extends Transform {
   #bytes = new ByteQueue();
-  #matcher;
+  #matcher: DelimiterMatcher;
+  declare delimiter: Buffer;
+  declare includeDelimiter: boolean;
 
-  constructor({delimiter, includeDelimiter = false, ...options} = {}) {
+  constructor({delimiter, includeDelimiter = false, ...options}: Partial<DelimiterOptions> = {}) {
     super(options);
     this.#matcher = new DelimiterMatcher(delimiter);
     this.delimiter = this.#matcher.delimiter;
     this.includeDelimiter = includeDelimiter;
   }
 
-  _transform(chunk, encoding, callback) {
+  _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
     let offset = 0;
     let end;
     while ((end = this.#matcher.find(chunk, offset)) !== -1) {
@@ -33,10 +36,10 @@ class DelimiterParser extends Transform {
     callback();
   }
 
-  _flush(callback) {
+  _flush(callback: TransformCallback) {
     this.push(this.#bytes.take());
     callback();
   }
 }
 
-module.exports = {DelimiterParser};
+export {DelimiterParser};

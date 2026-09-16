@@ -3,12 +3,13 @@
 
 'use strict';
 
-const {DelimiterParser} = require('./delimiter');
+import {DelimiterParser} from './delimiter';
+import type {ReadlineOptions} from '../../public-api';
 
 class ReadlineParser extends DelimiterParser {
-  constructor({encoding = 'utf8', delimiter = '\n', ...options} = {}) {
+  constructor({encoding = 'utf8', delimiter = '\n', ...options}: ReadlineOptions = {}) {
     super({ ...options, encoding, delimiter: typeof delimiter === 'string' ? Buffer.from(delimiter, encoding) : delimiter });
   }
 }
 
-module.exports = {ReadlineParser};
+export {ReadlineParser};

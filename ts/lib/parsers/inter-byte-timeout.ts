@@ -3,21 +3,24 @@
 
 'use strict';
 
-const {Transform} = require('node:stream');
-const {ByteQueue, integer} = require('./bytes');
+import {Transform, type TransformCallback} from 'node:stream';
+import type {InterByteTimeoutOptions} from '../../public-api';
+import {ByteQueue, integer} from './bytes';
 
 class InterByteTimeoutParser extends Transform {
   #bytes = new ByteQueue();
-  #timer;
+  #timer?: NodeJS.Timeout;
+  declare interval: number;
+  declare maxBufferSize: number;
 
-  constructor({interval, maxBufferSize = 65536, ...options} = {}) {
+  constructor({interval, maxBufferSize = 65536, ...options}: Partial<InterByteTimeoutOptions> = {}) {
     super(options);
-    if (!Number.isFinite(interval) || interval < 1) throw new TypeError('Invalid interval');
+    if (typeof interval !== 'number' || !Number.isFinite(interval) || interval < 1) throw new TypeError('Invalid interval');
     this.interval = interval;
     this.maxBufferSize = integer(maxBufferSize, 'maxBufferSize');
   }
 
-  _transform(chunk, encoding, callback) {
+  _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
     let offset = 0;
     while (offset < chunk.length) {
       const count = Math.min(this.maxBufferSize - this.#bytes.length, chunk.length - offset);
@@ -38,12 +41,12 @@ class InterByteTimeoutParser extends Transform {
     if (this.#bytes.length) this.push(this.#bytes.take());
   }
 
-  _flush(callback) {
+  _flush(callback: TransformCallback) {
     this.emitPacket();
     callback();
   }
 
-  _destroy(error, callback) {
+  _destroy(error: Error | null, callback: (error?: Error | null) => void) {
     clearTimeout(this.#timer);
     this.#timer = undefined;
     this.#bytes.clear();
@@ -51,4 +54,4 @@ class InterByteTimeoutParser extends Transform {
   }
 }
 
-module.exports = {InterByteTimeoutParser};
+export {InterByteTimeoutParser};

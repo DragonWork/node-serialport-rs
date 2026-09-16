@@ -3,21 +3,23 @@
 
 'use strict';
 
-const {Transform} = require('node:stream');
-const {StringDecoder} = require('node:string_decoder');
+import {Transform, type TransformCallback} from 'node:stream';
+import {StringDecoder} from 'node:string_decoder';
+import type {RegexParserOptions} from '../../public-api';
 
 class RegexParser extends Transform {
-  #decoder;
+  #decoder: StringDecoder;
   #tail = '';
+  declare regex: RegExp;
 
-  constructor({regex, encoding = 'utf8', ...options} = {}) {
+  constructor({regex, encoding = 'utf8', ...options}: Partial<RegexParserOptions> = {}) {
     super({...options, encoding});
     if (regex === undefined) throw new TypeError('regex is required');
     this.regex = regex instanceof RegExp ? regex : new RegExp(String(regex));
     this.#decoder = new StringDecoder(encoding);
   }
 
-  _transform(chunk, encoding, callback) {
+  _transform(chunk: Buffer | string, encoding: BufferEncoding, callback: TransformCallback) {
     const text = this.#tail + (typeof chunk === 'string' ? chunk : this.#decoder.write(chunk));
     const pieces = text.split(this.regex);
     this.#tail = pieces.pop() ?? '';
@@ -25,11 +27,11 @@ class RegexParser extends Transform {
     callback();
   }
 
-  _flush(callback) {
+  _flush(callback: TransformCallback) {
     this.push(this.#tail + this.#decoder.end());
     this.#tail = '';
     callback();
   }
 }
 
-module.exports = {RegexParser};
+export {RegexParser};

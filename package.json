@@ -11,10 +11,17 @@
   "engines": {"node": ">=20"},
   "files": ["index.js", "index.d.ts", "lib", "native", "docs", "bench/results", "LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md"],
   "scripts": {
-    "build": "node scripts/build.js",
-    "build:debug": "node scripts/build.js --debug",
+    "build": "npm run build:js && node scripts/build.js",
+    "build:debug": "npm run build:js && node scripts/build.js --debug",
+    "build:js": "node scripts/build-js.js",
+    "pretest": "npm run build:js",
     "test": "node --expose-gc --test test/*.test.js",
-    "check": "cargo fmt --check && cargo clippy --all-targets -- -D warnings",
-    "prepack": "node scripts/check-package.js"
+    "check:types": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.types.json",
+    "check": "npm run check:types && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings",
+    "prepack": "npm run build:js && node scripts/check-package.js"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "typescript": "6.0.3"
   }
 }

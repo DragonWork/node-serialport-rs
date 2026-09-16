@@ -3,20 +3,23 @@
 
 'use strict';
 
-const {Transform} = require('node:stream');
-const {ByteQueue, integer} = require('./bytes');
+import {Transform, type TransformCallback} from 'node:stream';
+import type {SpacePacketOptions, SpacePacketHeader, SpacePacket} from '../../public-api';
+import {ByteQueue, integer} from './bytes';
 
 class SpacePacketParser extends Transform {
   #bytes = new ByteQueue();
-  #header;
+  #header?: SpacePacketHeader;
+  declare timeCodeFieldLength: number;
+  declare ancillaryDataFieldLength: number;
 
-  constructor({timeCodeFieldLength = 0, ancillaryDataFieldLength = 0, ...options} = {}) {
+  constructor({timeCodeFieldLength = 0, ancillaryDataFieldLength = 0, ...options}: SpacePacketOptions = {}) {
     super({...options, objectMode: true});
     this.timeCodeFieldLength = integer(timeCodeFieldLength, 'timeCodeFieldLength', 0);
     this.ancillaryDataFieldLength = integer(ancillaryDataFieldLength, 'ancillaryDataFieldLength', 0);
   }
 
-  _transform(chunk, encoding, callback) {
+  _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
     this.#bytes.append(chunk);
     for (;;) {
       if (!this.#header) {
@@ -35,7 +38,7 @@ class SpacePacketParser extends Transform {
       const bytes = this.#bytes.take(this.#header.dataLength);
       const timeEnd = Math.min(bytes.length, this.timeCodeFieldLength);
       const ancillaryEnd = Math.min(bytes.length, timeEnd + this.ancillaryDataFieldLength);
-      const packet = {header: this.#header, data: bytes.toString('utf8', ancillaryEnd)};
+      const packet: SpacePacket = {header: this.#header, data: bytes.toString('utf8', ancillaryEnd)};
       if (ancillaryEnd) {
         packet.secondaryHeader = {};
         if (timeEnd) packet.secondaryHeader.timeCode = bytes.toString('utf8', 0, timeEnd);
@@ -47,7 +50,7 @@ class SpacePacketParser extends Transform {
     callback();
   }
 
-  _flush(callback) {
+  _flush(callback: TransformCallback) {
     // The serialport API emits incomplete trailing bytes as an array in object mode.
     this.push([...this.#bytes.take()]);
     this.#header = undefined;
@@ -55,4 +58,4 @@ class SpacePacketParser extends Transform {
   }
 }
 
-module.exports = {SpacePacketParser};
+export {SpacePacketParser};

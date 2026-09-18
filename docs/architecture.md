@@ -20,6 +20,8 @@ This is not an end-to-end zero-copy implementation. Keep submitted buffers uncha
 
 Vectored writes reuse complete JavaScript buffer views. Only segments split at the native transfer boundary need an additional view; queued bytes still receive their own Rust-owned snapshot.
 
+Native completion events borrow fixed Rust string labels instead of allocating a `String` for each event. JavaScript still receives the same ordinary string fields; the event object is only marshalled from Rust to JavaScript.
+
 SLIP decoding reuses larger input chunks that need no escape processing and no explicit start marker. Small fragments keep the byte loop to avoid the cost of repeated native searches. Delimiter and readline parsers can bound incomplete payloads with the optional `maxFrameLength` setting; the default remains unlimited for compatibility.
 
 ## Async context

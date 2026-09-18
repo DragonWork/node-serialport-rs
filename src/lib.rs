@@ -48,11 +48,11 @@ pub struct NativeOptions {
     pub hupcl: bool,
 }
 
-#[napi(object)]
+#[napi(object, object_from_js = false)]
 #[derive(Default)]
 pub struct NativeEvent {
     pub id: u32,
-    pub kind: String,
+    pub kind: &'static str,
     pub data: Option<Buffer>,
     pub message: Option<String>,
     pub cts: Option<bool>,
@@ -62,10 +62,10 @@ pub struct NativeEvent {
 }
 
 impl NativeEvent {
-    pub(crate) fn new(id: u32, kind: &str) -> Self {
+    pub(crate) fn new(id: u32, kind: &'static str) -> Self {
         Self {
             id,
-            kind: kind.into(),
+            kind,
             ..Self::default()
         }
     }

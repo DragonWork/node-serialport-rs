@@ -1,5 +1,21 @@
 # Changelog
 
+## What's Changed in v0.3.0 (2026-09-18)
+
+* fix(stream): preserve close context and recover failed cancellation by @DragonWork
+* feat(parsers): bound delimiter frames and reduce SLIP copies by @DragonWork
+* fix(build): clean superseded debug caches after release by @DragonWork
+* perf(native): reduce vectored write buffer overhead by @DragonWork
+* style: standardize JavaScript and TypeScript with Prettier by @DragonWork
+* perf(native): batch ready serial reads automatically by @DragonWork
+* perf(binding): reuse whole buffers in vectored writes by @DragonWork
+* perf(native): borrow fixed completion event labels by @DragonWork
+* test: avoid macOS PTY deadlock in batching tests by @DragonWork
+* perf(native): deliver first read before batching followers by @DragonWork
+* style: prefer concise arrows and multiline JSON by @DragonWork
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.2.0...v0.3.0
+
 ## What's Changed in v0.2.0 (2026-09-16)
 
 * fix(stream): preserve SerialPort 13 control and drain behavior by @DragonWork

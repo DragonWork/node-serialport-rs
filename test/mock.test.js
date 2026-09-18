@@ -14,7 +14,7 @@ const { call } = require('./helpers');
 
 test.beforeEach(() => SerialPortMock.binding.reset());
 
-test('SerialPortMock supports echo and recording without hardware', { timeout: 5000 }, async (t) => {
+test('SerialPortMock supports echo and recording without hardware', { timeout: 5000 }, async t => {
   assert.equal(typeof SerialPortMock, 'function');
   SerialPortMock.binding.reset();
   SerialPortMock.binding.createPort('/mock/echo', { echo: true, record: true });
@@ -51,7 +51,7 @@ test('mock discovery, metadata and serial numbers reset without prototype-key co
   assert.equal((await SerialPortMock.list())[0].serialNumber, '1');
 });
 
-test('ready data obeys read limits and destination offsets', async (t) => {
+test('ready data obeys read limits and destination offsets', async t => {
   SerialPortMock.binding.createPort('/mock/ready', { readyData: Buffer.from([1, 2, 3, 4, 5]), maxReadSize: 2 });
   const port = await SerialPortMock.binding.open({ path: '/mock/ready', baudRate: 9600 });
   t.after(() => port.isOpen && port.close());
@@ -97,7 +97,7 @@ test('shared opens retain exclusive-lock protection until every connection close
   await (await binding.open(options)).close();
 });
 
-test('writes snapshot input, drain waits, and recording inspection does not mutate history', async (t) => {
+test('writes snapshot input, drain waits, and recording inspection does not mutate history', async t => {
   SerialPortMock.binding.createPort('/mock/writes', { record: true });
   const port = await SerialPortMock.binding.open({ path: '/mock/writes', baudRate: 9600 });
   t.after(() => port.isOpen && port.close());
@@ -117,13 +117,13 @@ test('writes snapshot input, drain waits, and recording inspection does not muta
   assert.equal(port.recording.length, 0);
 });
 
-test('mock controls, flushing and read validation are asynchronous and isolated by port', async (t) => {
+test('mock controls, flushing and read validation are asynchronous and isolated by port', async t => {
   const binding = SerialPortMock.binding;
   binding.createPort('/mock/a');
   binding.createPort('/mock/b');
   const a = await binding.open({ path: '/mock/a', baudRate: 9600 });
   const b = await binding.open({ path: '/mock/b', baudRate: 115200 });
-  t.after(() => Promise.all([a, b].filter((port) => port.isOpen).map((port) => port.close())));
+  t.after(() => Promise.all([a, b].filter(port => port.isOpen).map(port => port.close())));
   await a.update({ baudRate: 57600 });
   assert.deepEqual(await a.getBaudRate(), { baudRate: 57600 });
   assert.deepEqual(await b.getBaudRate(), { baudRate: 115200 });
@@ -141,7 +141,7 @@ test('mock controls, flushing and read validation are asynchronous and isolated 
   assert.equal((await read).buffer.toString(), 'x');
 });
 
-test('detaching a pending read destination rejects without consuming queued input', async (t) => {
+test('detaching a pending read destination rejects without consuming queued input', async t => {
   SerialPortMock.binding.createPort('/mock/detach');
   const port = await SerialPortMock.binding.open({ path: '/mock/detach', baudRate: 9600 });
   t.after(() => port.isOpen && port.close());
@@ -155,7 +155,7 @@ test('detaching a pending read destination rejects without consuming queued inpu
   assert.deepEqual(read.buffer.subarray(0, 2), Buffer.from([1, 2]));
 });
 
-test('corked stream writes retain order and a closed session cannot echo into its replacement', async (t) => {
+test('corked stream writes retain order and a closed session cannot echo into its replacement', async t => {
   SerialPortMock.binding.createPort('/mock/stream', { record: true, echo: true });
   const port = new SerialPortMock({ path: '/mock/stream', baudRate: 9600, autoOpen: false });
   t.after(() => port.destroy());
@@ -169,7 +169,7 @@ test('corked stream writes retain order and a closed session cannot echo into it
   await call(port, 'close');
   await call(port, 'open');
   const output = [];
-  port.on('data', (data) => output.push(data));
+  port.on('data', data => output.push(data));
   await nextTurn();
   assert.deepEqual(output, []);
 });

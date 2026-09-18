@@ -18,7 +18,7 @@ function packInfo(json) {
 }
 
 function checkFiles(files) {
-  const paths = files.map((file) => file.path);
+  const paths = files.map(file => file.path);
   for (const name of [
     'index.js',
     'index.d.ts',

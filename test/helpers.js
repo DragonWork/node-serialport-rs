@@ -11,7 +11,7 @@ const { join } = require('node:path');
 async function pty(t) {
   const child = spawn(join(__dirname, '../target/debug/examples/pty'), { stdio: ['pipe', 'pipe', 'pipe'] });
   let stderr = '';
-  child.stderr.on('data', (data) => {
+  child.stderr.on('data', data => {
     stderr += data;
   });
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();

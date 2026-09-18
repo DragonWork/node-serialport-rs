@@ -40,7 +40,7 @@ function isolatedLoader({ platform = 'linux', arch = 'arm64', glibc = true, exis
 }
 
 test('every release target maps back to its platform-specific binary', () => {
-  assert.equal(new Set(targets.map((entry) => entry.target)).size, targets.length);
+  assert.equal(new Set(targets.map(entry => entry.target)).size, targets.length);
   for (const entry of targets) assert.equal(selectTarget(entry), entry.target);
 });
 
@@ -61,7 +61,7 @@ test('the native loader resolves serialport-rs.node', () => {
   assert.equal(typeof loadNative().NativePort, 'function');
   assert(
     Object.keys(require.cache).some(
-      (file) => file.endsWith('/serialport-rs.node') || file.endsWith('\\serialport-rs.node'),
+      file => file.endsWith('/serialport-rs.node') || file.endsWith('\\serialport-rs.node'),
     ),
   );
 });
@@ -72,14 +72,14 @@ test('packaged loading distinguishes glibc and musl and prefers a local build', 
   for (const glibc of [true, false]) {
     const target = `aarch64-unknown-linux-${glibc ? 'gnu' : 'musl'}`;
     const file = join(__dirname, '../native', target, 'serialport-rs.node');
-    assert.equal(isolatedLoader({ glibc, exists: (candidate) => candidate === file }), file);
+    assert.equal(isolatedLoader({ glibc, exists: candidate => candidate === file }), file);
   }
   assert.throws(() => isolatedLoader({ exists: () => false }), /No serialport-rs native build/);
 });
 
 test('release validation accepts this binary and rejects a mismatched architecture', () => {
   const { checkNative } = require('../scripts/check-native');
-  const file = Object.keys(require.cache).find((file) => file.endsWith('serialport-rs.node'));
+  const file = Object.keys(require.cache).find(file => file.endsWith('serialport-rs.node'));
   assert(file);
   checkNative(file, { platform: process.platform, arch: process.arch });
   assert.throws(
@@ -88,7 +88,7 @@ test('release validation accepts this binary and rejects a mismatched architectu
   );
 });
 
-test('ELF validation checks new CPU IDs, word sizes and s390x byte order', (t) => {
+test('ELF validation checks new CPU IDs, word sizes and s390x byte order', t => {
   const { checkNative } = require('../scripts/check-native');
   const directory = mkdtempSync(join(tmpdir(), 'serialport-elf-'));
   t.after(() => rmSync(directory, { recursive: true }));

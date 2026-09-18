@@ -17,7 +17,7 @@ const {
 const { join, resolve } = require('node:path');
 const { checkNative } = require('./check-native');
 const { withBuildLock, cleanRelease } = require('./build-state');
-const target = require('../lib/targets.json').find((entry) => entry.target === process.argv[2]);
+const target = require('../lib/targets.json').find(entry => entry.target === process.argv[2]);
 assert(target, 'Pass a supported Rust target');
 const library =
   target.platform === 'win32'

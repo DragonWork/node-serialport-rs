@@ -109,8 +109,20 @@
     "runner": "ubuntu-26.04",
     "cross": true
   },
-  { "target": "x86_64-unknown-freebsd", "platform": "freebsd", "arch": "x64", "runner": "ubuntu-26.04", "cross": true },
-  { "target": "x86_64-unknown-illumos", "platform": "sunos", "arch": "x64", "runner": "ubuntu-26.04", "cross": true },
+  {
+    "target": "x86_64-unknown-freebsd",
+    "platform": "freebsd",
+    "arch": "x64",
+    "runner": "ubuntu-26.04",
+    "cross": true
+  },
+  {
+    "target": "x86_64-unknown-illumos",
+    "platform": "sunos",
+    "arch": "x64",
+    "runner": "ubuntu-26.04",
+    "cross": true
+  },
   {
     "target": "aarch64-linux-android",
     "platform": "android",
@@ -126,10 +138,34 @@
     "runner": "ubuntu-26.04",
     "cross": false
   },
-  { "target": "x86_64-linux-android", "platform": "android", "arch": "x64", "runner": "ubuntu-26.04", "cross": false },
-  { "target": "i686-linux-android", "platform": "android", "arch": "ia32", "runner": "ubuntu-26.04", "cross": false },
-  { "target": "x86_64-apple-darwin", "platform": "darwin", "arch": "x64", "runner": "macos-latest", "cross": false },
-  { "target": "aarch64-apple-darwin", "platform": "darwin", "arch": "arm64", "runner": "macos-latest", "cross": false },
+  {
+    "target": "x86_64-linux-android",
+    "platform": "android",
+    "arch": "x64",
+    "runner": "ubuntu-26.04",
+    "cross": false
+  },
+  {
+    "target": "i686-linux-android",
+    "platform": "android",
+    "arch": "ia32",
+    "runner": "ubuntu-26.04",
+    "cross": false
+  },
+  {
+    "target": "x86_64-apple-darwin",
+    "platform": "darwin",
+    "arch": "x64",
+    "runner": "macos-latest",
+    "cross": false
+  },
+  {
+    "target": "aarch64-apple-darwin",
+    "platform": "darwin",
+    "arch": "arm64",
+    "runner": "macos-latest",
+    "cross": false
+  },
   {
     "target": "x86_64-pc-windows-msvc",
     "platform": "win32",
@@ -137,7 +173,13 @@
     "runner": "windows-latest",
     "cross": false
   },
-  { "target": "i686-pc-windows-msvc", "platform": "win32", "arch": "ia32", "runner": "windows-latest", "cross": false },
+  {
+    "target": "i686-pc-windows-msvc",
+    "platform": "win32",
+    "arch": "ia32",
+    "runner": "windows-latest",
+    "cross": false
+  },
   {
     "target": "aarch64-pc-windows-msvc",
     "platform": "win32",

@@ -40,7 +40,7 @@ test('failed open settles asynchronously', async () => {
   assert.equal(port.isOpen, false);
 });
 
-test('binary duplex transfers and Promise continuations', { timeout: 5000 }, async (t) => {
+test('binary duplex transfers and Promise continuations', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
   t.after(() => port.destroy());
@@ -56,7 +56,7 @@ test('binary duplex transfers and Promise continuations', { timeout: 5000 }, asy
   assert.equal(port.isOpen, false);
 });
 
-test('native operation callbacks retain their caller AsyncLocalStorage context', { timeout: 5000 }, async (t) => {
+test('native operation callbacks retain their caller AsyncLocalStorage context', { timeout: 5000 }, async t => {
   const context = new AsyncLocalStorage();
   t.after(() => context.disable());
   const terminal = await pty(t);
@@ -73,7 +73,7 @@ test('native operation callbacks retain their caller AsyncLocalStorage context',
     const result = await context.run(
       store,
       () =>
-        new Promise((resolve) => {
+        new Promise(resolve => {
           port[method](...args, function (error) {
             resolve({ error, store: context.getStore(), receiver: this });
           });
@@ -89,7 +89,7 @@ test('native operation callbacks retain their caller AsyncLocalStorage context',
 test(
   'received buffers remain valid after close and garbage collection',
   { timeout: 5000, skip: typeof global.gc !== 'function' },
-  async (t) => {
+  async t => {
     const terminal = await pty(t);
     const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
     t.after(() => port.destroy());
@@ -97,8 +97,8 @@ test(
     const expected = Buffer.from(Array.from({ length: 32 * 1024 + 32 }, (_, i) => (i * 17) & 255));
     const chunks = [];
     let length = 0;
-    const received = new Promise((resolve) => {
-      port.on('data', (data) => {
+    const received = new Promise(resolve => {
+      port.on('data', data => {
         assert(Buffer.isBuffer(data));
         chunks.push(data);
         length += data.length;
@@ -118,7 +118,7 @@ test(
   },
 );
 
-test('pending native read cancels on close and bindings can reopen', { timeout: 5000 }, async (t) => {
+test('pending native read cancels on close and bindings can reopen', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   for (let i = 0; i < 10; i++) {
     const binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
@@ -129,7 +129,7 @@ test('pending native read cancels on close and bindings can reopen', { timeout: 
   }
 });
 
-test('close during opening cancels without a stray open', { timeout: 5000 }, async (t) => {
+test('close during opening cancels without a stray open', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
   t.after(() => port.destroy());
@@ -142,7 +142,7 @@ test('close during opening cancels without a stray open', { timeout: 5000 }, asy
   assert.equal(port.isOpen, false);
 });
 
-test('disconnect emits one close and releases resources', { timeout: 5000 }, async (t) => {
+test('disconnect emits one close and releases resources', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
   t.after(() => port.destroy());
@@ -157,7 +157,7 @@ test('disconnect emits one close and releases resources', { timeout: 5000 }, asy
 test(
   'a disconnected binding remains closable until its consumer acknowledges the failure',
   { timeout: 5000 },
-  async (t) => {
+  async t => {
     const terminal = await pty(t);
     const binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
     t.after(() => binding.isOpen && binding.close());
@@ -176,7 +176,7 @@ test(
 test(
   'a native callback allocation failure closes once and releases the exclusive port lock',
   { timeout: 5000 },
-  async (t) => {
+  async t => {
     const terminal = await pty(t);
     const allocator = Buffer.allocUnsafe;
     let port;
@@ -205,7 +205,7 @@ test(
   },
 );
 
-test('queued write before open and sequential reopen', { timeout: 5000 }, async (t) => {
+test('queued write before open and sequential reopen', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = new SerialPort({ path: terminal.path, baudRate: 9600, autoOpen: false });
   t.after(() => port.destroy());
@@ -221,7 +221,7 @@ test('queued write before open and sequential reopen', { timeout: 5000 }, async 
   await call(port, 'close');
 });
 
-test('binding read copies only the requested range', { timeout: 5000 }, async (t) => {
+test('binding read copies only the requested range', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => binding.isOpen && binding.close());
@@ -236,7 +236,7 @@ test('binding read copies only the requested range', { timeout: 5000 }, async (t
   await binding.close();
 });
 
-test('pseudo-terminal baud rates can be queried and updated', { timeout: 5000 }, async (t) => {
+test('pseudo-terminal baud rates can be queried and updated', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => binding.isOpen && binding.close());
@@ -248,7 +248,7 @@ test('pseudo-terminal baud rates can be queried and updated', { timeout: 5000 },
 test(
   'a detached read destination rejects instead of reporting bytes it did not receive',
   { timeout: 5000 },
-  async (t) => {
+  async t => {
     const terminal = await pty(t);
     const binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
     t.after(() => binding.isOpen && binding.close());
@@ -272,7 +272,7 @@ test(
     timeout: 5000,
     skip: typeof ArrayBuffer.prototype.resize !== 'function',
   },
-  async (t) => {
+  async t => {
     const terminal = await pty(t);
     const binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
     t.after(() => binding.isOpen && binding.close());

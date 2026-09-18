@@ -20,7 +20,7 @@ async function publishRelease(meta, api) {
   let release = await api.release();
   if (release && !release.draft) {
     assert(
-      release.assets.some((asset) => asset.name === meta.filename && asset.digest === `sha256:${meta.sha256}`),
+      release.assets.some(asset => asset.name === meta.filename && asset.digest === `sha256:${meta.sha256}`),
       'Published release has no matching immutable archive',
     );
   } else {
@@ -82,7 +82,7 @@ function liveApi(meta, archive, repository, token) {
       // The tag endpoint only returns published releases; include authenticated drafts on retries.
       for (let page = 1; ; page++) {
         const releases = await github(`releases?per_page=100&page=${page}`);
-        const draft = releases.find((release) => release.tag_name === meta.tag);
+        const draft = releases.find(release => release.tag_name === meta.tag);
         if (draft) return draft;
         if (releases.length < 100) return null;
       }
@@ -158,7 +158,7 @@ async function main(file) {
 }
 
 if (require.main === module)
-  main(process.argv[2] || join('artifacts', 'release.json')).catch((error) => {
+  main(process.argv[2] || join('artifacts', 'release.json')).catch(error => {
     console.error(error);
     process.exitCode = 1;
   });

@@ -18,7 +18,7 @@ port.write('hello');
 console.log((await reply)[0].toString()); // hello
 console.log(port.port.recording.toString()); // hello
 
-await new Promise((resolve, reject) => port.close((error) => (error ? reject(error) : resolve())));
+await new Promise((resolve, reject) => port.close(error => (error ? reject(error) : resolve())));
 SerialPortMock.binding.reset();
 ```
 

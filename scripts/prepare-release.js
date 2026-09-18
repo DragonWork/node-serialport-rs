@@ -25,13 +25,13 @@ function prependRelease(changelog, notes, tag) {
     .slice(header.length)
     .trim()
     .split(/\n(?=## What's Changed in )/);
-  const previous = sections.filter((section) => section && !section.startsWith(`## What's Changed in ${tag} (`));
-  return header + [notes.trim(), ...previous.map((section) => section.trim())].join('\n\n') + '\n';
+  const previous = sections.filter(section => section && !section.startsWith(`## What's Changed in ${tag} (`));
+  return header + [notes.trim(), ...previous.map(section => section.trim())].join('\n\n') + '\n';
 }
 
 function prepareRelease(root, request = 'auto', cliff = process.env.GIT_CLIFF || 'git-cliff') {
   const flags = ['--config', join(root, 'cliff.toml'), '--unreleased', '--use-branch-tags', '--no-exec'];
-  const run = (args) =>
+  const run = args =>
     execFileSync(cliff, [...flags, ...args], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trim();
   let version = request.replace(/^v/, '');
   if (['auto', 'patch', 'minor', 'major'].includes(request))
@@ -43,8 +43,8 @@ function prepareRelease(root, request = 'auto', cliff = process.env.GIT_CLIFF ||
   assert(/^\* /m.test(notes), 'No changelog entries; chore-only changes do not need a release');
   const files = Object.fromEntries(
     releaseFiles
-      .filter((name) => existsSync(join(root, name)))
-      .map((name) => [name, readFileSync(join(root, name), 'utf8')]),
+      .filter(name => existsSync(join(root, name)))
+      .map(name => [name, readFileSync(join(root, name), 'utf8')]),
   );
   const pkg = JSON.parse(files['package.json']);
   const lock = JSON.parse(files['package-lock.json']);
@@ -85,8 +85,8 @@ async function recordPrepared(root, meta, repository, branch, token) {
   assert(/^[\w.-]+\/[\w.-]+$/.test(repository), 'Invalid repository');
   assert(branch && token, 'A branch and GH_TOKEN are required');
   const additions = releaseFiles
-    .filter((path) => !existsSync(join(root, path)) || readFileSync(join(root, path), 'utf8') !== meta.files[path])
-    .map((path) => ({ path, contents: Buffer.from(meta.files[path]).toString('base64') }));
+    .filter(path => !existsSync(join(root, path)) || readFileSync(join(root, path), 'utf8') !== meta.files[path])
+    .map(path => ({ path, contents: Buffer.from(meta.files[path]).toString('base64') }));
   if (!additions.length) return meta.sourceCommit;
   // GitHub signs this commit and rejects a branch that changed after checkout.
   const response = await jsonResponse('https://api.github.com/graphql', {
@@ -140,7 +140,7 @@ async function main() {
 }
 
 if (require.main === module)
-  main().catch((error) => {
+  main().catch(error => {
     console.error(error);
     process.exitCode = 1;
   });

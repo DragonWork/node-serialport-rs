@@ -22,7 +22,7 @@ function fixture(t) {
   return { root, file };
 }
 
-test('release cleanup removes matching debug caches and retains helpers and other lanes', (t) => {
+test('release cleanup removes matching debug caches and retains helpers and other lanes', t => {
   const { root, file } = fixture(t);
   for (const path of [
     'target/release/deps/cache.rlib',
@@ -51,7 +51,7 @@ test('release cleanup removes matching debug caches and retains helpers and othe
 test(
   'release cleanup validates debug state before deleting release caches',
   { skip: process.platform === 'win32' },
-  (t) => {
+  t => {
     const { root, file } = fixture(t);
     file('target/release/cache.rlib');
     file('target/debug/cache.rlib');
@@ -64,7 +64,7 @@ test(
   },
 );
 
-test('release cleanup preserves caller-managed external caches', (t) => {
+test('release cleanup preserves caller-managed external caches', t => {
   const { root, file } = fixture(t);
   file('external/release/cache.rlib');
   cleanRelease(root, join(root, 'external'));
@@ -74,7 +74,7 @@ test('release cleanup preserves caller-managed external caches', (t) => {
 test(
   'build state handles a symlinked checkout without following cache symlinks',
   { skip: process.platform === 'win32' },
-  (t) => {
+  t => {
     const { root, file } = fixture(t);
     file('checkout/target/release/cache.rlib');
     const alias = join(root, 'alias');
@@ -84,21 +84,17 @@ test(
   },
 );
 
-test(
-  'release cleanup rejects symlinks before removing any build state',
-  { skip: process.platform === 'win32' },
-  (t) => {
-    const { root, file } = fixture(t);
-    file('target/release/cache.rlib');
-    file('outside/keep');
-    symlinkSync(join(root, 'outside'), join(root, 'target/release/link'));
-    assert.throws(() => cleanRelease(root, join(root, 'target')), /symlink/);
-    assert(existsSync(join(root, 'target/release/cache.rlib')));
-    assert(existsSync(join(root, 'outside/keep')));
-  },
-);
+test('release cleanup rejects symlinks before removing any build state', { skip: process.platform === 'win32' }, t => {
+  const { root, file } = fixture(t);
+  file('target/release/cache.rlib');
+  file('outside/keep');
+  symlinkSync(join(root, 'outside'), join(root, 'target/release/link'));
+  assert.throws(() => cleanRelease(root, join(root, 'target')), /symlink/);
+  assert(existsSync(join(root, 'target/release/cache.rlib')));
+  assert(existsSync(join(root, 'outside/keep')));
+});
 
-test('release cleanup preserves collected PGO profiles and resumable state', (t) => {
+test('release cleanup preserves collected PGO profiles and resumable state', t => {
   const { root, file } = fixture(t);
   file('target/release/cache.rlib');
   file('target/release/training.profdata');
@@ -107,7 +103,7 @@ test('release cleanup preserves collected PGO profiles and resumable state', (t)
   assert(existsSync(join(root, 'target/release/training.profdata')));
 });
 
-test('build locks prevent overlap and release after failures without removing caches', (t) => {
+test('build locks prevent overlap and release after failures without removing caches', t => {
   const { root, file } = fixture(t);
   file('target/release/cache.rlib');
   const failure = new Error('compile failed');
@@ -118,7 +114,7 @@ test('build locks prevent overlap and release after failures without removing ca
         assert(existsSync(join(root, 'target/.serialport-build.lock/pid')));
         throw failure;
       }),
-    (error) => error === failure,
+    error => error === failure,
   );
   assert(!existsSync(join(root, 'target/.serialport-build.lock')));
   assert(existsSync(join(root, 'target/release/cache.rlib')));

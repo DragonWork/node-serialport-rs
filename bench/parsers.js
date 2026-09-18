@@ -39,7 +39,7 @@ async function run([name, Parser, options, input, chunkSize]) {
     global.gc?.();
     const parser = new parsers[Parser](options);
     outputBytes = 0;
-    parser.on('data', (chunk) => {
+    parser.on('data', chunk => {
       outputBytes += chunk.length;
     });
     const end = once(parser, 'end');
@@ -70,7 +70,7 @@ async function run([name, Parser, options, input, chunkSize]) {
 (async () => {
   console.log(`${process.version} ${process.platform}/${process.arch}; five trials after warmup`);
   for (const entry of cases) console.log(JSON.stringify(await run(entry)));
-})().catch((error) => {
+})().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });

@@ -61,7 +61,7 @@ const targets = require('./targets.json') as (TargetSelection & { target: string
 function selectTarget({ platform, arch, libc, arm = 7, endian = endianness() }: TargetSelection): string | undefined {
   return targets
     .filter(
-      (target) =>
+      target =>
         target.platform === platform &&
         target.arch === arch &&
         (!target.libc || target.libc === libc) &&

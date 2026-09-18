@@ -45,7 +45,7 @@ function integer(name, min, max) {
 
 function distribution(values) {
   values.sort((a, b) => a - b);
-  const percentile = (p) => values[Math.max(0, Math.ceil(values.length * p) - 1)];
+  const percentile = p => values[Math.max(0, Math.ceil(values.length * p) - 1)];
   return Object.fromEntries(
     Object.entries({
       median: percentile(0.5),
@@ -57,13 +57,13 @@ function distribution(values) {
 }
 
 function call(port, method) {
-  return new Promise((resolve, reject) => port[method]((error) => (error ? reject(error) : resolve())));
+  return new Promise((resolve, reject) => port[method](error => (error ? reject(error) : resolve())));
 }
 
 async function main() {
   const child = spawn(join(__dirname, '../target/release/examples/echo'), { stdio: ['pipe', 'pipe', 'pipe'] });
   let helperError = '';
-  child.stderr.on('data', (data) => {
+  child.stderr.on('data', data => {
     helperError += data;
   });
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
@@ -79,7 +79,7 @@ async function main() {
     });
     let pending;
     let failure;
-    port.on('error', (error) => {
+    port.on('error', error => {
       failure = error;
       pending?.reject(error);
     });
@@ -88,7 +88,7 @@ async function main() {
     const parts = Array.from({ length: segments }, (_, i) =>
       payload.subarray((i * bytes) / segments, ((i + 1) * bytes) / segments),
     );
-    port.on('data', (data) => {
+    port.on('data', data => {
       const receivedAt = process.hrtime.bigint();
       assert(pending, 'Unexpected serial data');
       const end = pending.offset + data.length;
@@ -123,7 +123,7 @@ async function main() {
       });
       let onWrite;
       const written = new Promise((resolve, reject) => {
-        onWrite = (error) => (error ? reject(error) : resolve(process.hrtime.bigint()));
+        onWrite = error => (error ? reject(error) : resolve(process.hrtime.bigint()));
       });
       const sentAt = process.hrtime.bigint();
       if (segments === 1) port.write(payload, onWrite);
@@ -157,12 +157,12 @@ async function main() {
     const memory = process.memoryUsage();
     const native = process.report
       .getReport()
-      .sharedObjects.filter((path) => path.endsWith('.node'))
-      .map((path) => ({
+      .sharedObjects.filter(path => path.endsWith('.node'))
+      .map(path => ({
         path,
         sha256: createHash('sha256').update(readFileSync(path)).digest('hex'),
       }));
-    const packageVersion = (path) => {
+    const packageVersion = path => {
       const { name, version } = JSON.parse(readFileSync(join(path, 'package.json'), 'utf8'));
       return { name, version };
     };
@@ -201,7 +201,7 @@ async function main() {
   }
 }
 
-main().catch((error) => {
+main().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });

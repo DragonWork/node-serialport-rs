@@ -104,16 +104,16 @@ class SerialPortStream extends Duplex {
     }
     this._opening
       .then(
-        async (port) => {
+        async port => {
           this.opening = false;
           this.port = port;
-          port.onClose = (error) => {
+          port.onClose = error => {
             if (this.port !== port) return;
             const reason = error && new DisconnectedError(error.message);
             if (port.isOpen) this.close(undefined, reason);
             else this._finishClose(reason);
           };
-          port.onData = (data) => {
+          port.onData = data => {
             if (this.port === port && this.isOpen) {
               this._readRequested = false;
               this.push(data);
@@ -137,7 +137,7 @@ class SerialPortStream extends Duplex {
           if (callback) callback.call(this, null);
           this._resumeIO();
         },
-        (error) => {
+        error => {
           this.opening = false;
           this._failWaitingWrite(error);
           if (this.closing) {
@@ -146,7 +146,7 @@ class SerialPortStream extends Duplex {
           } else this._report(error, callback);
         },
       )
-      .catch((error) => this._report(error));
+      .catch(error => this._report(error));
   }
 
   _failWaitingWrite(error: Error) {
@@ -182,7 +182,7 @@ class SerialPortStream extends Duplex {
         // Third-party bindings do not have an onClose hook.
         if (this.port === port) this._finishClose(disconnectError);
       },
-      (error) => this._closeFailed(port, error),
+      error => this._closeFailed(port, error),
     );
   }
 
@@ -222,7 +222,7 @@ class SerialPortStream extends Duplex {
     const port = this.port!;
     port.write(data).then(
       () => callback(null),
-      (error) => this._writeError(port, error, callback),
+      error => this._writeError(port, error, callback),
     );
   }
 
@@ -240,7 +240,7 @@ class SerialPortStream extends Duplex {
     const port = this.port!;
     port.writev!(chunks.map(({ chunk }) => chunk)).then(
       () => callback(null),
-      (error) => this._writeError(port, error, callback),
+      error => this._writeError(port, error, callback),
     );
   }
 
@@ -264,14 +264,14 @@ class SerialPortStream extends Duplex {
           return port.read(buffer, 0, length).then(({ bytesRead }) => buffer.subarray(0, bytesRead));
         })();
     request.then(
-      (data) => {
+      data => {
         if (this._readPort === port) this._readPort = undefined;
         if (this.port === port && this.isOpen) {
           this._readRequested = false;
           this.push(data.length ? data : null);
         } else if (this.isOpen) this._read(length);
       },
-      (error) => {
+      error => {
         if (this._readPort === port) this._readPort = undefined;
         if (!error.canceled && this.port === port && this.isOpen)
           this.close(undefined, new DisconnectedError(error.message));
@@ -289,11 +289,11 @@ class SerialPortStream extends Duplex {
     if (!this.isOpen) return this._asyncError('Port is not open', callback);
     const port = this.port!;
     (port[name] as (...args: unknown[]) => Promise<PortStatus | void>)(...args).then(
-      (result) => {
+      result => {
         if (this.port === port) completed();
         if (callback) callback.call(this, null, result as PortStatus | undefined);
       },
-      (error) => this._report(error, callback),
+      error => this._report(error, callback),
     );
   }
 
@@ -327,9 +327,9 @@ class SerialPortStream extends Duplex {
     this._failWaitingWrite(error || new Error('Port is destroyed'));
     if (this.closing)
       this._closeCallbacks.push(
-        AsyncResource.bind((closeError) => callback(error || closeError), 'serialport-rs.destroy', this),
+        AsyncResource.bind(closeError => callback(error || closeError), 'serialport-rs.destroy', this),
       );
-    else if (this.isOpen || this.opening) this.close((closeError) => callback(error || closeError));
+    else if (this.isOpen || this.opening) this.close(closeError => callback(error || closeError));
     else callback(error);
   }
 }

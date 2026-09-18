@@ -13,14 +13,14 @@ import { SerialPort, ReadlineParser } from 'serialport-rs';
 const port = new SerialPort({ path: '/dev/ttyUSB0', baudRate: 115200 });
 const lines = port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
 
-port.on('error', (error) => console.error('Serial error:', error.message));
-port.on('close', (error) => {
+port.on('error', error => console.error('Serial error:', error.message));
+port.on('close', error => {
   if (error?.disconnected) console.error('Device disconnected');
 });
-lines.on('data', (line) => console.log(line));
+lines.on('data', line => console.log(line));
 
 port.on('open', () => {
-  port.write('status\r\n', (error) => {
+  port.write('status\r\n', error => {
     if (error) console.error('Write failed:', error.message);
   });
 });
@@ -106,7 +106,7 @@ All parsers are JavaScript transforms and can be loaded without the native binar
 
 ```js
 const lines = port.pipe(new ReadlineParser({ maxFrameLength: 4096 }));
-lines.on('error', (error) => {
+lines.on('error', error => {
   if (error.code === 'ERR_SERIALPORT_FRAME_TOO_LARGE') console.error('Device sent an oversized line');
 });
 ```

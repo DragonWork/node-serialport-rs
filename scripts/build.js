@@ -18,7 +18,7 @@ const { join, resolve } = require('node:path');
 const { withBuildLock, cleanRelease } = require('./build-state');
 
 const root = join(__dirname, '..');
-if (process.argv.slice(2).some((option) => option !== '--debug')) throw new Error('Unknown build option');
+if (process.argv.slice(2).some(option => option !== '--debug')) throw new Error('Unknown build option');
 const debug = process.argv.includes('--debug');
 const buildProfile = debug ? 'debug' : 'release';
 const args = debug ? ['build', '--locked'] : ['build', '--release', '--locked'];

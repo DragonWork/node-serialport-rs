@@ -13,7 +13,7 @@ const reference = require(resolve(process.argv[2]));
 async function output(Parser, options, input, chunkSize) {
   const parser = new Parser(options);
   const result = [];
-  parser.on('data', (chunk) => result.push(chunk));
+  parser.on('data', chunk => result.push(chunk));
   const end = once(parser, 'end');
   for (let i = 0; i < input.length; i += chunkSize) parser.write(input.subarray(i, i + chunkSize));
   parser.end();
@@ -83,7 +83,7 @@ async function compare(name, options, input) {
     cases++;
   }
   console.log(`${cases * 6} parser comparisons passed`);
-})().catch((error) => {
+})().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });

@@ -22,7 +22,7 @@ const {
 
 async function parse(parser, chunks) {
   const output = [];
-  parser.on('data', (chunk) => output.push(chunk));
+  parser.on('data', chunk => output.push(chunk));
   const ended = once(parser, 'end');
   for (const chunk of chunks) parser.write(chunk);
   parser.end();
@@ -33,7 +33,7 @@ async function parse(parser, chunks) {
 test('delimiter spanning chunks preserves the incomplete tail', async () => {
   const output = await parse(new DelimiterParser({ delimiter: '\r\n' }), ['ab\r', '\ncd\r\ne']);
   assert.deepEqual(
-    output.map((chunk) => chunk.toString()),
+    output.map(chunk => chunk.toString()),
     ['ab', 'cd', 'e'],
   );
 });
@@ -45,7 +45,7 @@ test('readline returns decoded strings', async () => {
 test('byte-length handles chunk boundaries and trailing bytes', async () => {
   const output = await parse(new ByteLengthParser({ length: 3 }), [Buffer.from([0, 1]), Buffer.from([2, 3, 4, 5, 6])]);
   assert.deepEqual(
-    output.map((chunk) => [...chunk]),
+    output.map(chunk => [...chunk]),
     [[0, 1, 2], [3, 4, 5], [6]],
   );
 });
@@ -111,7 +111,7 @@ test('delimiter frame limits exclude split delimiters and reset after every fram
         fragments(input, size),
       );
       assert.deepEqual(
-        output.map((buffer) => buffer.toString()),
+        output.map(buffer => buffer.toString()),
         includeDelimiter ? ['abcabab', 'defabab', 'ghi'] : ['abc', 'def', 'ghi'],
       );
     }
@@ -265,7 +265,7 @@ test('space packets expose the header and secondary fields without recursive par
   }
   const parser = new SpacePacketParser();
   let count = 0;
-  parser.on('data', (packet) => {
+  parser.on('data', packet => {
     if (!Array.isArray(packet)) count++;
   });
   parser.end(Buffer.concat(Array.from({ length: 10000 }, () => frame)));
@@ -279,20 +279,20 @@ test('timeout parser emits bounded frames, flushes the tail, and has no timer af
     Buffer.from('cdefg'),
   ]);
   assert.deepEqual(
-    output.map((buffer) => buffer.toString()),
+    output.map(buffer => buffer.toString()),
     ['abc', 'def', 'g'],
   );
   const parser = new InterByteTimeoutParser({ interval: 10 });
   const received = [];
-  parser.on('data', (chunk) => received.push(chunk));
+  parser.on('data', chunk => received.push(chunk));
   const data = once(parser, 'data');
   parser.write('first');
   await data;
   parser.write('discard');
   parser.destroy();
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await new Promise(resolve => setTimeout(resolve, 30));
   assert.deepEqual(
-    received.map((buffer) => buffer.toString()),
+    received.map(buffer => buffer.toString()),
     ['first'],
   );
 });

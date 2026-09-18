@@ -104,7 +104,7 @@ class BindingPort {
     this._closing = false;
     this._finished = false;
     this._failure = null;
-    this._closed = new Promise((resolve) => {
+    this._closed = new Promise(resolve => {
       this._resolveClosed = resolve;
     });
     this.opened = new Promise<BindingPort>((resolve, reject) => {
@@ -379,7 +379,7 @@ class BindingPort {
 
 const RustBinding = {
   async list() {
-    return (await loadNative().listPorts()).map((port) => ({
+    return (await loadNative().listPorts()).map(port => ({
       path: port.path,
       manufacturer: port.manufacturer ?? undefined,
       serialNumber: port.serialNumber ?? undefined,

@@ -37,18 +37,18 @@ const binding = require(resolve(values.binding || join(__dirname, '..'))).autoDe
 const { SerialPortStream } = require(resolve(values.stream || join(__dirname, '..')));
 const call = (port, method, ...args) =>
   new Promise((resolve, reject) => {
-    port[method](...args, (error) => (error ? reject(error) : resolve()));
+    port[method](...args, error => (error ? reject(error) : resolve()));
   });
-const hash = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
-const mib = (value) => +(value / 1048576).toFixed(2);
+const hash = file => createHash('sha256').update(readFileSync(file)).digest('hex');
+const mib = value => +(value / 1048576).toFixed(2);
 function memory() {
   const { rss, heapUsed, external, arrayBuffers } = process.memoryUsage();
   return { rss, heapUsed, external, arrayBuffers };
 }
-const memoryMiB = (value) => Object.fromEntries(Object.entries(value).map(([key, bytes]) => [key, mib(bytes)]));
+const memoryMiB = value => Object.fromEntries(Object.entries(value).map(([key, bytes]) => [key, mib(bytes)]));
 function workers() {
   if (process.platform !== 'linux') return null;
-  return readdirSync('/proc/self/task').filter((id) => {
+  return readdirSync('/proc/self/task').filter(id => {
     try {
       return readFileSync(`/proc/self/task/${id}/comm`, 'utf8').trim() === 'serialport-rt';
     } catch (error) {
@@ -67,13 +67,13 @@ class Echo {
     for (let i = 0; i < bytes; i++) this.payload[i] = (i * 13 + index * 29) & 255;
     this.expected = Buffer.from(this.payload);
     this.child = spawn(join(__dirname, '../target/release/examples/echo'), { stdio: ['pipe', 'pipe', 'pipe'] });
-    this.exited = new Promise((resolve) => this.child.once('close', resolve));
-    this.child.on('error', (error) => this.fail(error));
+    this.exited = new Promise(resolve => this.child.once('close', resolve));
+    this.child.on('error', error => this.fail(error));
     this.child.on('exit', () => {
       if (!this.closing) this.fail(new Error('Echo helper exited'));
     });
     this.stderr = '';
-    this.child.stderr.on('data', (data) => {
+    this.child.stderr.on('data', data => {
       this.stderr = (this.stderr + data).slice(-8192);
     });
     this.lines = createInterface({ input: this.child.stdout })[Symbol.asyncIterator]();
@@ -93,11 +93,11 @@ class Echo {
       autoOpen: false,
       binding,
     });
-    this.port.on('error', (error) => this.fail(error));
+    this.port.on('error', error => this.fail(error));
     this.port.on('close', () => {
       if (!this.closing) this.fail(new Error('Serial port closed unexpectedly'));
     });
-    this.port.on('data', (data) => {
+    this.port.on('data', data => {
       try {
         assert(this.received + data.length <= this.target, 'Unexpected or duplicate echo bytes');
         for (let offset = 0; offset < data.length;) {
@@ -165,8 +165,8 @@ async function main() {
   }, 120000);
   let sampler;
   try {
-    await Promise.all(sessions.map((session) => session.open()));
-    await Promise.all(sessions.map((session) => session.transfer(warmup)));
+    await Promise.all(sessions.map(session => session.open()));
+    await Promise.all(sessions.map(session => session.transfer(warmup)));
     global.gc?.();
     const before = memory();
     const peak = { ...before };
@@ -177,14 +177,14 @@ async function main() {
     const activeWorkers = workers();
     const cpuStart = process.cpuUsage();
     const started = process.hrtime.bigint();
-    await Promise.all(sessions.map((session) => session.transfer(measured)));
+    await Promise.all(sessions.map(session => session.transfer(measured)));
     const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
     const cpu = process.cpuUsage(cpuStart);
     sample();
     clearInterval(sampler);
     const afterTransfer = memory();
-    await Promise.all(sessions.map((session) => call(session.port, 'drain')));
-    await Promise.all(sessions.map((session) => session.close()));
+    await Promise.all(sessions.map(session => call(session.port, 'drain')));
+    await Promise.all(sessions.map(session => session.close()));
     await delay(100);
     global.gc?.();
     const afterClose = memory();
@@ -213,7 +213,7 @@ async function main() {
         workersAfterClose: workers(),
         forcedGc: typeof global.gc === 'function',
         nativeSha256: Object.keys(require.cache)
-          .filter((file) => file.endsWith('.node'))
+          .filter(file => file.endsWith('.node'))
           .map(hash),
         benchmarkSha256: hash(__filename),
       }),
@@ -221,11 +221,11 @@ async function main() {
   } finally {
     clearTimeout(timeout);
     clearInterval(sampler);
-    await Promise.all(sessions.filter((session) => !session.closing).map((session) => session.close()));
+    await Promise.all(sessions.filter(session => !session.closing).map(session => session.close()));
   }
 }
 
-main().catch((error) => {
+main().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });

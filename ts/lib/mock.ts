@@ -17,7 +17,7 @@ import type {
 
 const devices = new Map<string, VirtualDevice>();
 let sequence = 0;
-const nextTick = () => new Promise<void>((resolve) => process.nextTick(resolve));
+const nextTick = () => new Promise<void>(resolve => process.nextTick(resolve));
 const canceled = () => Object.assign(new Error('Port is closed'), { canceled: true });
 
 class VirtualDevice {
@@ -58,7 +58,7 @@ class VirtualDevice {
   }
 
   open(options: Required<BindingOpenOptions>) {
-    if ([...this.#sessions].some((port) => port.openOptions.lock) || (options.lock && this.#sessions.size)) {
+    if ([...this.#sessions].some(port => port.openOptions.lock) || (options.lock && this.#sessions.size)) {
       throw new Error('Port is locked');
     }
     const port = new MockPortBinding(this, options);
@@ -276,7 +276,7 @@ const MockBinding = {
     devices.set(path, new VirtualDevice(path, options));
   },
   async list() {
-    return [...devices.values()].map((device) => ({ ...device.info }));
+    return [...devices.values()].map(device => ({ ...device.info }));
   },
   async open(options: BindingOpenOptions) {
     if (Array.isArray(options)) throw new TypeError('options must be an object');

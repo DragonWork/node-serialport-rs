@@ -69,7 +69,7 @@ test('npm failure leaves the release unpublished and a retry reuses its draft', 
       throw failure;
     },
   });
-  await assert.rejects(publishRelease(meta, first.api), (error) => error === failure);
+  await assert.rejects(publishRelease(meta, first.api), error => error === failure);
   assert.deepEqual(first.calls, ['draft', 'upload']);
   const retry = provider({
     async release() {
@@ -123,18 +123,18 @@ test('completed immutable releases are verified without rewriting assets or tags
   assert.deepEqual(calls, []);
 });
 
-test('authentication and server errors cannot be mistaken for absent releases', async (t) => {
+test('authentication and server errors cannot be mistaken for absent releases', async t => {
   t.mock.method(global, 'fetch', async () => ({ ok: false, status: 403 }));
   await assert.rejects(jsonResponse('https://example.invalid/release', {}, true), /HTTP 403/);
 });
 
-test('draft lookup and annotated tag resolution support publication retries', async (t) => {
+test('draft lookup and annotated tag resolution support publication retries', async t => {
   const responses = new Map([
     ['git/ref/tags/v1.2.3', { object: { type: 'tag', sha: 'tag-object' } }],
     ['git/tags/tag-object', { object: { type: 'commit', sha: meta.commit } }],
     ['releases?per_page=100&page=1', [{ id: 1, tag_name: meta.tag, draft: true }]],
   ]);
-  t.mock.method(global, 'fetch', async (url) => {
+  t.mock.method(global, 'fetch', async url => {
     const path = url.replace('https://api.github.com/repos/DragonWork/node-serialport-rs/', '');
     if (path === 'releases/tags/v1.2.3') return { ok: false, status: 404 };
     assert(responses.has(path), `Unexpected request: ${path}`);
@@ -156,7 +156,7 @@ test('pack metadata accepts npm array and keyed formats while rejecting developm
       'LICENSE',
       'NOTICE',
       'THIRD_PARTY_LICENSES.md',
-    ].map((path) => ({ path })),
+    ].map(path => ({ path })),
   };
   assert.deepEqual(packInfo(JSON.stringify([info])), info);
   assert.deepEqual(packInfo(JSON.stringify({ 'serialport-rs': info })), info);
@@ -166,7 +166,7 @@ test('pack metadata accepts npm array and keyed formats while rejecting developm
   }
 });
 
-test('draft creation and retries use archived notes without publishing early', async (t) => {
+test('draft creation and retries use archived notes without publishing early', async t => {
   const requests = [];
   t.mock.method(global, 'fetch', async (url, options) => {
     requests.push({ url, method: options.method, body: JSON.parse(options.body) });

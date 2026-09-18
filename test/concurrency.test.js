@@ -19,7 +19,7 @@ const { pty, call } = require('./helpers');
 test(
   'I/O workers start lazily, remain bounded and retire after close',
   { timeout: 10000, skip: process.platform !== 'linux' },
-  async (t) => {
+  async t => {
     const terminals = await Promise.all(Array.from({ length: 8 }, () => pty(t)));
     const { stdout } = await promisify(execFile)(
       process.execPath,
@@ -52,7 +52,7 @@ test(
     })().catch(error => { console.error(error); process.exitCode = 1; });
   `,
         require.resolve('..'),
-        JSON.stringify(terminals.map((terminal) => terminal.path)),
+        JSON.stringify(terminals.map(terminal => terminal.path)),
       ],
       { timeout: 8000 },
     );
@@ -61,14 +61,14 @@ test(
   },
 );
 
-test('eight concurrent ports make independent progress while one writer stalls', { timeout: 10000 }, async (t) => {
+test('eight concurrent ports make independent progress while one writer stalls', { timeout: 10000 }, async t => {
   const terminals = await Promise.all(Array.from({ length: 8 }, () => pty(t)));
   const ports = terminals.map(({ path }) => new SerialPort({ path, baudRate: 115200, autoOpen: false }));
   for (const port of ports) {
     port.on('error', () => {});
     t.after(() => port.destroy());
   }
-  await Promise.all(ports.map((port) => call(port, 'open')));
+  await Promise.all(ports.map(port => call(port, 'open')));
   const stalled = assert.rejects(call(ports[0], 'write', Buffer.alloc(1024 * 1024)), { canceled: true });
   await Promise.all(
     ports.slice(1).map(async (port, index) => {
@@ -80,18 +80,18 @@ test('eight concurrent ports make independent progress while one writer stalls',
       assert.equal(await terminals[index + 1].command(`read ${expected.length}`), expected.toString('hex'));
     }),
   );
-  await Promise.all(ports.map((port) => call(port, 'close')));
+  await Promise.all(ports.map(port => call(port, 'close')));
   await stalled;
 });
 
-test('corked writes preserve order across batched native transfers', { timeout: 5000 }, async (t) => {
+test('corked writes preserve order across batched native transfers', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
   t.after(() => port.destroy());
   await call(port, 'open');
   const expected = Buffer.from(Array.from({ length: 2048 }, (_, i) => i & 0xff));
   port.cork();
-  const writes = Array.from(expected, (byte) => call(port, 'write', Buffer.from([byte])));
+  const writes = Array.from(expected, byte => call(port, 'write', Buffer.from([byte])));
   port.uncork();
   // A macOS PTY may not drain until its peer consumes the output.
   const [received] = await Promise.all([terminal.command(`read ${expected.length}`), ...writes, call(port, 'drain')]);
@@ -99,7 +99,7 @@ test('corked writes preserve order across batched native transfers', { timeout: 
   await call(port, 'close');
 });
 
-test('native writes snapshot borrowed memory before returning to JavaScript', { timeout: 5000 }, async (t) => {
+test('native writes snapshot borrowed memory before returning to JavaScript', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => {
@@ -114,7 +114,7 @@ test('native writes snapshot borrowed memory before returning to JavaScript', { 
   await port.close();
 });
 
-test('vectored writes snapshot repeated and overlapping buffers', { timeout: 5000 }, async (t) => {
+test('vectored writes snapshot repeated and overlapping buffers', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
@@ -127,7 +127,7 @@ test('vectored writes snapshot repeated and overlapping buffers', { timeout: 500
   await written;
 });
 
-test('vectored writes preserve immutable inputs across the native byte limit', { timeout: 5000 }, async (t) => {
+test('vectored writes preserve immutable inputs across the native byte limit', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
@@ -139,7 +139,7 @@ test('vectored writes preserve immutable inputs across the native byte limit', {
   assert.equal(parts[2].length, 32 * 1024);
 });
 
-test('vectored writes retain slicing semantics for a shadowed Buffer length', { timeout: 5000 }, async (t) => {
+test('vectored writes retain slicing semantics for a shadowed Buffer length', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
@@ -149,7 +149,7 @@ test('vectored writes retain slicing semantics for a shadowed Buffer length', { 
   assert.equal(await terminal.command('read 7'), Buffer.from('prefix!').toString('hex'));
 });
 
-test('small writes complete asynchronously and stay behind queued controls', { timeout: 10000 }, async (t) => {
+test('small writes complete asynchronously and stay behind queued controls', { timeout: 10000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => {
@@ -172,7 +172,7 @@ test('small writes complete asynchronously and stay behind queued controls', { t
   await port.close();
 });
 
-test('shared memory is snapshotted before native writes borrow it', { timeout: 5000 }, async (t) => {
+test('shared memory is snapshotted before native writes borrow it', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => {
@@ -180,7 +180,7 @@ test('shared memory is snapshotted before native writes borrow it', { timeout: 5
   });
   const nativeWrite = port._native.write;
   const nativeWritev = port._native.writev;
-  const check = (buffer) =>
+  const check = buffer =>
     assert.equal(isSharedArrayBuffer(buffer.buffer), false, 'Shared memory must not be borrowed by Rust');
   port._native.write = function (id, buffer, inline) {
     check(buffer);
@@ -207,7 +207,7 @@ test('shared memory is snapshotted before native writes borrow it', { timeout: 5
   await port.close();
 });
 
-test('stream read-ahead is bounded while paused and resumes without losing bytes', { timeout: 10000 }, async (t) => {
+test('stream read-ahead is bounded while paused and resumes without losing bytes', { timeout: 10000 }, async t => {
   const terminal = await pty(t);
   const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false, highWaterMark: 4096 });
   t.after(() => port.destroy());
@@ -222,10 +222,10 @@ test('stream read-ahead is bounded while paused and resumes without losing bytes
   await readable;
   await delay(100);
   assert(port.readableLength > 0 && port.readableLength <= 8192, `Buffered ${port.readableLength} bytes`);
-  const received = new Promise((resolve) => {
+  const received = new Promise(resolve => {
     const chunks = [];
     let length = 0;
-    port.on('data', (data) => {
+    port.on('data', data => {
       chunks.push(data);
       length += data.length;
       if (length >= expected.length) resolve(Buffer.concat(chunks));
@@ -237,7 +237,7 @@ test('stream read-ahead is bounded while paused and resumes without losing bytes
   await call(port, 'close');
 });
 
-test('terminated Node worker releases its pending read and port lock', { timeout: 10000 }, async (t) => {
+test('terminated Node worker releases its pending read and port lock', { timeout: 10000 }, async t => {
   const terminal = await pty(t);
   const worker = new Worker(
     `
@@ -266,7 +266,7 @@ test('terminated Node worker releases its pending read and port lock', { timeout
   await binding.close();
 });
 
-test('after receiving data, a waiting read does not busy-spin', { timeout: 5000 }, async (t) => {
+test('after receiving data, a waiting read does not busy-spin', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
   t.after(() => port.destroy());
@@ -284,7 +284,7 @@ test('after receiving data, a waiting read does not busy-spin', { timeout: 5000 
 });
 
 for (const mode of ['binding', 'stream']) {
-  test(`${mode} callbacks advance promises on an otherwise idle event loop`, { timeout: 10000 }, async (t) => {
+  test(`${mode} callbacks advance promises on an otherwise idle event loop`, { timeout: 10000 }, async t => {
     const terminal = await pty(t);
     // Only the parent owns a watchdog and idle delays. A timer in the child could
     // hide a missing Node callback scope by flushing otherwise stranded promises.

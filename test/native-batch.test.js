@@ -17,7 +17,7 @@ function waitForBytes(port, length) {
     resolve = res;
     reject = rej;
   });
-  port.onData = (data) => {
+  port.onData = data => {
     try {
       assert(Buffer.isBuffer(data));
       chunks.push(data);
@@ -31,7 +31,7 @@ function waitForBytes(port, length) {
   return done;
 }
 
-test('automatic native receive batching preserves streaming bytes and chunk credits', { timeout: 10000 }, async (t) => {
+test('automatic native receive batching preserves streaming bytes and chunk credits', { timeout: 10000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
@@ -43,7 +43,7 @@ test('automatic native receive batching preserves streaming bytes and chunk cred
   await port.close();
 });
 
-test('explicit binding reads keep their requested byte ranges', { timeout: 10000 }, async (t) => {
+test('explicit binding reads keep their requested byte ranges', { timeout: 10000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
@@ -53,21 +53,21 @@ test('explicit binding reads keep their requested byte ranges', { timeout: 10000
   assert.equal((await port.readChunk(6)).toString(), 'second');
 });
 
-test('native batching delivers the first ready chunk before its followers', { timeout: 10000 }, async (t) => {
+test('native batching delivers the first ready chunk before its followers', { timeout: 10000 }, async t => {
   const { NativePort } = require('../lib/native').loadNative();
   const { validateOptions } = require('../lib/binding');
   const terminal = await pty(t);
   let opened, closed, primed, received;
-  const open = new Promise((resolve) => {
+  const open = new Promise(resolve => {
     opened = resolve;
   });
-  const close = new Promise((resolve) => {
+  const close = new Promise(resolve => {
     closed = resolve;
   });
-  const prime = new Promise((resolve) => {
+  const prime = new Promise(resolve => {
     primed = resolve;
   });
-  const got = new Promise((resolve) => {
+  const got = new Promise(resolve => {
     received = resolve;
   });
   const callbacks = [];
@@ -96,7 +96,7 @@ test('native batching delivers the first ready chunk before its followers', { ti
         if (bytes === 513) received();
       }
     },
-    (length) => {
+    length => {
       allocations++;
       return Buffer.allocUnsafe(length);
     },
@@ -120,14 +120,14 @@ test('native batching delivers the first ready chunk before its followers', { ti
   assert.equal(bytesAtContinuation, 1 + callbacks[0].length, 'The first reply can resume before its followers');
   const batches = callbacks.filter(Array.isArray);
   assert(batches.length > 0);
-  assert(batches.every((batch) => batch.length >= 2 && batch.length <= 16));
+  assert(batches.every(batch => batch.length >= 2 && batch.length <= 16));
   assert.deepEqual(Buffer.concat(callbacks.flat()), payload);
 });
 
 test(
   'a later batched buffer allocation error preserves prior data and releases the port',
   { timeout: 10000 },
-  async (t) => {
+  async t => {
     const { NativePort } = require('../lib/native').loadNative();
     const { validateOptions } = require('../lib/binding');
     const terminal = await pty(t);
@@ -136,16 +136,16 @@ test(
     let firstPayload;
     let failed;
     let closed;
-    const openedPromise = new Promise((resolve) => {
+    const openedPromise = new Promise(resolve => {
       opened = resolve;
     });
-    const primedPromise = new Promise((resolve) => {
+    const primedPromise = new Promise(resolve => {
       primed = resolve;
     });
-    const failedPromise = new Promise((resolve) => {
+    const failedPromise = new Promise(resolve => {
       failed = resolve;
     });
-    const closedPromise = new Promise((resolve) => {
+    const closedPromise = new Promise(resolve => {
       closed = resolve;
     });
     let native;
@@ -153,7 +153,7 @@ test(
     let errors = 0;
     let closes = 0;
     let allocations = 0;
-    const allocator = (length) => {
+    const allocator = length => {
       allocations++;
       return allocations === 4 ? Buffer.alloc(Math.max(0, length - 1)) : Buffer.alloc(length);
     };
@@ -218,12 +218,12 @@ test('batch delivery preserves remaining chunks and credits after a throwing lis
   const port = Object.create(BindingPort.prototype);
   Object.assign(port, { isOpen: true, _readBytes: 6, _readSlots: 3 });
   const delivered = [];
-  port.onData = (data) => {
+  port.onData = data => {
     delivered.push(data.toString());
     if (delivered.length === 1) throw new Error('listener failed');
   };
   assert.throws(() => port._deliverBatch([Buffer.from('ab'), Buffer.from('cd'), Buffer.from('ef')]), /listener failed/);
-  await new Promise((resolve) => queueMicrotask(resolve));
+  await new Promise(resolve => queueMicrotask(resolve));
   assert.deepEqual(delivered, ['ab', 'cd', 'ef']);
   assert.equal(port._readBytes, 0);
   assert.equal(port._readSlots, 0);

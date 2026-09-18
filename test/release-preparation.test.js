@@ -26,7 +26,7 @@ function offline(t) {
 function fixture(t, messages = []) {
   const root = mkdtempSync(join(tmpdir(), 'serialport-release-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const git = (args) =>
+  const git = args =>
     execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git(['init', '--quiet']);
   git(['config', 'user.name', 'DragonWork']);
@@ -68,14 +68,14 @@ test('invalid overrides are rejected before invoking git-cliff', () => {
   }
 });
 
-test('Conventional Commits select patch, minor and major releases and exclude chores', { skip: !cliff }, async (t) => {
+test('Conventional Commits select patch, minor and major releases and exclude chores', { skip: !cliff }, async t => {
   offline(t);
   for (const [message, version] of [
     ['fix(io): retry interrupted reads', '1.12.2'],
     ['feat(api): add an option', '1.13.0'],
     ['feat(api)!: change a contract', '2.0.0'],
   ]) {
-    await t.test(version, (t) => {
+    await t.test(version, t => {
       const { root } = fixture(t, [message, 'chore(release): update internal metadata']);
       const meta = prepareRelease(root, 'auto', cliff);
       assert.equal(meta.version, version);
@@ -94,7 +94,7 @@ test('Conventional Commits select patch, minor and major releases and exclude ch
   }
 });
 
-test('manual bump modes and exact prerelease versions override automatic selection', { skip: !cliff }, (t) => {
+test('manual bump modes and exact prerelease versions override automatic selection', { skip: !cliff }, t => {
   offline(t);
   const { root } = fixture(t, ['feat: add an option']);
   for (const [request, expected] of [
@@ -108,7 +108,7 @@ test('manual bump modes and exact prerelease versions override automatic selecti
   assert.throws(() => prepareRelease(root, '1.12.1', cliff), /already exists/);
 });
 
-test('git-cliff renders the requested author, PR and compare-link format', { skip: !cliff }, (t) => {
+test('git-cliff renders the requested author, PR and compare-link format', { skip: !cliff }, t => {
   const { root } = fixture(t, ['build(deps): update dependencies', 'fix(socketmap): relax limits\n\nDetails']);
   const timestamp = Date.UTC(2026, 7, 14) / 1000;
   const context = JSON.parse(
@@ -136,7 +136,7 @@ test('git-cliff renders the requested author, PR and compare-link format', { ski
   );
 });
 
-test('preparation records only release files and rejects concurrent branch updates', { skip: !cliff }, async (t) => {
+test('preparation records only release files and rejects concurrent branch updates', { skip: !cliff }, async t => {
   offline(t);
   const { root } = fixture(t, ['fix: keep progress']);
   const meta = prepareRelease(root, 'auto', cliff);
@@ -154,7 +154,7 @@ test('preparation records only release files and rejects concurrent branch updat
   assert.equal(await recordPrepared(root, meta, 'DragonWork/node-serialport-rs', 'main', 'test-token'), 'c'.repeat(40));
   assert.equal(input.expectedHeadOid, meta.sourceCommit);
   assert.equal(input.message.headline, 'chore(release): prepare v1.12.2');
-  assert.deepEqual(input.fileChanges.additions.map((file) => file.path).sort(), Object.keys(meta.files).sort());
+  assert.deepEqual(input.fileChanges.additions.map(file => file.path).sort(), Object.keys(meta.files).sort());
   for (const file of input.fileChanges.additions)
     assert.equal(Buffer.from(file.contents, 'base64').toString(), meta.files[file.path]);
   t.mock.method(global, 'fetch', async () => ({

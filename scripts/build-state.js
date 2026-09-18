@@ -60,9 +60,7 @@ function cleanRelease(root, targetDirectory, target = '') {
     inspect(profile);
   }
   const helpers = new Set(
-    profiles.flatMap((profile) =>
-      ['echo', 'echo.exe', 'pty', 'pty.exe'].map((name) => join(profile, 'examples', name)),
-    ),
+    profiles.flatMap(profile => ['echo', 'echo.exe', 'pty', 'pty.exe'].map(name => join(profile, 'examples', name))),
   );
   for (const [path, isDirectory] of paths) {
     if (helpers.has(path)) continue;

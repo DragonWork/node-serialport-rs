@@ -88,12 +88,12 @@ test('an internal disconnect reason survives the binding close hook', async () =
   await call(port, 'open');
   const reason = new DisconnectedError('write failed');
   const closed = once(port, 'close');
-  const completed = new Promise((resolve) => port.close(resolve, reason));
+  const completed = new Promise(resolve => port.close(resolve, reason));
   assert.equal((await closed)[0], reason);
   assert.equal(await completed, reason);
 });
 
-test('a failed vectored write closes its connection once', async (t) => {
+test('a failed vectored write closes its connection once', async t => {
   const failure = new Error('write failed');
   const binding = device({
     async writev() {
@@ -104,7 +104,7 @@ test('a failed vectored write closes its connection once', async (t) => {
   t.after(() => port.destroy());
   port.on('error', () => {});
   const closes = [];
-  port.on('close', (error) => closes.push(error));
+  port.on('close', error => closes.push(error));
   await call(port, 'open');
   port.cork();
   const first = assert.rejects(call(port, 'write', Buffer.from([1])), failure);
@@ -118,7 +118,7 @@ test('a failed vectored write closes its connection once', async (t) => {
   assert.equal(closes[0].message, failure.message);
 });
 
-test('late close notifications cannot close a replacement connection', async (t) => {
+test('late close notifications cannot close a replacement connection', async t => {
   const old = device();
   const replacement = device();
   const port = stream(old, replacement);
@@ -133,7 +133,7 @@ test('late close notifications cannot close a replacement connection', async (t)
   await call(port, 'close');
 });
 
-test('an unsettled read from a closed binding cannot block a reopened stream', async (t) => {
+test('an unsettled read from a closed binding cannot block a reopened stream', async t => {
   let reads = 0;
   const replacement = device({
     read() {
@@ -153,7 +153,7 @@ test('an unsettled read from a closed binding cannot block a reopened stream', a
   await call(port, 'close');
 });
 
-test('late updates do not change a replacement connection settings', async (t) => {
+test('late updates do not change a replacement connection settings', async t => {
   const update = deferred();
   const port = stream(
     device({
@@ -173,7 +173,7 @@ test('late updates do not change a replacement connection settings', async (t) =
   assert.equal(port.baudRate, 115200);
 });
 
-test('update retains the requested baud rate when the caller mutates its options', async (t) => {
+test('update retains the requested baud rate when the caller mutates its options', async t => {
   const update = deferred();
   let requested;
   const port = stream(
@@ -195,7 +195,7 @@ test('update retains the requested baud rate when the caller mutates its options
   assert.equal(port.baudRate, 9600);
 });
 
-test('a failed close while canceling open settles callbacks and allows a retry', async (t) => {
+test('a failed close while canceling open settles callbacks and allows a retry', async t => {
   const opening = deferred();
   const failure = new Error('driver refused close');
   let attempts = 0;
@@ -222,19 +222,19 @@ test('a failed close while canceling open settles callbacks and allows a retry',
   });
   t.after(() => port.destroy());
   const errors = [];
-  port.on('error', (error) => errors.push(error));
+  port.on('error', error => errors.push(error));
   let openError;
   let closeError;
   let closes = 0;
   let opens = 0;
   const received = [];
-  port.on('data', (data) => received.push(data));
+  port.on('data', data => received.push(data));
   port.on('open', () => opens++);
   port.on('close', () => closes++);
-  port.open((error) => {
+  port.open(error => {
     openError = error;
   });
-  port.close((error) => {
+  port.close(error => {
     closeError = error;
   });
   opening.resolve(binding);
@@ -255,7 +255,7 @@ test('a failed close while canceling open settles callbacks and allows a retry',
   assert.equal(port.isOpen, false);
 });
 
-test('a failed close resumes writes and reads submitted while closing', async (t) => {
+test('a failed close resumes writes and reads submitted while closing', async t => {
   const closing = deferred();
   const failure = new Error('driver refused close');
   const writes = [];

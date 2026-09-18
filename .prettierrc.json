@@ -1,8 +1,17 @@
 {
   "bracketSpacing": true,
+  "arrowParens": "avoid",
   "singleQuote": true,
   "tabWidth": 2,
   "useTabs": false,
   "printWidth": 120,
-  "endOfLine": "lf"
+  "endOfLine": "lf",
+  "overrides": [
+    {
+      "files": "**/*.json",
+      "options": {
+        "parser": "json-stringify"
+      }
+    }
+  ]
 }

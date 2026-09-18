@@ -19,7 +19,7 @@ import {
 
 const serial = new SerialPort({ path: '/test', baudRate: 115200, autoOpen: false });
 serial.write([0, 255]);
-serial.write('text', 'utf8', (error) => {
+serial.write('text', 'utf8', error => {
   if (error) throw error;
 });
 serial.pipe(new ReadlineParser());

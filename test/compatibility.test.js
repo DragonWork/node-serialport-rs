@@ -40,7 +40,7 @@ for (const [name, SerialPortStream] of implementations) {
     return port;
   }
 
-  test(`${name}: set supplies default flags without changing caller options`, async (t) => {
+  test(`${name}: set supplies default flags without changing caller options`, async t => {
     const requests = [];
     const port = stream(t, {
       async set(options) {
@@ -62,9 +62,9 @@ for (const [name, SerialPortStream] of implementations) {
     test(
       `${name}: drain ${afterFinish ? 'after finish' : 'during end'} waits for output`,
       { timeout: 3000 },
-      async (t) => {
+      async t => {
         let releaseWrite;
-        const writing = new Promise((resolve) => {
+        const writing = new Promise(resolve => {
           releaseWrite = resolve;
         });
         const order = [];
@@ -105,7 +105,7 @@ for (const [name, SerialPortStream] of implementations) {
     );
   }
 
-  test(`${name}: drain after end reports a driver failure`, async (t) => {
+  test(`${name}: drain after end reports a driver failure`, async t => {
     const failure = new Error('output drain failed');
     const port = stream(t, {
       async drain() {
@@ -116,11 +116,11 @@ for (const [name, SerialPortStream] of implementations) {
     const finished = once(port, 'finish');
     port.end('last packet');
     await finished;
-    await assert.rejects(call(port, 'drain'), (error) => error === failure);
+    await assert.rejects(call(port, 'drain'), error => error === failure);
     assert.equal(port.isOpen, true);
   });
 
-  test(`${name}: a zero-byte binding read ends the readable side once`, async (t) => {
+  test(`${name}: a zero-byte binding read ends the readable side once`, async t => {
     let reads = 0;
     const port = stream(t, {
       async read(buffer, offset) {
@@ -140,7 +140,7 @@ for (const [name, SerialPortStream] of implementations) {
       ends++;
     });
     await call(port, 'open');
-    port.on('data', (data) => {
+    port.on('data', data => {
       received.push(data);
     });
     await nextTurn();

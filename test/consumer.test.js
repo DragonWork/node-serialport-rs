@@ -16,7 +16,7 @@ for (const operation of ['read', 'write']) {
       skip: !process.env.SERIALPORT_REFERENCE_STREAM,
       timeout: 5000,
     },
-    async (t) => {
+    async t => {
       const { SerialPortStream } = require(process.env.SERIALPORT_REFERENCE_STREAM);
       const terminal = await pty(t);
       const port = new SerialPortStream({
@@ -30,7 +30,7 @@ for (const operation of ['read', 'write']) {
       let closes = 0;
       port.on('close', () => closes++);
       await call(port, 'open');
-      const closed = new Promise((resolve) => port.once('close', resolve));
+      const closed = new Promise(resolve => port.once('close', resolve));
       if (operation === 'read') {
         const data = once(port, 'data');
         await terminal.command('write 01');
@@ -66,7 +66,7 @@ test(
     skip: !process.env.SERIALPORT_CONSUMER,
     timeout: 5000,
   },
-  async (t) => {
+  async t => {
     const { SerialPort } = require(process.env.SERIALPORT_CONSUMER);
     const implementation = require(process.env.SERIALPORT_IMPLEMENTATION || '..');
     assert.equal(SerialPort.binding, implementation.RustBinding, 'Consumer must resolve the selected binding');

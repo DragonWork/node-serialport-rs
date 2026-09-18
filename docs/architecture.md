@@ -17,8 +17,15 @@ Idle serial I/O has no heartbeat interval. Readiness wakes pending reads and wri
 
 This is not an end-to-end zero-copy implementation. Keep submitted buffers unchanged until their operation completes. Received buffers remain valid after the port closes. Read-ahead is bounded by byte and event credits; pending native operations and callback queues are also bounded. Applications must still respect Node stream backpressure.
 
+## Async context
+
+Applications can use `AsyncLocalStorage` for request or device context. Promise continuations preserve their caller's context. Explicit stream close callbacks are bound when registered because a native close notification may arrive in a different context. This adds no context capture to the read/write hot path.
+
+Stream event listeners run in the context that emits the event. Use Node's [`AsyncResource.bind()`](https://nodejs.org/api/async_context.html#static-method-asyncresourcebindfn-type-thisarg) when a particular listener must retain the context in which it was registered. The library does not create its own context store or infer which request owns unsolicited serial data.
+
 ## Lifecycle notes
 
 - Install `error` and `close` listeners. Application-level reconnect and protocol recovery are deliberately not automatic.
 - A failed write can leave a Node writable stream in an errored state. Create a new stream instance when recovering from such a failure.
 - Physical output drain waits for the driver to finish transmission. A blocked drain can also delay close; avoid waiting for drain when intentionally abandoning blocked output.
+- If a custom binding refuses to close and remains open, the close callback receives the failure and buffered I/O resumes. A close failure while canceling an open also leaves the connection available for cleanup: the open callback reports cancellation, the close callback reports the driver failure, and close can be retried.

@@ -5,6 +5,7 @@
 
 import {Duplex} from 'node:stream';
 import {finished} from 'node:stream/promises';
+import {AsyncResource} from 'node:async_hooks';
 import {RustBinding, validateOptions} from './binding';
 import type {BindingInterface, BindingOpenOptions, BindingPortInterface, ErrorCallback, ModemBitsCallback, PortStatus, SetOptions, UpdateOptions} from '../public-api';
 
@@ -81,14 +82,6 @@ class SerialPortStream extends Duplex {
     this._opening.then(async port => {
       this.opening = false;
       this.port = port;
-      if (this.closing) {
-        await port.close();
-        const error = Object.assign(new Error('Port opening canceled'), {canceled: true});
-        this._failWaitingWrite(error);
-        this._finishClose(null);
-        if (callback) callback.call(this, error);
-        return;
-      }
       port.onClose = error => {
         if (this.port !== port) return;
         const reason = error && new DisconnectedError(error.message);
@@ -101,14 +94,20 @@ class SerialPortStream extends Duplex {
           this.push(data);
         }
       };
+      if (this.closing) {
+        const error = Object.assign(new Error('Port opening canceled'), {canceled: true});
+        this._failWaitingWrite(error);
+        let closeError: Error | undefined;
+        try { await port.close(); }
+        catch (error) { closeError = error as Error; }
+        if (closeError) this._closeFailed(port, closeError);
+        else if (this.port === port) this._finishClose(null);
+        if (callback) callback.call(this, error);
+        return;
+      }
       this.emit('open');
       if (callback) callback.call(this, null);
-      if (this._waitingWrite) {
-        const waiting = this._waitingWrite;
-        this._waitingWrite = undefined;
-        this._write(...waiting);
-      }
-      if (this._readRequested) this._read(this.readableHighWaterMark);
+      this._resumeIO();
     }, error => {
       this.opening = false;
       this._failWaitingWrite(error);
@@ -125,25 +124,39 @@ class SerialPortStream extends Duplex {
     if (waiting) waiting[2](error);
   }
 
+  _resumeIO() {
+    if (!this.isOpen) return;
+    if (this._waitingWrite) {
+      const waiting = this._waitingWrite;
+      this._waitingWrite = undefined;
+      this._write(...waiting);
+    }
+    if (this._readRequested) this._read(this.readableHighWaterMark);
+  }
+
   close(callback?: ErrorCallback, disconnectError: Error | null = null) {
     if (this.closing) return this._asyncError('Port is closing', callback);
     if (!this.isOpen && !this.opening) return this._asyncError('Port is not open', callback);
     this.closing = true;
     this._closeError = disconnectError;
-    if (callback) this._closeCallbacks.push(callback);
+    // Native onClose can run in a different async context from this request.
+    if (callback) this._closeCallbacks.push(AsyncResource.bind(callback, 'serialport-rs.close', this));
     if (this.opening) { this._opening!.cancel?.(); return; }
     const port = this.port!;
     port.close().then(() => {
       // Third-party bindings do not have an onClose hook.
       if (this.port === port) this._finishClose(disconnectError);
-    }, error => {
-      if (this.port !== port) return;
-      this.closing = false;
-      this._closeError = null;
-      const callbacks = this._closeCallbacks.splice(0);
-      if (callbacks.length) for (const cb of callbacks) cb.call(this, error);
-      else this.emit('error', error);
-    });
+    }, error => this._closeFailed(port, error));
+  }
+
+  _closeFailed(port: RuntimePort, error: Error) {
+    if (this.port !== port) return;
+    this.closing = false;
+    this._closeError = null;
+    const callbacks = this._closeCallbacks.splice(0);
+    if (callbacks.length) for (const cb of callbacks) cb.call(this, error);
+    else this.emit('error', error);
+    this._resumeIO();
   }
 
   _finishClose(error: Error | null) {
@@ -242,7 +255,7 @@ class SerialPortStream extends Duplex {
 
   _destroy(error: Error | null, callback: WriteCallback) {
     this._failWaitingWrite(error || new Error('Port is destroyed'));
-    if (this.closing) this._closeCallbacks.push(closeError => callback(error || closeError));
+    if (this.closing) this._closeCallbacks.push(AsyncResource.bind(closeError => callback(error || closeError), 'serialport-rs.destroy', this));
     else if (this.isOpen || this.opening) this.close(closeError => callback(error || closeError));
     else callback(error);
   }

@@ -6,6 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {once} = require('node:events');
+const {AsyncLocalStorage} = require('node:async_hooks');
 const {SerialPort, RustBinding} = require('..');
 const {pty, call} = require('./helpers');
 
@@ -45,6 +46,24 @@ test('binary duplex transfers and Promise continuations', {timeout: 5000}, async
   await call(port, 'drain');
   await call(port, 'close');
   assert.equal(port.isOpen, false);
+});
+
+test('native operation callbacks retain their caller AsyncLocalStorage context', {timeout: 5000}, async t => {
+  const context = new AsyncLocalStorage();
+  t.after(() => context.disable());
+  const terminal = await pty(t);
+  const port = new SerialPort({path: terminal.path, baudRate: 115200, autoOpen: false});
+  t.after(() => port.destroy());
+  for (const [method, args] of [['open', []], ['write', [Buffer.from([42])]], ['update', [{baudRate: 9600}]], ['drain', []], ['close', []]]) {
+    const store = {method};
+    const result = await context.run(store, () => new Promise(resolve => {
+      port[method](...args, function(error) { resolve({error, store: context.getStore(), receiver: this}); });
+    }));
+    assert.equal(result.error, null);
+    assert.equal(result.store, store, `${method} callback lost its caller context`);
+    if (method !== 'write') assert.equal(result.receiver, port);
+    if (method === 'write') assert.equal(await terminal.command('read 1'), '2a');
+  }
 });
 
 test('received buffers remain valid after close and garbage collection', {timeout: 5000, skip: typeof global.gc !== 'function'}, async t => {

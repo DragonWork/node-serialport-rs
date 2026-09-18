@@ -28,9 +28,9 @@ function stream(...devices) {
 }
 
 function deferred() {
-  let resolve;
-  const promise = new Promise(done => { resolve = done; });
-  return {promise, resolve};
+  let resolve, reject;
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail; });
+  return {promise, resolve, reject};
 }
 
 test('binding open reports validation failures through its Promise', async () => {
@@ -144,4 +144,74 @@ test('update retains the requested baud rate when the caller mutates its options
   await updated;
   assert.equal(requested, 9600);
   assert.equal(port.baudRate, 9600);
+});
+
+test('a failed close while canceling open settles callbacks and allows a retry', async t => {
+  const opening = deferred();
+  const failure = new Error('driver refused close');
+  let attempts = 0;
+  let reads = 0;
+  const binding = device({startReading() { reads++; }, async close() {
+    if (++attempts === 1) throw failure;
+    this.isOpen = false;
+    this.onClose?.(null);
+  }});
+  const port = new SerialPortStream({path: 'test-device', baudRate: 115200, autoOpen: false,
+    binding: {open() { return opening.promise; }}});
+  t.after(() => port.destroy());
+  const errors = [];
+  port.on('error', error => errors.push(error));
+  let openError;
+  let closeError;
+  let closes = 0;
+  let opens = 0;
+  const received = [];
+  port.on('data', data => received.push(data));
+  port.on('open', () => opens++);
+  port.on('close', () => closes++);
+  port.open(error => { openError = error; });
+  port.close(error => { closeError = error; });
+  opening.resolve(binding);
+  await nextTurn();
+  assert.equal(closeError, failure);
+  assert.equal(openError.canceled, true);
+  assert.equal(port.opening, false);
+  assert.equal(port.closing, false);
+  assert.equal(port.isOpen, true);
+  assert.equal(opens, 0);
+  assert.equal(closes, 0);
+  assert.deepEqual(errors, []);
+  assert.equal(reads, 1);
+  binding.onData(Buffer.from('still connected'));
+  assert.deepEqual(received, [Buffer.from('still connected')]);
+  await call(port, 'close');
+  assert.equal(closes, 1);
+  assert.equal(port.isOpen, false);
+});
+
+test('a failed close resumes writes and reads submitted while closing', async t => {
+  const closing = deferred();
+  const failure = new Error('driver refused close');
+  const writes = [];
+  let reads = 0;
+  const binding = device({close() { return closing.promise; },
+    async write(data) { writes.push(Buffer.from(data)); },
+    startReading() { reads++; },
+  });
+  const port = stream(binding);
+  t.after(() => { binding.close = device().close; port.destroy(); });
+  await call(port, 'open');
+  const closed = assert.rejects(call(port, 'close'), failure);
+  const written = call(port, 'write', Buffer.from('pending'));
+  written.catch(() => {});
+  port.resume();
+  await nextTurn();
+  assert.equal(reads, 0);
+  assert.deepEqual(writes, []);
+  closing.reject(failure);
+  await closed;
+  await nextTurn();
+  assert.deepEqual(writes, [Buffer.from('pending')]);
+  assert.equal(reads, 1);
+  await written;
 });

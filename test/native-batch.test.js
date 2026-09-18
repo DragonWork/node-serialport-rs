@@ -84,7 +84,7 @@ test('native batching promptly delivers isolated reads and groups ready bursts',
       } else {
         callbacks.push(event);
         for (const buffer of Array.isArray(event) ? event : [event]) bytes += buffer.length;
-        if (bytes === 1025) received();
+        if (bytes === 513) received();
       }
     },
     Buffer.allocUnsafe,
@@ -98,7 +98,8 @@ test('native batching promptly delivers isolated reads and groups ready bursts',
   native.readCredit(4096, 1);
   await terminal.command('write 5a');
   await prime;
-  const payload = Buffer.alloc(1024, 0xa5);
+  // Keep the paused-reader preload below macOS's 1022-byte PTY input limit.
+  const payload = Buffer.alloc(512, 0xa5);
   await terminal.command(`write ${payload.toString('hex')}`);
   native.readCredit(1, 32);
   await got;
@@ -176,7 +177,7 @@ test(
     await primedPromise;
 
     // Preload the burst so the first payload read is full and follow-ups are immediately ready.
-    const payload = Buffer.alloc(1024, 0xa5);
+    const payload = Buffer.alloc(512, 0xa5);
     await terminal.command(`write ${payload.toString('hex')}`);
     native.readCredit(1, 32);
 

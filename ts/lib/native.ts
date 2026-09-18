@@ -24,7 +24,7 @@ export interface NativeHandle {
   read(id: number, length: number): void;
   readCredit(bytes: number, slots: number): void;
   write(id: number, data: Buffer, inline: boolean): boolean;
-  writev(id: number, data: Buffer[]): void;
+  writev(id: number, data: Buffer[], length?: number): void;
   request(id: number, operation: ControlOperation, value: number): void;
 }
 

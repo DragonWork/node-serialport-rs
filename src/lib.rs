@@ -21,7 +21,7 @@ use std::sync::{
 
 use napi::{
     Env, Error, Result, Status, Task,
-    bindgen_prelude::{AsyncTask, Buffer, BufferSlice, Either, Function},
+    bindgen_prelude::{Array, AsyncTask, Buffer, BufferSlice, Either, Function},
     threadsafe_function::ThreadsafeFunction,
 };
 use napi_derive::napi;
@@ -249,17 +249,24 @@ impl NativePort {
     }
 
     #[napi]
-    pub fn writev(&self, id: u32, buffers: Vec<Buffer>) -> Result<()> {
+    pub fn writev(&self, id: u32, buffers: Array<'_>, length_hint: Option<u32>) -> Result<()> {
         if self.control.stop.load(Ordering::Acquire) {
             return Err(Error::from_reason("Port is closed"));
         }
-        let length = buffers
-            .iter()
-            .try_fold(0usize, |total, buffer| total.checked_add(buffer.len()))
-            .filter(|length| *length <= CHUNK_SIZE)
-            .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transfer size"))?;
-        let mut data = Vec::with_capacity(length);
-        for buffer in buffers {
+        let capacity = length_hint.unwrap_or(0) as usize;
+        if capacity > CHUNK_SIZE || buffers.len() > 1024 {
+            return Err(Error::new(Status::InvalidArg, "Invalid transfer size"));
+        }
+        let mut data = Vec::with_capacity(capacity);
+        for index in 0..buffers.len() {
+            // Borrow one segment at a time: callers may repeat or overlap buffers.
+            // No borrow survives the next JS array access or this synchronous call.
+            let buffer: BufferSlice<'_> = buffers
+                .get(index)?
+                .ok_or_else(|| Error::new(Status::InvalidArg, "Missing write buffer"))?;
+            if buffer.len() > CHUNK_SIZE - data.len() {
+                return Err(Error::new(Status::InvalidArg, "Invalid transfer size"));
+            }
             data.extend_from_slice(&buffer);
         }
         self.enqueue(Command {

@@ -98,6 +98,19 @@ test('native writes snapshot borrowed memory before returning to JavaScript', {t
   await port.close();
 });
 
+test('vectored writes snapshot repeated and overlapping buffers', {timeout: 5000}, async t => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({path: terminal.path, baudRate: 115200});
+  t.after(() => port.isOpen && port.close());
+  const buffer = Buffer.from('overlapping');
+  const parts = [buffer, buffer.subarray(3), buffer, buffer.subarray(0, 4)];
+  const expected = Buffer.concat(parts);
+  const written = port.writev(parts);
+  buffer.fill(0);
+  assert.equal(await terminal.command(`read ${expected.length}`), expected.toString('hex'));
+  await written;
+});
+
 test('small writes complete asynchronously and stay behind queued controls', {timeout: 10000}, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({path: terminal.path, baudRate: 115200});

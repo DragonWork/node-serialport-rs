@@ -168,7 +168,7 @@ class BindingPort {
         else if (op === 'writev') {
           const buffers = data as Buffer[];
           for (let i = 0; i < buffers.length; i++) buffers[i] = localBuffer(buffers[i]);
-          this._native!.writev(id, buffers);
+          this._native!.writev(id, buffers, value);
         }
         else this._native!.request(id, op, value);
       }
@@ -269,13 +269,13 @@ class BindingPort {
           offset += count;
           size += count;
           if (size === CHUNK_SIZE || batch.length === 1024) {
-            await this._request(batch.length === 1 ? 'write' : 'writev', 0, batch.length === 1 ? batch[0] : batch);
+            await this._request(batch.length === 1 ? 'write' : 'writev', size, batch.length === 1 ? batch[0] : batch);
             batch = [];
             size = 0;
           }
         }
       }
-      if (size) await this._request(batch.length === 1 ? 'write' : 'writev', 0, batch.length === 1 ? batch[0] : batch);
+      if (size) await this._request(batch.length === 1 ? 'write' : 'writev', size, batch.length === 1 ? batch[0] : batch);
     })();
     try { await this._writePromise; }
     finally { this._writing = false; }

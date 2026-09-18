@@ -11,6 +11,7 @@ Idle serial I/O has no heartbeat interval. Readiness wakes pending reads and wri
 | --- | --- |
 | Small immediate writes | Rust borrows the buffer only during the synchronous native call and never waits for the port mutex |
 | Queued writes | Remaining bytes are copied into Rust-owned memory before the native call returns |
+| Vectored writes | Each segment is borrowed and copied in turn, supporting overlapping input without persistent N-API references per segment |
 | Incoming data | Rust owns the I/O buffers; small stream reads are copied into pooled Node buffers, while larger buffers can be transferred without copying their contents |
 | SharedArrayBuffer writes | Copied before Rust borrows the data; callers must still coordinate concurrent writers |
 | Parsers | Buffer slices are reused where possible; frames crossing input chunks may require copying |

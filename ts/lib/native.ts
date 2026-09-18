@@ -43,7 +43,7 @@ interface NativePortInfo {
 export interface NativeAddon {
   NativePort: new (
     options: Required<BindingOpenOptions>,
-    callback: (error: Error | null, event: Buffer | NativeEvent) => void,
+    callback: (error: Error | null, event: Buffer | Buffer[] | NativeEvent) => void,
     allocator: (size: number) => Buffer,
   ) => NativeHandle;
   listPorts(): Promise<NativePortInfo[]>;

@@ -21,7 +21,7 @@ use std::sync::{
 
 use napi::{
     Env, Error, Result, Status, Task,
-    bindgen_prelude::{Array, AsyncTask, Buffer, BufferSlice, Either, Function},
+    bindgen_prelude::{Array, AsyncTask, Buffer, BufferSlice, Either3, Function},
     threadsafe_function::ThreadsafeFunction,
 };
 use napi_derive::napi;
@@ -29,15 +29,9 @@ use tokio::sync::{Notify, mpsc};
 
 pub(crate) const CHUNK_SIZE: usize = 64 * 1024;
 pub(crate) const READ_SLOTS: usize = 32;
-pub(crate) type Callback = ThreadsafeFunction<
-    Either<Buffer, NativeEvent>,
-    (),
-    Either<Buffer, NativeEvent>,
-    Status,
-    true,
-    false,
-    128,
->;
+pub(crate) type CallbackValue = Either3<Buffer, Vec<Buffer>, NativeEvent>;
+pub(crate) type Callback =
+    ThreadsafeFunction<CallbackValue, (), CallbackValue, Status, true, false, 128>;
 
 #[napi(object)]
 pub struct NativeOptions {
@@ -140,23 +134,37 @@ impl NativePort {
     pub fn new(
         env: Env,
         options: NativeOptions,
-        callback: Function<'_, Either<Buffer, NativeEvent>, ()>,
+        callback: Function<'_, CallbackValue, ()>,
         allocator: Function<'_, u32, Buffer>,
     ) -> Result<Self> {
         let allocator = allocator.create_ref()?;
         let callback = callback
-            .build_threadsafe_function::<Either<Buffer, NativeEvent>>()
+            .build_threadsafe_function::<CallbackValue>()
             .callee_handled::<true>()
             .max_queue_size::<128>()
             .build_callback(move |ctx| match ctx.value {
-                Either::A(data) if data.len() <= 1024 => {
+                Either3::A(data) if data.len() <= 1024 => {
                     // Copy on the JS thread; no JS-owned memory crosses into the I/O worker.
                     let mut buffer = allocator.borrow_back(&ctx.env)?.call(data.len() as u32)?;
                     if buffer.len() != data.len() {
                         return Err(Error::from_reason("Invalid read buffer allocation"));
                     }
                     buffer.copy_from_slice(&data);
-                    Ok(Either::A(buffer))
+                    Ok(Either3::A(buffer))
+                }
+                Either3::B(mut buffers) => {
+                    for data in &mut buffers {
+                        if data.len() <= 1024 {
+                            let mut buffer =
+                                allocator.borrow_back(&ctx.env)?.call(data.len() as u32)?;
+                            if buffer.len() != data.len() {
+                                return Err(Error::from_reason("Invalid read buffer allocation"));
+                            }
+                            buffer.copy_from_slice(data);
+                            *data = buffer;
+                        }
+                    }
+                    Ok(Either3::B(buffers))
                 }
                 event => Ok(event),
             })?;

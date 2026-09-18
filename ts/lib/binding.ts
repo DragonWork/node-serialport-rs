@@ -123,10 +123,27 @@ class BindingPort {
             this._readSlots--;
             this.onData?.(event);
           });
-        } else this._event(event);
+        } else if (Array.isArray(event)) queueMicrotask(() => this._deliverBatch(event));
+        else this._event(event);
       },
       Buffer.allocUnsafe,
     );
+  }
+
+  _deliverBatch(events: Buffer[], offset = 0) {
+    let index = offset;
+    try {
+      while (index < events.length && this.isOpen) {
+        const data = events[index++];
+        this._readBytes -= data.length;
+        this._readSlots--;
+        this.onData?.(data);
+      }
+    } finally {
+      // An application that handles an uncaught listener exception must not lose
+      // the remaining native buffers or their credits.
+      if (index < events.length && this.isOpen) queueMicrotask(() => this._deliverBatch(events, index));
+    }
   }
 
   _event(event: NativeEvent) {

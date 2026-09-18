@@ -114,3 +114,10 @@ lines.on('error', (error) => {
 The limit is a nonnegative integer counting payload bytes before decoding, excluding the delimiter even with `includeDelimiter: true`. A possible delimiter prefix may be buffered beyond the limit until it is resolved; at end of input an incomplete delimiter counts as payload. Overflow reports a `RangeError` with code `ERR_SERIALPORT_FRAME_TOO_LARGE` and releases the buffered frame. The usual Transform error/destroy behavior applies; the parser does not silently discard bytes and resume.
 
 Omitting the limit preserves SerialPort 13 framing behavior, including unlimited incomplete frames. `InterByteTimeoutParser` supports `maxBufferSize`; `PacketLengthParser` supports `maxLen` with its SerialPort-compatible behavior.
+
+## Native receive batching
+
+The Rust stream automatically groups already-ready follow-up reads into fewer
+native callbacks. Small partial reads keep their direct delivery path; no fill
+timer or tuning option is needed. Applications receive ordinary Buffer chunks and use the same
+stream API. See [native batching](native-batching.md) for details.

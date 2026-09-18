@@ -6,11 +6,11 @@ use std::{
     future::poll_fn,
     io::{self, Write},
     sync::{Arc, atomic::Ordering},
-    task::Poll,
+    task::{Context, Poll, Waker},
     time::Duration,
 };
 
-use napi::{Status, bindgen_prelude::Either, threadsafe_function::ThreadsafeFunctionCallMode};
+use napi::{Status, bindgen_prelude::Either3, threadsafe_function::ThreadsafeFunctionCallMode};
 use tokio::sync::mpsc;
 use tokio_serial::{ClearBuffer, SerialPort, SerialStream};
 
@@ -19,12 +19,33 @@ use crate::{
     transfer::{Transfer, TransferPoller},
 };
 
+// Bound immediately-ready follow-up work before servicing the command queue again.
+const READ_BURST_LIMIT: usize = 16;
+
+struct ReadWindow {
+    bytes: usize,
+    slots: usize,
+    size: usize,
+}
+
 fn send(callback: &Callback, event: NativeEvent) -> bool {
     // At most 64 requests and 32 read-ahead events share the 128-entry queue.
     callback.call(
-        Ok(Either::B(event)),
+        Ok(Either3::C(event)),
         ThreadsafeFunctionCallMode::NonBlocking,
     ) == Status::Ok
+}
+
+fn send_stream_buffers(
+    callback: &Callback,
+    mut buffers: Vec<napi::bindgen_prelude::Buffer>,
+) -> bool {
+    let value = if buffers.len() == 1 {
+        Either3::A(buffers.pop().expect("one read buffer"))
+    } else {
+        Either3::B(buffers)
+    };
+    callback.call(Ok(value), ThreadsafeFunctionCallMode::NonBlocking) == Status::Ok
 }
 
 struct Completion {
@@ -91,10 +112,12 @@ async fn run_open(
     let mut commands = VecDeque::<Command>::new();
     let mut read = None::<(u32, usize)>;
     let mut streaming = false;
-    let mut read_bytes = 0usize;
-    let mut read_slots = 0usize;
+    let mut window = ReadWindow {
+        bytes: 0,
+        slots: 0,
+        size: 1024,
+    };
     let mut written = 0;
-    let mut read_size = 1024;
     let mut read_buffer = Vec::new();
     let mut transfers = TransferPoller::default();
     loop {
@@ -156,11 +179,11 @@ async fn run_open(
             });
         let read_length = read
             .map(|(_, length)| length)
-            .or_else(|| (read_bytes > 0 && read_slots > 0).then_some(read_bytes));
+            .or_else(|| (window.bytes > 0 && window.slots > 0).then_some(window.bytes));
         if let Some(length) = read_length
             && read_buffer.is_empty()
         {
-            read_buffer.resize(length.min(read_size), 0);
+            read_buffer.resize(length.min(window.size), 0);
         }
         tokio::select! {
             biased;
@@ -174,9 +197,9 @@ async fn run_open(
                         }
                     }
                     Some(Command {operation: Operation::ReadCredit {bytes, slots}, ..}) => {
-                        read_bytes += bytes;
-                        read_slots += slots;
-                        if read.is_some() || read_bytes > crate::CHUNK_SIZE || read_slots > crate::READ_SLOTS {
+                        window.bytes += bytes;
+                        window.slots += slots;
+                        if read.is_some() || window.bytes > crate::CHUNK_SIZE || window.slots > crate::READ_SLOTS {
                             return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid read credit"));
                         }
                         streaming = true;
@@ -194,14 +217,22 @@ async fn run_open(
                 };
                 if length == 0 { return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Serial device disconnected")); }
                 if is_read {
-                    read_size = if length == read_buffer.len() { (read_size * 2).min(crate::CHUNK_SIZE) }
+                    let filled = length == read_buffer.len();
+                    window.size = if filled { (window.size * 2).min(crate::CHUNK_SIZE) }
                         else { length.next_power_of_two().clamp(64, crate::CHUNK_SIZE) };
                     read_buffer.truncate(length);
                     let data = std::mem::take(&mut read_buffer);
                     let sent = if streaming {
-                        read_bytes -= length;
-                        read_slots -= 1;
-                        callback.call(Ok(Either::A(data.into())), ThreadsafeFunctionCallMode::NonBlocking) == Status::Ok
+                        window.bytes -= length;
+                        window.slots -= 1;
+                        // Small partial reads normally drained the available input. Keep
+                        // their existing path, and give queued writes/controls priority.
+                        if write.is_some() || (!filled && length < 1024)
+                            || control.pending_ops.load(Ordering::Acquire) != 0 {
+                            callback.call(Ok(Either3::A(data.into())), ThreadsafeFunctionCallMode::NonBlocking) == Status::Ok
+                        } else {
+                            send_ready_reads(control, callback, &mut transfers, data, &mut read_buffer, &mut window)?
+                        }
                     } else {
                         let (id, _) = read.take().ok_or_else(|| io::Error::other("Unexpected read completion"))?;
                         let mut event = NativeEvent::new(id, "read");
@@ -215,6 +246,96 @@ async fn run_open(
             _ = async { tokio::time::sleep(Duration::from_millis(1)).await }, if draining => {},
         }
     }
+}
+
+// Keep burst-only storage and polling out of the latency-sensitive reactor path.
+#[inline(never)]
+fn send_ready_reads(
+    control: &Control,
+    callback: &Callback,
+    transfers: &mut TransferPoller,
+    data: Vec<u8>,
+    read_buffer: &mut Vec<u8>,
+    window: &mut ReadWindow,
+) -> io::Result<bool> {
+    let mut first = Some(data.into());
+    let mut batch = Vec::new();
+    let mut deferred_error = None;
+    for _ in 1..READ_BURST_LIMIT {
+        if control.stop.load(Ordering::Acquire)
+            || control.pending_ops.load(Ordering::Acquire) != 0
+            || window.bytes == 0
+            || window.slots == 0
+        {
+            break;
+        }
+        read_buffer.resize(window.bytes.min(window.size), 0);
+        let ready = match poll_read_now(control, transfers, read_buffer) {
+            Ok(ready) => ready,
+            Err(error) => {
+                deferred_error = Some(error);
+                break;
+            }
+        };
+        let next_length = match ready {
+            Poll::Pending => break,
+            Poll::Ready(Err(error)) => {
+                deferred_error = Some(error);
+                break;
+            }
+            Poll::Ready(Ok(Transfer::Write(_))) => {
+                deferred_error = Some(io::Error::other("Unexpected write while batching reads"));
+                break;
+            }
+            Poll::Ready(Ok(Transfer::Read(length))) => length,
+        };
+        if next_length == 0 {
+            deferred_error = Some(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "Serial device disconnected",
+            ));
+            break;
+        }
+        window.size = if next_length == read_buffer.len() {
+            (window.size * 2).min(crate::CHUNK_SIZE)
+        } else {
+            next_length.next_power_of_two().clamp(64, crate::CHUNK_SIZE)
+        };
+        read_buffer.truncate(next_length);
+        if let Some(data) = first.take() {
+            batch.reserve_exact(READ_BURST_LIMIT);
+            batch.push(data);
+        }
+        batch.push(std::mem::take(read_buffer).into());
+        window.bytes -= next_length;
+        window.slots -= 1;
+    }
+    let sent = if let Some(data) = first {
+        callback.call(
+            Ok(Either3::A(data)),
+            ThreadsafeFunctionCallMode::NonBlocking,
+        ) == Status::Ok
+    } else {
+        send_stream_buffers(callback, batch)
+    };
+    if !sent {
+        return Ok(false);
+    }
+    if let Some(error) = deferred_error {
+        return Err(error);
+    }
+    Ok(true)
+}
+
+fn poll_read_now(
+    control: &Control,
+    transfers: &mut TransferPoller,
+    buffer: &mut [u8],
+) -> io::Result<Poll<io::Result<Transfer>>> {
+    let mut cx = Context::from_waker(Waker::noop());
+    with_port(control, |port| {
+        Ok(transfers.poll(port, &mut cx, Some(buffer), None))
+    })
 }
 
 fn with_port<T>(

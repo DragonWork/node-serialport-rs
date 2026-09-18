@@ -102,4 +102,15 @@ All parsers are JavaScript transforms and can be loaded without the native binar
 - `SlipEncoder` and `SlipDecoder`: SLIP encoding and decoding.
 - `SpacePacketParser`: CCSDS space packets.
 
-Delimiter-based framing can retain an arbitrarily long incomplete frame. Applications receiving untrusted or damaged input should enforce protocol-specific size limits. `InterByteTimeoutParser` supports `maxBufferSize`; `PacketLengthParser` supports `maxLen` with its SerialPort-compatible behavior.
+`DelimiterParser` and `ReadlineParser` accept an optional `maxFrameLength` to reject oversized frames, including incomplete input that never receives a terminator:
+
+```js
+const lines = port.pipe(new ReadlineParser({maxFrameLength: 4096}));
+lines.on('error', error => {
+  if (error.code === 'ERR_SERIALPORT_FRAME_TOO_LARGE') console.error('Device sent an oversized line');
+});
+```
+
+The limit is a nonnegative integer counting payload bytes before decoding, excluding the delimiter even with `includeDelimiter: true`. A possible delimiter prefix may be buffered beyond the limit until it is resolved; at end of input an incomplete delimiter counts as payload. Overflow reports a `RangeError` with code `ERR_SERIALPORT_FRAME_TOO_LARGE` and releases the buffered frame. The usual Transform error/destroy behavior applies; the parser does not silently discard bytes and resume.
+
+Omitting the limit preserves SerialPort 13 framing behavior, including unlimited incomplete frames. `InterByteTimeoutParser` supports `maxBufferSize`; `PacketLengthParser` supports `maxLen` with its SerialPort-compatible behavior.

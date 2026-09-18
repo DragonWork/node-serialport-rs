@@ -17,6 +17,8 @@ Idle serial I/O has no heartbeat interval. Readiness wakes pending reads and wri
 
 This is not an end-to-end zero-copy implementation. Keep submitted buffers unchanged until their operation completes. Received buffers remain valid after the port closes. Read-ahead is bounded by byte and event credits; pending native operations and callback queues are also bounded. Applications must still respect Node stream backpressure.
 
+SLIP decoding reuses larger input chunks that need no escape processing and no explicit start marker. Small fragments keep the byte loop to avoid the cost of repeated native searches. Delimiter and readline parsers can bound incomplete payloads with the optional `maxFrameLength` setting; the default remains unlimited for compatibility.
+
 ## Async context
 
 Applications can use `AsyncLocalStorage` for request or device context. Promise continuations preserve their caller's context. Explicit stream close callbacks are bound when registered because a native close notification may arrive in a different context. This adds no context capture to the read/write hot path.

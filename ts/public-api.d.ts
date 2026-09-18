@@ -144,11 +144,15 @@ export class ByteLengthParser extends Transform {constructor(options: ByteLength
 export interface DelimiterOptions extends TransformOptions {
   delimiter: string | Buffer | number[];
   includeDelimiter?: boolean;
+  /** Maximum payload bytes per frame, excluding the delimiter. Unlimited when omitted. */
+  maxFrameLength?: number;
 }
 export class DelimiterParser extends Transform {constructor(options: DelimiterOptions);}
 export interface ReadlineOptions extends TransformOptions {
   delimiter?: string | Buffer | number[];
   includeDelimiter?: boolean;
+  /** Maximum payload bytes before decoding, excluding the delimiter. Unlimited when omitted. */
+  maxFrameLength?: number;
   encoding?: BufferEncoding;
 }
 export class ReadlineParser extends DelimiterParser {constructor(options?: ReadlineOptions);}

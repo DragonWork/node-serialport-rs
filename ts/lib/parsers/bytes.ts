@@ -71,6 +71,8 @@ class DelimiterMatcher {
   declare delimiter: Buffer;
   #matched = 0;
 
+  get pendingBytes() { return this.#matched; }
+
   constructor(delimiter: string | Buffer | number[] | undefined) {
     if (delimiter === undefined) throw new TypeError('delimiter is required');
     this.delimiter = Buffer.from(delimiter);

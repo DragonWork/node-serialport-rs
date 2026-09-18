@@ -70,6 +70,19 @@ class SlipDecoder extends Transform {
 
   _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
     const {START, END, ESC} = this.#options;
+    // Native searches pay off on larger chunks. Keep small fragments on the
+    // byte loop, and retain larger unescaped payloads without copying them.
+    if (chunk.length >= 256 && START === undefined && !this.#escaped && chunk.indexOf(ESC) === -1) {
+      let offset = 0;
+      for (let end = chunk.indexOf(END); end !== -1; end = chunk.indexOf(END, offset)) {
+        this.#bytes.append(chunk.subarray(offset, end));
+        this.push(this.#bytes.take());
+        offset = end + 1;
+      }
+      this.#bytes.append(offset ? chunk.subarray(offset) : chunk);
+      callback();
+      return;
+    }
     const decoded = Buffer.allocUnsafe(chunk.length);
     let size = 0;
     let frameStart = 0;

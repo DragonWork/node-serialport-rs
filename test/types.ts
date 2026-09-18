@@ -10,6 +10,7 @@ const serial = new SerialPort({path: '/test', baudRate: 115200, autoOpen: false}
 serial.write([0, 255]);
 serial.write('text', 'utf8', error => { if (error) throw error; });
 serial.pipe(new ReadlineParser());
+serial.pipe(new ReadlineParser({maxFrameLength: 4096}));
 serial.port?.writev([Buffer.from([1])]);
 
 const mockOptions: SerialPortMockOpenOptions = {path: '/mock/test', baudRate: 9600, autoOpen: false};

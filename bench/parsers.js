@@ -13,12 +13,15 @@ packet[0] = 0xaa;
 packet.writeUInt16LE(1024, 1);
 const slip = Buffer.alloc(4097, 0x31);
 slip[4096] = 0xc0;
+const escapedSlip = Buffer.concat([Buffer.alloc(4096, Buffer.from([0xdb, 0xdd])), Buffer.from([0xc0])]);
 const cases = [
   ['fixed 64-byte frames', 'ByteLengthParser', {length: 64}, Buffer.alloc(4 * 1024 * 1024, 0x31), 4096],
   ['128-byte lines', 'DelimiterParser', {delimiter: '\n'}, lines, 4096],
   ['256 KiB fragmented line', 'DelimiterParser', {delimiter: '\n'}, Buffer.alloc(256 * 1024, 0x31), 64],
   ['1 KiB length-prefixed packets', 'PacketLengthParser', {lengthBytes: 2, packetOverhead: 3, maxLen: 65535}, Buffer.concat(Array(256).fill(packet)), 64],
   ['SLIP 4 KiB decode', 'SlipDecoder', {}, Buffer.concat(Array(64).fill(slip)), 64],
+  ['SLIP aligned 4 KiB decode', 'SlipDecoder', {}, Buffer.concat(Array(64).fill(slip)), slip.length],
+  ['SLIP escaped decode', 'SlipDecoder', {}, Buffer.concat(Array(64).fill(escapedSlip)), 64],
   ['SLIP 4 KiB encode', 'SlipEncoder', {}, Buffer.alloc(4 * 1024 * 1024, 0x31), 4096],
 ];
 

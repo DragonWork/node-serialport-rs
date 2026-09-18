@@ -49,6 +49,17 @@ test('SLIP encoder and decoder preserve every byte value', async () => {
   assert.deepEqual(Buffer.concat(decoded), expected);
 });
 
+test('large unescaped SLIP frames reuse input memory and retain split frames', async () => {
+  const input = Buffer.alloc(513, 1);
+  input[255] = input[511] = 0xc0;
+  input[512] = 5;
+  const output = await parse(new SlipDecoder(), [input, Buffer.from([6, 0xc0])]);
+  assert.deepEqual(output, [Buffer.alloc(255, 1), Buffer.alloc(255, 1), Buffer.from([5, 6])]);
+  assert.equal(output[0].buffer, input.buffer);
+  assert.equal(output[0].byteOffset, input.byteOffset);
+  assert.equal(output[1].byteOffset, input.byteOffset + 256);
+});
+
 function fragments(buffer, size) {
   return Array.from({length: Math.ceil(buffer.length / size)}, (_, i) => buffer.subarray(i * size, (i + 1) * size));
 }
@@ -68,6 +79,42 @@ test('delimiter framing is independent of chunk boundaries and overlapping prefi
       assert.deepEqual(await parse(new DelimiterParser({delimiter, includeDelimiter}), fragments(input, size)), expected);
     }
   }
+});
+
+test('delimiter frame limits exclude split delimiters and reset after every frame', async () => {
+  const input = Buffer.from('abcababdefababghi');
+  for (const includeDelimiter of [false, true]) {
+    for (let size = 1; size <= input.length; size++) {
+      const output = await parse(new DelimiterParser({delimiter: 'abab', includeDelimiter, maxFrameLength: 3}), fragments(input, size));
+      assert.deepEqual(output.map(buffer => buffer.toString()), includeDelimiter ? ['abcabab', 'defabab', 'ghi'] : ['abc', 'def', 'ghi']);
+    }
+  }
+  assert.deepEqual(await parse(new DelimiterParser({delimiter: '\r\n', maxFrameLength: 0}), ['\r', '\n']), []);
+});
+
+test('delimiter frame limits reject oversized complete, incomplete and trailing frames', async () => {
+  for (const chunks of [['abcd\r\n'], ['ab', 'cd'], ['abc\r', 'x'], ['abc\r']]) {
+    const parser = new DelimiterParser({delimiter: '\r\n', maxFrameLength: 3});
+    await assert.rejects(parse(parser, chunks), {code: 'ERR_SERIALPORT_FRAME_TOO_LARGE'});
+    assert.equal(parser.destroyed, true);
+  }
+  const parser = new DelimiterParser({delimiter: '\r\n', maxFrameLength: 3});
+  const failed = once(parser, 'error');
+  parser.write('abcd');
+  assert.equal((await failed)[0].code, 'ERR_SERIALPORT_FRAME_TOO_LARGE');
+});
+
+test('readline frame limits count bytes before decoding', async () => {
+  assert.deepEqual(await parse(new ReadlineParser({maxFrameLength: 2}), ['é\n']), ['é']);
+  await assert.rejects(parse(new ReadlineParser({maxFrameLength: 1}), ['é\n']), {code: 'ERR_SERIALPORT_FRAME_TOO_LARGE'});
+});
+
+test('delimiter frame limits reject invalid settings and remain optional', async () => {
+  for (const maxFrameLength of [-1, 1.5, NaN, Infinity]) {
+    assert.throws(() => new DelimiterParser({delimiter: '\n', maxFrameLength}), TypeError);
+  }
+  const input = Buffer.alloc(128 * 1024, 0x61);
+  assert.deepEqual(await parse(new DelimiterParser({delimiter: '\n'}), [input]), [input]);
 });
 
 test('aligned byte frames and delimiters reuse input memory', async () => {

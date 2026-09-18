@@ -34,9 +34,11 @@ function cleanRelease(root, targetDirectory, target = '') {
   // Caller-provided caches outside this checkout may contain unrelated active lanes.
   if (isAbsolute(path) || path === '..' || path.startsWith(`..${sep}`)) return;
   assert(path && directory.endsWith(`${sep}release`), 'Refusing an unscoped cache cleanup');
-  if (!existsSync(directory)) return;
+  // A successful release supersedes compiler state in this same target lane.
+  // Other target directories may belong to active development work.
+  const profiles = [directory, resolve(directory, '..', 'debug')].filter(existsSync);
+  if (!profiles.length) return;
   const owner = lstatSync(base);
-  assert.equal(realpathSync(directory), directory, 'Release cache must not contain symlink parents');
   const paths = [];
   function inspect(path) {
     const info = lstatSync(path);
@@ -47,8 +49,11 @@ function cleanRelease(root, targetDirectory, target = '') {
     if (info.isDirectory()) for (const name of readdirSync(path)) inspect(join(path, name));
     paths.push([path, info.isDirectory()]);
   }
-  inspect(directory);
-  const helpers = new Set(['echo', 'echo.exe', 'pty', 'pty.exe'].map(name => join(directory, 'examples', name)));
+  for (const profile of profiles) {
+    assert.equal(realpathSync(profile), profile, 'Build cache must not contain symlink parents');
+    inspect(profile);
+  }
+  const helpers = new Set(profiles.flatMap(profile => ['echo', 'echo.exe', 'pty', 'pty.exe'].map(name => join(profile, 'examples', name))));
   for (const [path, isDirectory] of paths) {
     if (helpers.has(path)) continue;
     if (!isDirectory || readdirSync(path).length === 0) rmSync(path, {recursive: isDirectory});

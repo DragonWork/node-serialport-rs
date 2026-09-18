@@ -22,7 +22,7 @@ Runtime source lives in `ts/`. `npm run build:js` compiles it in strict mode to 
 
 Dev builds cache Cargo dependencies and share compiled addons and test helpers across Node versions. Release builds do not restore these caches.
 
-Native builds use `target/.serialport-build.lock`. Successful releases remove their project-local compiler caches while retaining the addon and PTY/echo helpers. Failed builds retain their cache and the previous addon. Debug and external `CARGO_TARGET_DIR` caches are preserved. Check the recorded PID before removing a lock left by a force-killed build.
+Native builds use `target/.serialport-build.lock`. Successful releases remove release and debug compiler caches in their matching project-local target directory while retaining the addon and PTY/echo helpers. Failed builds retain their cache and the previous addon. Debug builds retain their caches; separate development lanes and external `CARGO_TARGET_DIR` caches are preserved. Use a separate target directory for concurrent development work. Check the recorded PID before removing a lock left by a force-killed build.
 
 The JavaScript tests use Node's built-in test runner. Native integration tests require Unix pseudo-terminals; mock and parser tests do not require serial hardware. Tests cover byte integrity, buffer ownership, backpressure, concurrent ports, cancellation, reopening, and worker cleanup. Optional consumer tests accept `SERIALPORT_CONSUMER` and `SERIALPORT_REFERENCE_STREAM` module paths.
 

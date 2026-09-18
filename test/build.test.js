@@ -22,16 +22,30 @@ function fixture(t) {
   return {root, file};
 }
 
-test('release cleanup retains helpers, debug caches and staged addons', t => {
+test('release cleanup removes matching debug caches and retains helpers and other lanes', t => {
   const {root, file} = fixture(t);
   for (const path of ['target/release/deps/cache.rlib', 'target/release/examples/echo',
-    'target/release/examples/echo.d', 'target/debug/deps/cache.rlib', 'native/serialport-rs.node']) file(path);
+    'target/release/examples/echo.d', 'target/debug/deps/cache.rlib', 'target/debug/examples/pty',
+    'target/other/debug/deps/cache.rlib', 'native/serialport-rs.node']) file(path);
   withBuildLock(root, () => cleanRelease(root, join(root, 'target')));
   assert(!existsSync(join(root, 'target/release/deps')));
   assert(!existsSync(join(root, 'target/release/examples/echo.d')));
-  for (const path of ['target/release/examples/echo', 'target/debug/deps/cache.rlib', 'native/serialport-rs.node']) {
+  assert(!existsSync(join(root, 'target/debug/deps')));
+  for (const path of ['target/release/examples/echo', 'target/debug/examples/pty', 'target/other/debug/deps/cache.rlib', 'native/serialport-rs.node']) {
     assert.equal(readFileSync(join(root, path), 'utf8'), 'fixture');
   }
+});
+
+test('release cleanup validates debug state before deleting release caches', {skip: process.platform === 'win32'}, t => {
+  const {root, file} = fixture(t);
+  file('target/release/cache.rlib');
+  file('target/debug/cache.rlib');
+  file('outside/keep');
+  symlinkSync(join(root, 'outside'), join(root, 'target/debug/link'));
+  assert.throws(() => cleanRelease(root, join(root, 'target')), /symlink/);
+  assert(existsSync(join(root, 'target/release/cache.rlib')));
+  assert(existsSync(join(root, 'target/debug/cache.rlib')));
+  assert(existsSync(join(root, 'outside/keep')));
 });
 
 test('release cleanup preserves caller-managed external caches', t => {

@@ -3,12 +3,13 @@
 
 # Native receive batching
 
-The Rust-backed stream can group already-ready reads into callbacks containing
-at most 16 chunks. Small partial reads keep their direct delivery path.
+The Rust-backed stream submits the first ready chunk immediately, then groups
+ready followers into a later callback, with at most 16 reads per burst.
+Small partial reads keep their direct delivery path.
 This is automatic; there is no batch-size option or fill timer.
 
 Applications still receive ordinary Buffer chunks in byte order. The binding
-creates batch storage only when a second chunk is already ready. Explicit
+creates batch storage only when at least two followers are ready. Explicit
 binding `read()` and `readChunk()` calls keep their single-request behavior.
 Using the original `@serialport/stream` with only the Rust binding does not use
 this streaming read-ahead path.

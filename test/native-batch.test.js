@@ -53,7 +53,7 @@ test('explicit binding reads keep their requested byte ranges', { timeout: 10000
   assert.equal((await port.readChunk(6)).toString(), 'second');
 });
 
-test('native batching promptly delivers isolated reads and groups ready bursts', { timeout: 10000 }, async (t) => {
+test('native batching delivers the first ready chunk before its followers', { timeout: 10000 }, async (t) => {
   const { NativePort } = require('../lib/native').loadNative();
   const { validateOptions } = require('../lib/binding');
   const terminal = await pty(t);
@@ -72,6 +72,9 @@ test('native batching promptly delivers isolated reads and groups ready bursts',
   });
   const callbacks = [];
   let bytes = 0;
+  let allocations = 0;
+  let firstAllocations;
+  let bytesAtContinuation;
   const native = new NativePort(
     validateOptions({ path: terminal.path, baudRate: 115200 }),
     (error, event) => {
@@ -83,11 +86,20 @@ test('native batching promptly delivers isolated reads and groups ready bursts',
         primed();
       } else {
         callbacks.push(event);
+        if (callbacks.length === 1) {
+          firstAllocations = allocations;
+          Promise.resolve().then(() => {
+            bytesAtContinuation = bytes;
+          });
+        }
         for (const buffer of Array.isArray(event) ? event : [event]) bytes += buffer.length;
         if (bytes === 513) received();
       }
     },
-    Buffer.allocUnsafe,
+    (length) => {
+      allocations++;
+      return Buffer.allocUnsafe(length);
+    },
   );
   t.after(async () => {
     native.close();
@@ -103,6 +115,9 @@ test('native batching promptly delivers isolated reads and groups ready bursts',
   await terminal.command(`write ${payload.toString('hex')}`);
   native.readCredit(1, 32);
   await got;
+  assert(Buffer.isBuffer(callbacks[0]), 'The first ready chunk must have its own callback');
+  assert.equal(firstAllocations, 2, 'Only the priming and first ready buffers should be allocated');
+  assert.equal(bytesAtContinuation, 1 + callbacks[0].length, 'The first reply can resume before its followers');
   const batches = callbacks.filter(Array.isArray);
   assert(batches.length > 0);
   assert(batches.every((batch) => batch.length >= 2 && batch.length <= 16));
@@ -140,7 +155,7 @@ test(
     let allocations = 0;
     const allocator = (length) => {
       allocations++;
-      return allocations === 3 ? Buffer.alloc(Math.max(0, length - 1)) : Buffer.alloc(length);
+      return allocations === 4 ? Buffer.alloc(Math.max(0, length - 1)) : Buffer.alloc(length);
     };
     native = new NativePort(
       validateOptions({ path: terminal.path, baudRate: 115200 }),
@@ -160,7 +175,7 @@ test(
           if (!prior) {
             prior = event;
             primed();
-          }
+          } else firstPayload = event;
         }
       },
       allocator,
@@ -185,8 +200,10 @@ test(
     assert(Buffer.isBuffer(prior));
     assert.equal(prior.length, 1);
     assert.equal(prior[0], 0x5a);
+    assert(Buffer.isBuffer(firstPayload));
+    assert.deepEqual(firstPayload, payload.subarray(0, firstPayload.length));
     assert.match(error.message, /Invalid read buffer allocation/);
-    assert.equal(allocations, 3);
+    assert.equal(allocations, 4);
     await closedPromise;
     assert.equal(errors, 1);
     assert.equal(closes, 1);

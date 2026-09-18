@@ -258,7 +258,15 @@ fn send_ready_reads(
     read_buffer: &mut Vec<u8>,
     window: &mut ReadWindow,
 ) -> io::Result<bool> {
-    let mut first = Some(data.into());
+    // Let JS process the first chunk while Rust collects ready followers.
+    if callback.call(
+        Ok(Either3::A(data.into())),
+        ThreadsafeFunctionCallMode::NonBlocking,
+    ) != Status::Ok
+    {
+        return Ok(false);
+    }
+    let mut first = None;
     let mut batch = Vec::new();
     let mut deferred_error = None;
     for _ in 1..READ_BURST_LIMIT {
@@ -302,11 +310,16 @@ fn send_ready_reads(
             next_length.next_power_of_two().clamp(64, crate::CHUNK_SIZE)
         };
         read_buffer.truncate(next_length);
-        if let Some(data) = first.take() {
-            batch.reserve_exact(READ_BURST_LIMIT);
+        let data = std::mem::take(read_buffer).into();
+        if let Some(previous) = first.take() {
+            batch.reserve_exact(READ_BURST_LIMIT - 1);
+            batch.push(previous);
+            batch.push(data);
+        } else if batch.is_empty() {
+            first = Some(data);
+        } else {
             batch.push(data);
         }
-        batch.push(std::mem::take(read_buffer).into());
         window.bytes -= next_length;
         window.slots -= 1;
     }
@@ -315,8 +328,10 @@ fn send_ready_reads(
             Ok(Either3::A(data)),
             ThreadsafeFunctionCallMode::NonBlocking,
         ) == Status::Ok
-    } else {
+    } else if !batch.is_empty() {
         send_stream_buffers(callback, batch)
+    } else {
+        true
     };
     if !sent {
         return Ok(false);

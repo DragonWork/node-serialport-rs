@@ -18,6 +18,8 @@ Idle serial I/O has no heartbeat interval. Readiness wakes pending reads and wri
 
 This is not an end-to-end zero-copy implementation. Keep submitted buffers unchanged until their operation completes. Received buffers remain valid after the port closes. Read-ahead is bounded by byte and event credits; pending native operations and callback queues are also bounded. Applications must still respect Node stream backpressure.
 
+Vectored writes reuse complete JavaScript buffer views. Only segments split at the native transfer boundary need an additional view; queued bytes still receive their own Rust-owned snapshot.
+
 SLIP decoding reuses larger input chunks that need no escape processing and no explicit start marker. Small fragments keep the byte loop to avoid the cost of repeated native searches. Delimiter and readline parsers can bound incomplete payloads with the optional `maxFrameLength` setting; the default remains unlimited for compatibility.
 
 ## Async context

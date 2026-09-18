@@ -51,3 +51,5 @@ node --expose-gc bench/parsers.js
 ```
 
 The latency and throughput scripts accept `--binding` and `--stream` package paths for comparing compatible implementations.
+
+`latency.js` also accepts `--segments` (1-1024, default 1) for corked writes; the payload size must divide evenly.

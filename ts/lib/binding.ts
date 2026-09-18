@@ -13,7 +13,9 @@ const CHUNK_SIZE = 64 * 1024;
 const READ_SLOTS = 32;
 const RESOLVED = Promise.resolve();
 const localStores = new WeakSet();
-const getBackingStore = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'buffer')!.get!;
+const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+const getBackingStore = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'buffer')!.get!;
+const getLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'length')!.get!;
 const defaults = {
   dataBits: 8,
   stopBits: 1,
@@ -323,7 +325,10 @@ class BindingPort {
       for (const buffer of buffers) {
         for (let offset = 0; offset < buffer.length;) {
           const count = Math.min(buffer.length - offset, CHUNK_SIZE - size);
-          batch.push(buffer.subarray(offset, offset + count));
+          // N-API sees the intrinsic view length, even if JavaScript shadows .length.
+          batch.push(
+            offset === 0 && count === getLength.call(buffer) ? buffer : buffer.subarray(offset, offset + count),
+          );
           offset += count;
           size += count;
           if (size === CHUNK_SIZE || batch.length === 1024) {

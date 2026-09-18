@@ -20,6 +20,7 @@ const { values } = parseArgs({
     samples: { type: 'string', default: '10000' },
     warmup: { type: 'string', default: '2000' },
     bytes: { type: 'string', default: '32' },
+    segments: { type: 'string', default: '1' },
     'idle-ms': { type: 'string', default: '3000' },
     'gap-ms': { type: 'string', default: '0' },
   },
@@ -27,6 +28,8 @@ const { values } = parseArgs({
 const samples = integer('samples', 1, 1000000);
 const warmup = integer('warmup', 0, 1000000);
 const bytes = integer('bytes', 4, 65536);
+const segments = integer('segments', 1, 1024);
+assert(bytes % segments === 0, 'Bytes must divide into whole segments');
 const idleMs = integer('idle-ms', 0, 60000);
 const gapMs = integer('gap-ms', 0, 1000);
 const bindingPath = resolve(values.binding || join(__dirname, '..'));
@@ -68,7 +71,12 @@ async function main() {
   try {
     const first = await lines.next();
     assert(!first.done, `Echo helper failed: ${helperError}`);
-    port = new SerialPortStream({ path: first.value, baudRate: 115200, autoOpen: false, binding });
+    port = new SerialPortStream({
+      path: first.value,
+      baudRate: 115200,
+      autoOpen: false,
+      binding,
+    });
     let pending;
     let failure;
     port.on('error', (error) => {
@@ -77,6 +85,9 @@ async function main() {
     });
     const payload = Buffer.allocUnsafe(bytes);
     for (let i = 0; i < bytes; i++) payload[i] = i & 255;
+    const parts = Array.from({ length: segments }, (_, i) =>
+      payload.subarray((i * bytes) / segments, ((i + 1) * bytes) / segments),
+    );
     port.on('data', (data) => {
       const receivedAt = process.hrtime.bigint();
       assert(pending, 'Unexpected serial data');
@@ -115,7 +126,14 @@ async function main() {
         onWrite = (error) => (error ? reject(error) : resolve(process.hrtime.bigint()));
       });
       const sentAt = process.hrtime.bigint();
-      port.write(payload, onWrite);
+      if (segments === 1) port.write(payload, onWrite);
+      else {
+        port.cork();
+        for (let part = 0; part < parts.length; part++) {
+          port.write(parts[part], part === parts.length - 1 ? onWrite : undefined);
+        }
+        port.uncork();
+      }
       const receivedAt = await response;
       const continuedAt = process.hrtime.bigint();
       const writtenAt = await written;
@@ -160,6 +178,7 @@ async function main() {
         samples,
         warmup,
         bytes,
+        segments,
         gapMs,
         eventUs: distribution(eventUs),
         promiseUs: distribution(promiseUs),

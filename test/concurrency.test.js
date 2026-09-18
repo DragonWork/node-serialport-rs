@@ -119,12 +119,34 @@ test('vectored writes snapshot repeated and overlapping buffers', { timeout: 500
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
   const buffer = Buffer.from('overlapping');
-  const parts = [buffer, buffer.subarray(3), buffer, buffer.subarray(0, 4)];
+  const parts = Object.freeze([buffer, buffer.subarray(3), buffer, buffer.subarray(0, 4)]);
   const expected = Buffer.concat(parts);
   const written = port.writev(parts);
   buffer.fill(0);
   assert.equal(await terminal.command(`read ${expected.length}`), expected.toString('hex'));
   await written;
+});
+
+test('vectored writes preserve immutable inputs across the native byte limit', { timeout: 5000 }, async (t) => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => port.isOpen && port.close());
+  const parts = Object.freeze([Buffer.alloc(0), Buffer.alloc(48 * 1024, 0xa1), Buffer.alloc(32 * 1024, 0xb2)]);
+  const expected = Buffer.concat(parts);
+  const [received] = await Promise.all([terminal.command(`read ${expected.length}`), port.writev(parts)]);
+  assert.equal(received, expected.toString('hex'));
+  assert.equal(parts[1].length, 48 * 1024);
+  assert.equal(parts[2].length, 32 * 1024);
+});
+
+test('vectored writes retain slicing semantics for a shadowed Buffer length', { timeout: 5000 }, async (t) => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => port.isOpen && port.close());
+  const buffer = Buffer.from('prefix unused');
+  Object.defineProperty(buffer, 'length', { value: 6 });
+  await port.writev([buffer, Buffer.from('!')]);
+  assert.equal(await terminal.command('read 7'), Buffer.from('prefix!').toString('hex'));
 });
 
 test('small writes complete asynchronously and stay behind queued controls', { timeout: 10000 }, async (t) => {

@@ -3,15 +3,18 @@
 
 'use strict';
 
-import {Transform, type TransformCallback} from 'node:stream';
-import type {SlipEncoderOptions} from '../../public-api';
-import {ByteQueue, integer} from './bytes';
+import { Transform, type TransformCallback } from 'node:stream';
+import type { SlipEncoderOptions } from '../../public-api';
+import { ByteQueue, integer } from './bytes';
 
 type SlipSettings = SlipEncoderOptions & Required<Pick<SlipEncoderOptions, 'ESC' | 'END' | 'ESC_END' | 'ESC_ESC'>>;
 
 function settings(options: SlipEncoderOptions): SlipSettings {
-  const result = {...options};
-  for (const [name, value] of Object.entries({ESC: 0xdb, END: 0xc0, ESC_END: 0xdc, ESC_ESC: 0xdd}) as ['ESC' | 'END' | 'ESC_END' | 'ESC_ESC', number][]) {
+  const result = { ...options };
+  for (const [name, value] of Object.entries({ ESC: 0xdb, END: 0xc0, ESC_END: 0xdc, ESC_ESC: 0xdd }) as [
+    'ESC' | 'END' | 'ESC_END' | 'ESC_ESC',
+    number,
+  ][]) {
     if (result[name] === undefined) result[name] = value;
   }
   for (const name of ['START', 'ESC', 'END', 'ESC_START', 'ESC_END', 'ESC_ESC'] as const) {
@@ -27,14 +30,14 @@ class SlipEncoder extends Transform {
   constructor(options: SlipEncoderOptions = {}) {
     super(options);
     this.#options = settings(options);
-    const {START, END, ESC, ESC_START, ESC_END, ESC_ESC} = this.#options;
+    const { START, END, ESC, ESC_START, ESC_END, ESC_ESC } = this.#options;
     this.#codes[ESC] = ESC_ESC;
     this.#codes[END] = ESC_END;
     if (START !== undefined && ESC_START !== undefined) this.#codes[START] = ESC_START;
   }
 
   _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
-    const {START, END, ESC, bluetoothQuirk} = this.#options;
+    const { START, END, ESC, bluetoothQuirk } = this.#options;
     if (bluetoothQuirk && !chunk.length) return callback();
     let length = chunk.length + 1 + Number(START !== undefined) + Number(Boolean(bluetoothQuirk));
     for (let i = 0; i < chunk.length; i++) length += Number(this.#codes[chunk[i]] !== -1);
@@ -45,7 +48,10 @@ class SlipEncoder extends Transform {
     for (let i = 0; i < chunk.length; i++) {
       const code = this.#codes[chunk[i]];
       if (code === -1) output[offset++] = chunk[i];
-      else { output[offset++] = ESC; output[offset++] = code; }
+      else {
+        output[offset++] = ESC;
+        output[offset++] = code;
+      }
     }
     output[offset] = END;
     callback(null, output);
@@ -62,14 +68,14 @@ class SlipDecoder extends Transform {
   constructor(options: SlipEncoderOptions = {}) {
     super(options);
     this.#options = settings(options);
-    const {START, END, ESC, ESC_START, ESC_END, ESC_ESC} = this.#options;
+    const { START, END, ESC, ESC_START, ESC_END, ESC_ESC } = this.#options;
     this.#codes[ESC_END] = END;
     this.#codes[ESC_ESC] = ESC;
     if (START !== undefined && ESC_START !== undefined) this.#codes[ESC_START] = START;
   }
 
   _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
-    const {START, END, ESC} = this.#options;
+    const { START, END, ESC } = this.#options;
     // Native searches pay off on larger chunks. Keep small fragments on the
     // byte loop, and retain larger unescaped payloads without copying them.
     if (chunk.length >= 256 && START === undefined && !this.#escaped && chunk.indexOf(ESC) === -1) {
@@ -101,8 +107,10 @@ class SlipDecoder extends Transform {
         if (this.#started) decoded[size++] = code === -1 ? byte : code;
       } else if (byte === START) this.#started = true;
       else if (byte === ESC) this.#escaped = true;
-      else if (byte === END) { emit(); this.#started = false; }
-      else if (this.#started) decoded[size++] = byte;
+      else if (byte === END) {
+        emit();
+        this.#started = false;
+      } else if (this.#started) decoded[size++] = byte;
     }
     this.#bytes.append(decoded.subarray(frameStart, size));
     callback();
@@ -114,4 +122,4 @@ class SlipDecoder extends Transform {
   }
 }
 
-export {SlipEncoder, SlipDecoder};
+export { SlipEncoder, SlipDecoder };

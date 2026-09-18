@@ -6,11 +6,11 @@
 `SerialPortMock` uses the same JavaScript stream implementation without loading the native addon or opening hardware.
 
 ```js
-import {once} from 'node:events';
-import {SerialPortMock} from 'serialport-rs';
+import { once } from 'node:events';
+import { SerialPortMock } from 'serialport-rs';
 
-SerialPortMock.binding.createPort('/mock/device', {echo: true, record: true});
-const port = new SerialPortMock({path: '/mock/device', baudRate: 115200});
+SerialPortMock.binding.createPort('/mock/device', { echo: true, record: true });
+const port = new SerialPortMock({ path: '/mock/device', baudRate: 115200 });
 await once(port, 'open');
 
 const reply = once(port, 'data');
@@ -18,7 +18,7 @@ port.write('hello');
 console.log((await reply)[0].toString()); // hello
 console.log(port.port.recording.toString()); // hello
 
-await new Promise((resolve, reject) => port.close(error => error ? reject(error) : resolve()));
+await new Promise((resolve, reject) => port.close((error) => (error ? reject(error) : resolve())));
 SerialPortMock.binding.reset();
 ```
 

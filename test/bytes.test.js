@@ -5,10 +5,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {ByteQueue} = require('../lib/parsers/bytes');
+const { ByteQueue } = require('../lib/parsers/bytes');
 
 test('byte queue preserves partial chunks through peeks, discards and compaction', () => {
-  const input = Buffer.from(Array.from({length: 4096}, (_, i) => i & 255));
+  const input = Buffer.from(Array.from({ length: 4096 }, (_, i) => i & 255));
   const queue = new ByteQueue();
   for (let i = 0; i < input.length; i += 7) queue.append(input.subarray(i, i + 7));
   let offset = 0;

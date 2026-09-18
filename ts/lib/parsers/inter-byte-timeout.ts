@@ -3,9 +3,9 @@
 
 'use strict';
 
-import {Transform, type TransformCallback} from 'node:stream';
-import type {InterByteTimeoutOptions} from '../../public-api';
-import {ByteQueue, integer} from './bytes';
+import { Transform, type TransformCallback } from 'node:stream';
+import type { InterByteTimeoutOptions } from '../../public-api';
+import { ByteQueue, integer } from './bytes';
 
 class InterByteTimeoutParser extends Transform {
   #bytes = new ByteQueue();
@@ -13,9 +13,10 @@ class InterByteTimeoutParser extends Transform {
   declare interval: number;
   declare maxBufferSize: number;
 
-  constructor({interval, maxBufferSize = 65536, ...options}: Partial<InterByteTimeoutOptions> = {}) {
+  constructor({ interval, maxBufferSize = 65536, ...options }: Partial<InterByteTimeoutOptions> = {}) {
     super(options);
-    if (typeof interval !== 'number' || !Number.isFinite(interval) || interval < 1) throw new TypeError('Invalid interval');
+    if (typeof interval !== 'number' || !Number.isFinite(interval) || interval < 1)
+      throw new TypeError('Invalid interval');
     this.interval = interval;
     this.maxBufferSize = integer(maxBufferSize, 'maxBufferSize');
   }
@@ -54,4 +55,4 @@ class InterByteTimeoutParser extends Transform {
   }
 }
 
-export {InterByteTimeoutParser};
+export { InterByteTimeoutParser };

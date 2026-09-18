@@ -3,9 +3,9 @@
 
 'use strict';
 
-import {Transform, type TransformCallback} from 'node:stream';
-import type {ByteLengthOptions} from '../../public-api';
-import {ByteQueue, integer} from './bytes';
+import { Transform, type TransformCallback } from 'node:stream';
+import type { ByteLengthOptions } from '../../public-api';
+import { ByteQueue, integer } from './bytes';
 
 class ByteLengthParser extends Transform {
   #bytes = new ByteQueue();
@@ -28,4 +28,4 @@ class ByteLengthParser extends Transform {
   }
 }
 
-export {ByteLengthParser};
+export { ByteLengthParser };

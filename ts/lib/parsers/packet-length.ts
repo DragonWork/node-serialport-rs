@@ -3,9 +3,9 @@
 
 'use strict';
 
-import {Transform, type TransformCallback} from 'node:stream';
-import type {PacketLengthOptions} from '../../public-api';
-import {ByteQueue, integer} from './bytes';
+import { Transform, type TransformCallback } from 'node:stream';
+import type { PacketLengthOptions } from '../../public-api';
+import { ByteQueue, integer } from './bytes';
 
 class PacketLengthParser extends Transform {
   #bytes = new ByteQueue();
@@ -18,8 +18,15 @@ class PacketLengthParser extends Transform {
   declare packetOverhead: number;
   declare maxLen: number;
 
-  constructor({delimiter = 0xaa, delimiterBytes = 1, packetOverhead = 2,
-    lengthBytes = 1, lengthOffset = 1, maxLen = 255, ...options}: PacketLengthOptions = {}) {
+  constructor({
+    delimiter = 0xaa,
+    delimiterBytes = 1,
+    packetOverhead = 2,
+    lengthBytes = 1,
+    lengthOffset = 1,
+    maxLen = 255,
+    ...options
+  }: PacketLengthOptions = {}) {
     super(options);
     this.delimiterBytes = integer(delimiterBytes, 'delimiterBytes', 1, 6);
     this.lengthBytes = integer(lengthBytes, 'lengthBytes', 1, 6);
@@ -65,4 +72,4 @@ class PacketLengthParser extends Transform {
   }
 }
 
-export {PacketLengthParser};
+export { PacketLengthParser };

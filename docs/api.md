@@ -8,19 +8,19 @@
 ES modules:
 
 ```js
-import {SerialPort, ReadlineParser} from 'serialport-rs';
+import { SerialPort, ReadlineParser } from 'serialport-rs';
 
-const port = new SerialPort({path: '/dev/ttyUSB0', baudRate: 115200});
-const lines = port.pipe(new ReadlineParser({delimiter: '\r\n'}));
+const port = new SerialPort({ path: '/dev/ttyUSB0', baudRate: 115200 });
+const lines = port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
 
-port.on('error', error => console.error('Serial error:', error.message));
-port.on('close', error => {
+port.on('error', (error) => console.error('Serial error:', error.message));
+port.on('close', (error) => {
   if (error?.disconnected) console.error('Device disconnected');
 });
-lines.on('data', line => console.log(line));
+lines.on('data', (line) => console.log(line));
 
 port.on('open', () => {
-  port.write('status\r\n', error => {
+  port.write('status\r\n', (error) => {
     if (error) console.error('Write failed:', error.message);
   });
 });
@@ -29,7 +29,7 @@ port.on('open', () => {
 CommonJS is also supported:
 
 ```js
-const {SerialPort, ReadlineParser} = require('serialport-rs');
+const { SerialPort, ReadlineParser } = require('serialport-rs');
 ```
 
 Opening is automatic unless `autoOpen: false` is passed. Use `open(callback)` and `close(callback)` for explicit lifecycle control. The stream supports `pipe()`, `pause()`, `resume()`, `cork()`, and normal Node.js backpressure. `write()` accepts buffers, strings, and arrays of bytes; when it returns `false`, wait for the stream's `drain` event before submitting more data.
@@ -62,7 +62,7 @@ Each entry includes `path`, `manufacturer`, `serialNumber`, `vendorId`, `product
 | `highWaterMark` | `65536` | Node stream buffering threshold, in bytes |
 | `endOnClose` | `false` | Emit `end` when the port closes |
 
-Available control methods are `update({baudRate}, callback)`, `set({dtr, rts, brk}, callback)`, `get(callback)`, `flush(callback)`, and `drain(callback)`. `get()` returns CTS, DSR, and DCD status. `flush()` discards unread input and output that the OS has not transmitted. Device drivers may reject unsupported control operations or serial settings.
+Available control methods are `update({ baudRate }, callback)`, `set({ dtr, rts, brk }, callback)`, `get(callback)`, `flush(callback)`, and `drain(callback)`. `get()` returns CTS, DSR, and DCD status. `flush()` discards unread input and output that the OS has not transmitted. Device drivers may reject unsupported control operations or serial settings.
 
 See [index.d.ts](../index.d.ts) for the exported types and method signatures.
 
@@ -71,13 +71,13 @@ See [index.d.ts](../index.d.ts) for the exported types and method signatures.
 For code that already manages its own stream layer, `RustBinding` implements the serial binding interface:
 
 ```js
-import {RustBinding} from 'serialport-rs';
+import { RustBinding } from 'serialport-rs';
 
-const binding = await RustBinding.open({path: '/dev/ttyUSB0', baudRate: 115200});
+const binding = await RustBinding.open({ path: '/dev/ttyUSB0', baudRate: 115200 });
 try {
   await binding.write(Buffer.from('status\r\n'));
   const buffer = Buffer.alloc(256);
-  const {bytesRead} = await binding.read(buffer, 0, buffer.length);
+  const { bytesRead } = await binding.read(buffer, 0, buffer.length);
   console.log(buffer.subarray(0, bytesRead));
 } finally {
   await binding.close();
@@ -105,8 +105,8 @@ All parsers are JavaScript transforms and can be loaded without the native binar
 `DelimiterParser` and `ReadlineParser` accept an optional `maxFrameLength` to reject oversized frames, including incomplete input that never receives a terminator:
 
 ```js
-const lines = port.pipe(new ReadlineParser({maxFrameLength: 4096}));
-lines.on('error', error => {
+const lines = port.pipe(new ReadlineParser({ maxFrameLength: 4096 }));
+lines.on('error', (error) => {
   if (error.code === 'ERR_SERIALPORT_FRAME_TOO_LARGE') console.error('Device sent an oversized line');
 });
 ```

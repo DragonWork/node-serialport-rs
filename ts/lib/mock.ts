@@ -3,15 +3,22 @@
 
 'use strict';
 
-import {SerialPortStream, type PortSettings} from './stream';
-import {validateOptions} from './binding';
-import {ByteQueue, integer} from './parsers/bytes';
-import type {BindingOpenOptions, CreatePortOptions, ErrorCallback, PortInfo, SetOptions, UpdateOptions} from '../public-api';
+import { SerialPortStream, type PortSettings } from './stream';
+import { validateOptions } from './binding';
+import { ByteQueue, integer } from './parsers/bytes';
+import type {
+  BindingOpenOptions,
+  CreatePortOptions,
+  ErrorCallback,
+  PortInfo,
+  SetOptions,
+  UpdateOptions,
+} from '../public-api';
 
 const devices = new Map<string, VirtualDevice>();
 let sequence = 0;
-const nextTick = () => new Promise<void>(resolve => process.nextTick(resolve));
-const canceled = () => Object.assign(new Error('Port is closed'), {canceled: true});
+const nextTick = () => new Promise<void>((resolve) => process.nextTick(resolve));
+const canceled = () => Object.assign(new Error('Port is closed'), { canceled: true });
 
 class VirtualDevice {
   #bytes = new ByteQueue();
@@ -26,31 +33,46 @@ class VirtualDevice {
   constructor(path: string, options: CreatePortOptions) {
     this.echo = options.echo ?? false;
     this.record = options.record ?? false;
-    if (typeof this.echo !== 'boolean' || typeof this.record !== 'boolean') throw new TypeError('Invalid mock port flags');
+    if (typeof this.echo !== 'boolean' || typeof this.record !== 'boolean')
+      throw new TypeError('Invalid mock port flags');
     this.maxReadSize = integer(options.maxReadSize ?? 1024, 'maxReadSize');
     this.readyData = options.readyData === undefined ? undefined : Buffer.from(options.readyData);
-    this.info = {path, manufacturer: options.manufacturer ?? 'The J5 Robotics Company',
-      serialNumber: String(++sequence), pnpId: undefined, locationId: undefined,
-      vendorId: options.vendorId, productId: options.productId};
+    this.info = {
+      path,
+      manufacturer: options.manufacturer ?? 'The J5 Robotics Company',
+      serialNumber: String(++sequence),
+      pnpId: undefined,
+      locationId: undefined,
+      vendorId: options.vendorId,
+      productId: options.productId,
+    };
     this.openOpt = undefined;
   }
 
-  get data() { return this.#bytes.peek(this.#bytes.length); }
-  set data(value: Buffer) { this.#bytes.clear(); this.feed(value); }
+  get data() {
+    return this.#bytes.peek(this.#bytes.length);
+  }
+  set data(value: Buffer) {
+    this.#bytes.clear();
+    this.feed(value);
+  }
 
   open(options: Required<BindingOpenOptions>) {
-    if ([...this.#sessions].some(port => port.openOptions.lock) || (options.lock && this.#sessions.size)) {
+    if ([...this.#sessions].some((port) => port.openOptions.lock) || (options.lock && this.#sessions.size)) {
       throw new Error('Port is locked');
     }
     const port = new MockPortBinding(this, options);
     this.#sessions.add(port);
-    this.openOpt = {...options};
+    this.openOpt = { ...options };
     return port;
   }
 
   close(port: MockPortBinding) {
     this.#sessions.delete(port);
-    if (!this.#sessions.size) { this.#bytes.clear(); this.openOpt = undefined; }
+    if (!this.#sessions.size) {
+      this.#bytes.clear();
+      this.openOpt = undefined;
+    }
   }
 
   feed(data: Buffer | string) {
@@ -66,12 +88,19 @@ class VirtualDevice {
     return copied;
   }
 
-  flush() { this.#bytes.clear(); }
+  flush() {
+    this.#bytes.clear();
+  }
 }
 
 class MockPortBinding {
-  #pending?: {buffer: Buffer; offset: number; length: number;
-    resolve: (result: {buffer: Buffer; bytesRead: number}) => void; reject: (error: unknown) => void};
+  #pending?: {
+    buffer: Buffer;
+    offset: number;
+    length: number;
+    resolve: (result: { buffer: Buffer; bytesRead: number }) => void;
+    reject: (error: unknown) => void;
+  };
   #scheduled = false;
   #recorded: Buffer[] = [];
   #recordedSize = 0;
@@ -84,25 +113,35 @@ class MockPortBinding {
 
   constructor(device: VirtualDevice, options: Required<BindingOpenOptions>) {
     this.port = device;
-    this.openOptions = Object.freeze({...options});
+    this.openOptions = Object.freeze({ ...options });
     this.isOpen = true;
     this.lastWrite = null;
     this.writeOperation = null;
     this.serialNumber = device.info.serialNumber;
     const ready = device.readyData;
-    if (ready) process.nextTick(() => { if (this.isOpen) this.emitData(ready); });
+    if (ready)
+      process.nextTick(() => {
+        if (this.isOpen) this.emitData(ready);
+      });
   }
 
-  get recording() { return Buffer.concat(this.#recorded, this.#recordedSize); }
+  get recording() {
+    return Buffer.concat(this.#recorded, this.#recordedSize);
+  }
   set recording(data: Buffer) {
     const snapshot = Buffer.from(data);
     this.#recorded = snapshot.length ? [snapshot] : [];
     this.#recordedSize = snapshot.length;
   }
 
-  #check() { if (!this.isOpen) throw canceled(); }
+  #check() {
+    if (!this.isOpen) throw canceled();
+  }
 
-  emitData(data: Buffer | string) { this.#check(); this.port.feed(data); }
+  emitData(data: Buffer | string) {
+    this.#check();
+    this.port.feed(data);
+  }
 
   _wake() {
     if (!this.#pending || this.#scheduled) return;
@@ -116,20 +155,29 @@ class MockPortBinding {
         const bytesRead = this.port.read(request.buffer, request.offset, request.length);
         if (!bytesRead) return;
         this.#pending = undefined;
-        request.resolve({buffer: request.buffer, bytesRead});
-      } catch (error) { this.#pending = undefined; request.reject(error); }
+        request.resolve({ buffer: request.buffer, bytesRead });
+      } catch (error) {
+        this.#pending = undefined;
+        request.reject(error);
+      }
     });
   }
 
   async read(buffer: Buffer, offset: number, length: number) {
     if (!Buffer.isBuffer(buffer)) throw new TypeError('buffer must be a Buffer');
-    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 1 || offset + length > buffer.length) {
+    if (
+      !Number.isSafeInteger(offset) ||
+      !Number.isSafeInteger(length) ||
+      offset < 0 ||
+      length < 1 ||
+      offset + length > buffer.length
+    ) {
       throw new RangeError('Invalid read range');
     }
     this.#check();
     if (this.#pending) throw new Error('Read already pending');
-    return new Promise<{buffer: Buffer; bytesRead: number}>((resolve, reject) => {
-      this.#pending = {buffer, offset, length, resolve, reject};
+    return new Promise<{ buffer: Buffer; bytesRead: number }>((resolve, reject) => {
+      this.#pending = { buffer, offset, length, resolve, reject };
       this._wake();
     });
   }
@@ -150,20 +198,29 @@ class MockPortBinding {
     if (this.writeOperation) throw new Error('Write already pending');
     const snapshot = Buffer.from(buffer);
     this.writeOperation = this.#write(snapshot);
-    try { await this.writeOperation; }
-    finally { this.writeOperation = null; }
+    try {
+      await this.writeOperation;
+    } finally {
+      this.writeOperation = null;
+    }
   }
 
   async #write(data: Buffer) {
     await nextTick();
     this.#check();
     this.lastWrite = Buffer.from(data);
-    if (this.port.record) { this.#recorded.push(data); this.#recordedSize += data.length; }
-    if (this.port.echo) process.nextTick(() => { if (this.isOpen) this.emitData(data); });
+    if (this.port.record) {
+      this.#recorded.push(data);
+      this.#recordedSize += data.length;
+    }
+    if (this.port.echo)
+      process.nextTick(() => {
+        if (this.isOpen) this.emitData(data);
+      });
   }
 
   async update(options: UpdateOptions) {
-    const {baudRate} = validateOptions({...this.openOptions, baudRate: options?.baudRate});
+    const { baudRate } = validateOptions({ ...this.openOptions, baudRate: options?.baudRate });
     this.#check();
     await nextTick();
     this.#check();
@@ -171,7 +228,8 @@ class MockPortBinding {
   }
 
   async set(options: SetOptions) {
-    if (!options || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('options must be an object');
+    if (!options || typeof options !== 'object' || Array.isArray(options))
+      throw new TypeError('options must be an object');
     for (const name of ['dtr', 'rts', 'brk', 'cts', 'dsr'] as const) {
       if (options[name] !== undefined && typeof options[name] !== 'boolean') throw new TypeError(`Invalid ${name}`);
     }
@@ -180,20 +238,46 @@ class MockPortBinding {
     this.#check();
   }
 
-  async get() { this.#check(); await nextTick(); this.#check(); return {cts: true, dsr: false, dcd: false}; }
-  async getBaudRate() { this.#check(); await nextTick(); this.#check(); return {baudRate: this.port.openOpt!.baudRate}; }
-  async flush() { this.#check(); await nextTick(); this.#check(); this.port.flush(); }
-  async drain() { this.#check(); await this.writeOperation; await nextTick(); this.#check(); }
+  async get() {
+    this.#check();
+    await nextTick();
+    this.#check();
+    return { cts: true, dsr: false, dcd: false };
+  }
+  async getBaudRate() {
+    this.#check();
+    await nextTick();
+    this.#check();
+    return { baudRate: this.port.openOpt!.baudRate };
+  }
+  async flush() {
+    this.#check();
+    await nextTick();
+    this.#check();
+    this.port.flush();
+  }
+  async drain() {
+    this.#check();
+    await this.writeOperation;
+    await nextTick();
+    this.#check();
+  }
 }
 
 const MockBinding = {
-  reset() { devices.clear(); sequence = 0; },
+  reset() {
+    devices.clear();
+    sequence = 0;
+  },
   createPort(path: string, options: CreatePortOptions = {}) {
     if (typeof path !== 'string' || !path || path.includes('\0')) throw new TypeError('Invalid mock port path');
-    if (!options || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('options must be an object');
+    if (!options || typeof options !== 'object' || Array.isArray(options))
+      throw new TypeError('options must be an object');
     devices.set(path, new VirtualDevice(path, options));
   },
-  async list() { return [...devices.values()].map(device => ({...device.info})); },
+  async list() {
+    return [...devices.values()].map((device) => ({ ...device.info }));
+  },
   async open(options: BindingOpenOptions) {
     if (Array.isArray(options)) throw new TypeError('options must be an object');
     const settings = validateOptions(options);
@@ -207,7 +291,9 @@ const MockBinding = {
 class SerialPortMock extends SerialPortStream {
   static binding = MockBinding;
   static list = MockBinding.list;
-  constructor(options: PortSettings, callback?: ErrorCallback) { super({...options, binding: options?.binding || MockBinding}, callback); }
+  constructor(options: PortSettings, callback?: ErrorCallback) {
+    super({ ...options, binding: options?.binding || MockBinding }, callback);
+  }
 }
 
-export {SerialPortMock};
+export { SerialPortMock };

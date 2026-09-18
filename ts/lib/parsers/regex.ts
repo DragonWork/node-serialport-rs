@@ -3,17 +3,17 @@
 
 'use strict';
 
-import {Transform, type TransformCallback} from 'node:stream';
-import {StringDecoder} from 'node:string_decoder';
-import type {RegexParserOptions} from '../../public-api';
+import { Transform, type TransformCallback } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
+import type { RegexParserOptions } from '../../public-api';
 
 class RegexParser extends Transform {
   #decoder: StringDecoder;
   #tail = '';
   declare regex: RegExp;
 
-  constructor({regex, encoding = 'utf8', ...options}: Partial<RegexParserOptions> = {}) {
-    super({...options, encoding});
+  constructor({ regex, encoding = 'utf8', ...options }: Partial<RegexParserOptions> = {}) {
+    super({ ...options, encoding });
     if (regex === undefined) throw new TypeError('regex is required');
     this.regex = regex instanceof RegExp ? regex : new RegExp(String(regex));
     this.#decoder = new StringDecoder(encoding);
@@ -34,4 +34,4 @@ class RegexParser extends Transform {
   }
 }
 
-export {RegexParser};
+export { RegexParser };

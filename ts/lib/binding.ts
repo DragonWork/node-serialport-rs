@@ -3,10 +3,10 @@
 
 'use strict';
 
-import {types} from 'node:util';
-import type {BindingOpenOptions, SetOptions, UpdateOptions} from '../public-api';
-import type {NativeAddon, NativeHandle, NativeEvent, ControlOperation} from './native';
-const {isSharedArrayBuffer} = types;
+import { types } from 'node:util';
+import type { BindingOpenOptions, SetOptions, UpdateOptions } from '../public-api';
+import type { NativeAddon, NativeHandle, NativeEvent, ControlOperation } from './native';
+const { isSharedArrayBuffer } = types;
 let native: NativeAddon | undefined;
 const loadNative = (): NativeAddon => (native ??= (require('./native') as typeof import('./native')).loadNative());
 const CHUNK_SIZE = 64 * 1024;
@@ -14,10 +14,20 @@ const READ_SLOTS = 32;
 const RESOLVED = Promise.resolve();
 const localStores = new WeakSet();
 const getBackingStore = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'buffer')!.get!;
-const defaults = {dataBits: 8, stopBits: 1, parity: 'none', lock: true, rtscts: false, xon: false, xoff: false, xany: false, hupcl: true};
+const defaults = {
+  dataBits: 8,
+  stopBits: 1,
+  parity: 'none',
+  lock: true,
+  rtscts: false,
+  xon: false,
+  xoff: false,
+  xany: false,
+  hupcl: true,
+};
 
 function canceled(message = 'Port is closed') {
-  return Object.assign(new Error(message), {canceled: true});
+  return Object.assign(new Error(message), { canceled: true });
 }
 
 function localBuffer(buffer: Buffer): Buffer {
@@ -32,9 +42,11 @@ function localBuffer(buffer: Buffer): Buffer {
 
 function validateOptions<O extends Partial<BindingOpenOptions>>(options: O): O & Required<BindingOpenOptions> {
   if (!options || typeof options !== 'object') throw new TypeError('Options must be an object');
-  if (typeof options.path !== 'string' || !options.path || options.path.includes('\0')) throw new TypeError('"path" must be a nonempty device path');
-  if (!Number.isInteger(options.baudRate) || options.baudRate! <= 0 || options.baudRate! > 0xffffffff) throw new TypeError('"baudRate" must be a positive 32-bit integer');
-  const settings = {...defaults, ...options};
+  if (typeof options.path !== 'string' || !options.path || options.path.includes('\0'))
+    throw new TypeError('"path" must be a nonempty device path');
+  if (!Number.isInteger(options.baudRate) || options.baudRate! <= 0 || options.baudRate! > 0xffffffff)
+    throw new TypeError('"baudRate" must be a positive 32-bit integer');
+  const settings = { ...defaults, ...options };
   if (![5, 6, 7, 8].includes(settings.dataBits)) throw new TypeError('Invalid dataBits');
   if (![1, 1.5, 2].includes(settings.stopBits)) throw new TypeError('Invalid stopBits');
   if (!['none', 'odd', 'even', 'mark', 'space'].includes(settings.parity)) throw new TypeError('Invalid parity');
@@ -68,7 +80,7 @@ class BindingPort {
   declare _failure: Error | null;
   declare _closed: Promise<void>;
   declare _resolveClosed: () => void;
-  declare opened: Promise<BindingPort> & {cancel?: () => void};
+  declare opened: Promise<BindingPort> & { cancel?: () => void };
   declare _resolveOpen: (port: BindingPort) => void;
   declare _rejectOpen: (error: Error) => void;
   declare _native: NativeHandle | null;
@@ -90,32 +102,39 @@ class BindingPort {
     this._closing = false;
     this._finished = false;
     this._failure = null;
-    this._closed = new Promise(resolve => { this._resolveClosed = resolve; });
+    this._closed = new Promise((resolve) => {
+      this._resolveClosed = resolve;
+    });
     this.opened = new Promise<BindingPort>((resolve, reject) => {
       this._resolveOpen = resolve;
       this._rejectOpen = reject;
     });
-    const {NativePort} = loadNative();
-    this._native = new NativePort(this.openOptions, (error, event) => {
-      if (error) {
-        this._failure = error;
-        this._native?.close();
-      }
-      else if (Buffer.isBuffer(event)) {
-        queueMicrotask(() => {
-          if (!this.isOpen) return;
-          this._readBytes -= event.length;
-          this._readSlots--;
-          this.onData?.(event);
-        });
-      }
-      else this._event(event);
-    }, Buffer.allocUnsafe);
+    const { NativePort } = loadNative();
+    this._native = new NativePort(
+      this.openOptions,
+      (error, event) => {
+        if (error) {
+          this._failure = error;
+          this._native?.close();
+        } else if (Buffer.isBuffer(event)) {
+          queueMicrotask(() => {
+            if (!this.isOpen) return;
+            this._readBytes -= event.length;
+            this._readSlots--;
+            this.onData?.(event);
+          });
+        } else this._event(event);
+      },
+      Buffer.allocUnsafe,
+    );
   }
 
   _event(event: NativeEvent) {
     if (event.kind === 'open') {
-      if (!this._closing) { this.isOpen = true; this._resolveOpen(this); }
+      if (!this._closing) {
+        this.isOpen = true;
+        this._resolveOpen(this);
+      }
       return;
     }
     if (event.kind === 'close') {
@@ -142,7 +161,7 @@ class BindingPort {
     // Streams acknowledge I/O failures through close(); isOpen must allow that call.
     // Rust has already released the descriptor, even if the consumer never closes.
     if (!wasOpen || intentional) this._native = null;
-    const reason: Error & {disconnected?: boolean} = intentional ? canceled() : error || canceled();
+    const reason: Error & { disconnected?: boolean } = intentional ? canceled() : error || canceled();
     if (!intentional && wasOpen) reason.disconnected = true;
     this._rejectOpen(reason);
     for (const pending of this._pending.values()) pending.reject(reason);
@@ -152,27 +171,30 @@ class BindingPort {
     this.onClose?.(intentional ? null : reason);
   }
 
-  _request(op: ControlOperation | 'read' | 'write' | 'writev', value = 0, data?: Buffer | Buffer[]): Promise<NativeEvent | void> {
+  _request(
+    op: ControlOperation | 'read' | 'write' | 'writev',
+    value = 0,
+    data?: Buffer | Buffer[],
+  ): Promise<NativeEvent | void> {
     if (!this.isOpen || this._closing) return Promise.reject(canceled());
     if (this._pending.size >= 64) return Promise.reject(new Error('Too many pending serial operations'));
     const id = this._id();
     return new Promise<NativeEvent | void>((resolve, reject) => {
       const ordered = op !== 'read';
-      this._pending.set(id, {resolve, reject, ordered});
+      this._pending.set(id, { resolve, reject, ordered });
       if (ordered) this._ordered++;
       try {
         if (op === 'read') this._native!.read(id, value);
         else if (op === 'write') {
           if (this._native!.write(id, localBuffer(data as Buffer), this._ordered === 1)) this._settle(id, null);
-        }
-        else if (op === 'writev') {
+        } else if (op === 'writev') {
           const buffers = data as Buffer[];
           for (let i = 0; i < buffers.length; i++) buffers[i] = localBuffer(buffers[i]);
           this._native!.writev(id, buffers, value);
-        }
-        else this._native!.request(id, op, value);
+        } else this._native!.request(id, op, value);
+      } catch (error) {
+        this._settle(id, error);
       }
-      catch (error) { this._settle(id, error); }
     });
   }
 
@@ -185,7 +207,10 @@ class BindingPort {
     return id;
   }
 
-  cancelOpen() { this._closing = true; this._native?.close(); }
+  cancelOpen() {
+    this._closing = true;
+    this._native?.close();
+  }
 
   async close() {
     if (!this.isOpen || this._closing) throw new Error('Port is not open');
@@ -200,8 +225,11 @@ class BindingPort {
     if (!Number.isInteger(length) || length < 1) throw new TypeError('Invalid read length');
     if (this._reading || this._streaming) throw new Error('Read already pending');
     this._reading = true;
-    try { return (await this._request('read', Math.min(length, CHUNK_SIZE)))!.data!; }
-    finally { this._reading = false; }
+    try {
+      return (await this._request('read', Math.min(length, CHUNK_SIZE)))!.data!;
+    } finally {
+      this._reading = false;
+    }
   }
 
   startReading(length: number) {
@@ -222,10 +250,17 @@ class BindingPort {
 
   async read(buffer: Buffer, offset: number, length: number) {
     if (!Buffer.isBuffer(buffer)) throw new TypeError('buffer must be a Buffer');
-    if (!Number.isInteger(offset) || !Number.isInteger(length) || offset < 0 || length < 1 || offset + length > buffer.length) throw new RangeError('Invalid read range');
+    if (
+      !Number.isInteger(offset) ||
+      !Number.isInteger(length) ||
+      offset < 0 ||
+      length < 1 ||
+      offset + length > buffer.length
+    )
+      throw new RangeError('Invalid read range');
     const data = await this.readChunk(length);
     if (offset + length > buffer.length) throw new RangeError('Read buffer changed size');
-    return {buffer, bytesRead: data.copy(buffer, offset)};
+    return { buffer, bytesRead: data.copy(buffer, offset) };
   }
 
   async write(buffer: Buffer): Promise<void> {
@@ -241,17 +276,23 @@ class BindingPort {
         const id = this._id();
         this._ordered++;
         let completed;
-        try { completed = this._native!.write(id, localBuffer(buffer), this._ordered === 1); }
-        catch (error) { this._ordered--; throw error; }
+        try {
+          completed = this._native!.write(id, localBuffer(buffer), this._ordered === 1);
+        } catch (error) {
+          this._ordered--;
+          throw error;
+        }
         if (completed) this._ordered--;
         // Native completions cannot run until this JS call yields.
-        else this._writePromise = new Promise<NativeEvent | void>((resolve, reject) => {
-          this._pending.set(id, {resolve, reject, ordered: true});
-        });
+        else
+          this._writePromise = new Promise<NativeEvent | void>((resolve, reject) => {
+            this._pending.set(id, { resolve, reject, ordered: true });
+          });
       }
       await this._writePromise;
+    } finally {
+      this._writing = false;
     }
-    finally { this._writing = false; }
   }
 
   async writev(buffers: Buffer[]): Promise<void> {
@@ -275,19 +316,23 @@ class BindingPort {
           }
         }
       }
-      if (size) await this._request(batch.length === 1 ? 'write' : 'writev', size, batch.length === 1 ? batch[0] : batch);
+      if (size)
+        await this._request(batch.length === 1 ? 'write' : 'writev', size, batch.length === 1 ? batch[0] : batch);
     })();
-    try { await this._writePromise; }
-    finally { this._writing = false; }
+    try {
+      await this._writePromise;
+    } finally {
+      this._writing = false;
+    }
   }
 
   async update(options: UpdateOptions) {
-    validateOptions({...this.openOptions, baudRate: options?.baudRate});
+    validateOptions({ ...this.openOptions, baudRate: options?.baudRate });
     await this._request('update', options.baudRate);
   }
 
   async set(options: SetOptions = {}) {
-    const flags = {dtr: true, rts: true, brk: false, ...options};
+    const flags = { dtr: true, rts: true, brk: false, ...options };
     for (const key of ['dtr', 'rts', 'brk', 'cts', 'dsr'] as const) {
       if (flags[key] !== undefined && typeof flags[key] !== 'boolean') throw new TypeError(`Invalid ${key}`);
     }
@@ -295,17 +340,24 @@ class BindingPort {
   }
 
   async get() {
-    const {cts, dsr, dcd} = (await this._request('get'))!;
-    return {cts: cts!, dsr: dsr!, dcd: dcd!};
+    const { cts, dsr, dcd } = (await this._request('get'))!;
+    return { cts: cts!, dsr: dsr!, dcd: dcd! };
   }
-  async getBaudRate() { return {baudRate: (await this._request('getBaudRate'))!.baudRate!}; }
-  async flush() { await this._request('flush'); }
-  async drain() { await this._writePromise; await this._request('drain'); }
+  async getBaudRate() {
+    return { baudRate: (await this._request('getBaudRate'))!.baudRate! };
+  }
+  async flush() {
+    await this._request('flush');
+  }
+  async drain() {
+    await this._writePromise;
+    await this._request('drain');
+  }
 }
 
 const RustBinding = {
   async list() {
-    return (await loadNative().listPorts()).map(port => ({
+    return (await loadNative().listPorts()).map((port) => ({
       path: port.path,
       manufacturer: port.manufacturer ?? undefined,
       serialNumber: port.serialNumber ?? undefined,
@@ -320,9 +372,11 @@ const RustBinding = {
       const port = new BindingPort(options);
       port.opened.cancel = () => port.cancelOpen();
       return port.opened;
-    } catch (error) { return Promise.reject(error); }
+    } catch (error) {
+      return Promise.reject(error);
+    }
   },
 };
 
 export const autoDetect = () => RustBinding;
-export {RustBinding, BindingPort, validateOptions};
+export { RustBinding, BindingPort, validateOptions };

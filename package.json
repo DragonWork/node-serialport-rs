@@ -4,12 +4,30 @@
   "description": "Node.js serial streams backed by Rust",
   "author": "DragonWork",
   "license": "Apache-2.0",
-  "repository": {"type": "git", "url": "git+https://github.com/DragonWork/node-serialport-rs.git"},
-  "publishConfig": {"access": "public"},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DragonWork/node-serialport-rs.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "index.js",
   "types": "index.d.ts",
-  "engines": {"node": ">=20"},
-  "files": ["index.js", "index.d.ts", "lib", "native", "docs", "bench/README.md", "CHANGELOG.md", "LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md"],
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "lib",
+    "native",
+    "docs",
+    "bench/README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_LICENSES.md"
+  ],
   "scripts": {
     "build": "npm run build:js && node scripts/build.js",
     "build:debug": "npm run build:js && node scripts/build.js --debug",
@@ -17,13 +35,16 @@
     "pretest": "npm run build:js",
     "test": "node --expose-gc --test test/*.test.js",
     "check:types": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.types.json",
-    "check": "npm run check:types && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings",
+    "format": "prettier --write \"**/*.{js,ts,json}\"",
+    "format:check": "prettier --check \"**/*.{js,ts,json}\"",
+    "check": "npm run format:check && npm run check:types && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings",
     "release:prepare": "node scripts/prepare-release.js",
     "pack:release": "node scripts/package-release.js",
     "prepack": "npm run build:js && node scripts/check-package.js"
   },
   "devDependencies": {
     "@types/node": "20.19.43",
+    "prettier": "3.9.8",
     "typescript": "6.0.3"
   }
 }

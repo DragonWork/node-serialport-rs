@@ -4,44 +4,56 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const {execFileSync} = require('node:child_process');
-const {existsSync, mkdirSync, readFileSync, writeFileSync} = require('node:fs');
-const {join, resolve} = require('node:path');
-const {jsonResponse} = require('./publish-release');
+const { execFileSync } = require('node:child_process');
+const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs');
+const { join, resolve } = require('node:path');
+const { jsonResponse } = require('./publish-release');
 
 const releaseFiles = ['package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', 'CHANGELOG.md'];
 const header = '# Changelog\n\n';
-const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?$/;
+const semver =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?$/;
 
 function git(root, args) {
-  return execFileSync('git', args, {cwd: root, encoding: 'utf8'}).trim();
+  return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 }
 
 function prependRelease(changelog, notes, tag) {
   assert(!changelog || changelog.startsWith(header), 'Unexpected CHANGELOG.md header');
   assert(notes.startsWith(`## What's Changed in ${tag} (`), 'Release notes have the wrong version');
-  const sections = changelog.slice(header.length).trim().split(/\n(?=## What's Changed in )/);
-  const previous = sections.filter(section => section && !section.startsWith(`## What's Changed in ${tag} (`));
-  return header + [notes.trim(), ...previous.map(section => section.trim())].join('\n\n') + '\n';
+  const sections = changelog
+    .slice(header.length)
+    .trim()
+    .split(/\n(?=## What's Changed in )/);
+  const previous = sections.filter((section) => section && !section.startsWith(`## What's Changed in ${tag} (`));
+  return header + [notes.trim(), ...previous.map((section) => section.trim())].join('\n\n') + '\n';
 }
 
 function prepareRelease(root, request = 'auto', cliff = process.env.GIT_CLIFF || 'git-cliff') {
   const flags = ['--config', join(root, 'cliff.toml'), '--unreleased', '--use-branch-tags', '--no-exec'];
-  const run = args => execFileSync(cliff, [...flags, ...args], {cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024}).trim();
+  const run = (args) =>
+    execFileSync(cliff, [...flags, ...args], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trim();
   let version = request.replace(/^v/, '');
-  if (['auto', 'patch', 'minor', 'major'].includes(request)) version = run(['--bumped-version', '--bump', request]).replace(/^v/, '');
+  if (['auto', 'patch', 'minor', 'major'].includes(request))
+    version = run(['--bumped-version', '--bump', request]).replace(/^v/, '');
   assert(semver.test(version), 'Choose auto, patch, minor, major, or an exact SemVer version');
   const tag = `v${version}`;
   assert(!git(root, ['tag', '--list', tag]), `Tag ${tag} already exists; retry the original publication job instead`);
   const notes = run(['--tag', tag, '--strip', 'all']) + '\n';
   assert(/^\* /m.test(notes), 'No changelog entries; chore-only changes do not need a release');
-  const files = Object.fromEntries(releaseFiles.filter(name => existsSync(join(root, name)))
-    .map(name => [name, readFileSync(join(root, name), 'utf8')]));
+  const files = Object.fromEntries(
+    releaseFiles
+      .filter((name) => existsSync(join(root, name)))
+      .map((name) => [name, readFileSync(join(root, name), 'utf8')]),
+  );
   const pkg = JSON.parse(files['package.json']);
   const lock = JSON.parse(files['package-lock.json']);
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[''].version, pkg.version);
-  files['package.json'] = files['package.json'].replace(/^(  "version": ")[^"]+("[,]?)$/m, (_, before, after) => before + version + after);
+  files['package.json'] = files['package.json'].replace(
+    /^(  "version": ")[^"]+("[,]?)$/m,
+    (_, before, after) => before + version + after,
+  );
   lock.version = version;
   lock.packages[''].version = version;
   files['package-lock.json'] = JSON.stringify(lock, null, 2) + '\n';
@@ -53,7 +65,7 @@ function prepareRelease(root, request = 'auto', cliff = process.env.GIT_CLIFF ||
     files[name] = files[name].replace(pattern, (_, before, old, after) => before + version + after);
   }
   files['CHANGELOG.md'] = prependRelease(files['CHANGELOG.md'] || '', notes, tag);
-  return {version, tag, notes, sourceCommit: git(root, ['rev-parse', 'HEAD']), files};
+  return { version, tag, notes, sourceCommit: git(root, ['rev-parse', 'HEAD']), files };
 }
 
 function applyPrepared(root, meta) {
@@ -72,16 +84,25 @@ function applyPrepared(root, meta) {
 async function recordPrepared(root, meta, repository, branch, token) {
   assert(/^[\w.-]+\/[\w.-]+$/.test(repository), 'Invalid repository');
   assert(branch && token, 'A branch and GH_TOKEN are required');
-  const additions = releaseFiles.filter(path => !existsSync(join(root, path)) || readFileSync(join(root, path), 'utf8') !== meta.files[path])
-    .map(path => ({path, contents: Buffer.from(meta.files[path]).toString('base64')}));
+  const additions = releaseFiles
+    .filter((path) => !existsSync(join(root, path)) || readFileSync(join(root, path), 'utf8') !== meta.files[path])
+    .map((path) => ({ path, contents: Buffer.from(meta.files[path]).toString('base64') }));
   if (!additions.length) return meta.sourceCommit;
   // GitHub signs this commit and rejects a branch that changed after checkout.
   const response = await jsonResponse('https://api.github.com/graphql', {
-    method: 'POST', headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'},
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query: 'mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid signature { isValid } } } }',
-      variables: {input: {branch: {repositoryNameWithOwner: repository, branchName: branch}, expectedHeadOid: meta.sourceCommit,
-        message: {headline: `chore(release): prepare ${meta.tag}`}, fileChanges: {additions}}},
+      query:
+        'mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid signature { isValid } } } }',
+      variables: {
+        input: {
+          branch: { repositoryNameWithOwner: repository, branchName: branch },
+          expectedHeadOid: meta.sourceCommit,
+          message: { headline: `chore(release): prepare ${meta.tag}` },
+          fileChanges: { additions },
+        },
+      },
     }),
   });
   assert(!response.errors?.length, 'Could not record release preparation; the branch may have advanced');
@@ -99,16 +120,28 @@ async function main() {
   }
   const meta = prepareRelease(root, process.argv[2] || 'auto');
   if (process.env.GITHUB_SHA) assert.equal(meta.sourceCommit, process.env.GITHUB_SHA);
-  meta.commit = process.env.RELEASE_PUBLISH === 'true'
-    ? await recordPrepared(root, meta, process.env.GITHUB_REPOSITORY, process.env.GITHUB_REF_NAME, process.env.GH_TOKEN)
-    : meta.sourceCommit;
+  meta.commit =
+    process.env.RELEASE_PUBLISH === 'true'
+      ? await recordPrepared(
+          root,
+          meta,
+          process.env.GITHUB_REPOSITORY,
+          process.env.GITHUB_REF_NAME,
+          process.env.GH_TOKEN,
+        )
+      : meta.sourceCommit;
   applyPrepared(root, meta);
   const output = resolve(root, process.argv[3] || 'artifacts');
-  mkdirSync(output, {recursive: true});
+  mkdirSync(output, { recursive: true });
   writeFileSync(join(output, 'prepared-release.json'), JSON.stringify(meta, null, 2) + '\n');
-  if (process.env.GITHUB_OUTPUT) writeFileSync(process.env.GITHUB_OUTPUT, `commit=${meta.commit}\nversion=${meta.version}\n`, {flag: 'a'});
+  if (process.env.GITHUB_OUTPUT)
+    writeFileSync(process.env.GITHUB_OUTPUT, `commit=${meta.commit}\nversion=${meta.version}\n`, { flag: 'a' });
   console.log(`Prepared ${meta.tag}`);
 }
 
-if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; });
-module.exports = {prepareRelease, prependRelease, applyPrepared, recordPrepared, releaseFiles};
+if (require.main === module)
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+module.exports = { prepareRelease, prependRelease, applyPrepared, recordPrepared, releaseFiles };

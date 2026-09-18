@@ -1,0 +1,11 @@
+# Copyright 2026 DragonWork
+# SPDX-License-Identifier: Apache-2.0
+
+# Dependencies, native builds, and generated JavaScript/declarations.
+/node_modules/
+/target/
+/native/
+/artifacts/
+/index.js
+/index.d.ts
+/lib/**/*.js

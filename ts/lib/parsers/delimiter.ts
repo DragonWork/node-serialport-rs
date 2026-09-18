@@ -3,9 +3,9 @@
 
 'use strict';
 
-import {Transform, type TransformCallback} from 'node:stream';
-import type {DelimiterOptions} from '../../public-api';
-import {ByteQueue, DelimiterMatcher, integer} from './bytes';
+import { Transform, type TransformCallback } from 'node:stream';
+import type { DelimiterOptions } from '../../public-api';
+import { ByteQueue, DelimiterMatcher, integer } from './bytes';
 
 class DelimiterParser extends Transform {
   #bytes = new ByteQueue();
@@ -14,7 +14,7 @@ class DelimiterParser extends Transform {
   declare delimiter: Buffer;
   declare includeDelimiter: boolean;
 
-  constructor({delimiter, includeDelimiter = false, maxFrameLength, ...options}: Partial<DelimiterOptions> = {}) {
+  constructor({ delimiter, includeDelimiter = false, maxFrameLength, ...options }: Partial<DelimiterOptions> = {}) {
     super(options);
     this.#matcher = new DelimiterMatcher(delimiter);
     this.delimiter = this.#matcher.delimiter;
@@ -26,7 +26,11 @@ class DelimiterParser extends Transform {
     let offset = 0;
     let end;
     while ((end = this.#matcher.find(chunk, offset)) !== -1) {
-      if (this.#maxFrameLength !== undefined && this.#bytes.length + end - offset - this.delimiter.length > this.#maxFrameLength) return callback(this.#overflow());
+      if (
+        this.#maxFrameLength !== undefined &&
+        this.#bytes.length + end - offset - this.delimiter.length > this.#maxFrameLength
+      )
+        return callback(this.#overflow());
       const excluded = this.includeDelimiter ? 0 : this.delimiter.length;
       if (this.#bytes.length) {
         this.#bytes.append(chunk.subarray(offset, end));
@@ -36,20 +40,25 @@ class DelimiterParser extends Transform {
       offset = end;
     }
     // A suffix that could still be a delimiter is not payload until resolved.
-    if (this.#maxFrameLength !== undefined && this.#bytes.length + chunk.length - offset - this.#matcher.pendingBytes > this.#maxFrameLength) return callback(this.#overflow());
+    if (
+      this.#maxFrameLength !== undefined &&
+      this.#bytes.length + chunk.length - offset - this.#matcher.pendingBytes > this.#maxFrameLength
+    )
+      return callback(this.#overflow());
     this.#bytes.append(chunk.subarray(offset));
     callback();
   }
 
   _flush(callback: TransformCallback) {
-    if (this.#maxFrameLength !== undefined && this.#bytes.length > this.#maxFrameLength) return callback(this.#overflow());
+    if (this.#maxFrameLength !== undefined && this.#bytes.length > this.#maxFrameLength)
+      return callback(this.#overflow());
     this.push(this.#bytes.take());
     callback();
   }
 
   #overflow() {
     this.#bytes.clear();
-    return Object.assign(new RangeError('Frame exceeds maxFrameLength'), {code: 'ERR_SERIALPORT_FRAME_TOO_LARGE'});
+    return Object.assign(new RangeError('Frame exceeds maxFrameLength'), { code: 'ERR_SERIALPORT_FRAME_TOO_LARGE' });
   }
 
   _destroy(error: Error | null, callback: (error?: Error | null) => void) {
@@ -58,4 +67,4 @@ class DelimiterParser extends Transform {
   }
 }
 
-export {DelimiterParser};
+export { DelimiterParser };

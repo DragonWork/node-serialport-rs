@@ -5,17 +5,27 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {execFile} = require('node:child_process');
-const {once} = require('node:events');
-const {Worker} = require('node:worker_threads');
-const {promisify, types: {isSharedArrayBuffer}} = require('node:util');
-const {setTimeout: delay} = require('node:timers/promises');
-const {SerialPort, RustBinding} = require('..');
-const {pty, call} = require('./helpers');
+const { execFile } = require('node:child_process');
+const { once } = require('node:events');
+const { Worker } = require('node:worker_threads');
+const {
+  promisify,
+  types: { isSharedArrayBuffer },
+} = require('node:util');
+const { setTimeout: delay } = require('node:timers/promises');
+const { SerialPort, RustBinding } = require('..');
+const { pty, call } = require('./helpers');
 
-test('I/O workers start lazily, remain bounded and retire after close', {timeout: 10000, skip: process.platform !== 'linux'}, async t => {
-  const terminals = await Promise.all(Array.from({length: 8}, () => pty(t)));
-  const {stdout} = await promisify(execFile)(process.execPath, ['-e', `
+test(
+  'I/O workers start lazily, remain bounded and retire after close',
+  { timeout: 10000, skip: process.platform !== 'linux' },
+  async (t) => {
+    const terminals = await Promise.all(Array.from({ length: 8 }, () => pty(t)));
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      [
+        '-e',
+        `
     const {readdirSync, readFileSync} = require('node:fs');
     const {availableParallelism} = require('node:os');
     const {setTimeout: delay} = require('node:timers/promises');
@@ -40,55 +50,61 @@ test('I/O workers start lazily, remain bounded and retire after close', {timeout
       counts.push(count());
       console.log(JSON.stringify({counts, limit: Math.min(availableParallelism(), 4)}));
     })().catch(error => { console.error(error); process.exitCode = 1; });
-  `, require.resolve('..'), JSON.stringify(terminals.map(terminal => terminal.path))], {timeout: 8000});
-  const {counts, limit} = JSON.parse(stdout);
-  assert.deepEqual(counts, [0, 1, Math.min(2, limit), limit, 0]);
-});
+  `,
+        require.resolve('..'),
+        JSON.stringify(terminals.map((terminal) => terminal.path)),
+      ],
+      { timeout: 8000 },
+    );
+    const { counts, limit } = JSON.parse(stdout);
+    assert.deepEqual(counts, [0, 1, Math.min(2, limit), limit, 0]);
+  },
+);
 
-test('eight concurrent ports make independent progress while one writer stalls', {timeout: 10000}, async t => {
-  const terminals = await Promise.all(Array.from({length: 8}, () => pty(t)));
-  const ports = terminals.map(({path}) => new SerialPort({path, baudRate: 115200, autoOpen: false}));
+test('eight concurrent ports make independent progress while one writer stalls', { timeout: 10000 }, async (t) => {
+  const terminals = await Promise.all(Array.from({ length: 8 }, () => pty(t)));
+  const ports = terminals.map(({ path }) => new SerialPort({ path, baudRate: 115200, autoOpen: false }));
   for (const port of ports) {
     port.on('error', () => {});
     t.after(() => port.destroy());
   }
-  await Promise.all(ports.map(port => call(port, 'open')));
-  const stalled = assert.rejects(call(ports[0], 'write', Buffer.alloc(1024 * 1024)), {canceled: true});
-  await Promise.all(ports.slice(1).map(async (port, index) => {
-    const expected = Buffer.from(`port-${index}`);
-    const data = once(port, 'data');
-    await terminals[index + 1].command(`write ${expected.toString('hex')}`);
-    assert.deepEqual((await data)[0], expected);
-    await call(port, 'write', expected);
-    assert.equal(await terminals[index + 1].command(`read ${expected.length}`), expected.toString('hex'));
-  }));
-  await Promise.all(ports.map(port => call(port, 'close')));
+  await Promise.all(ports.map((port) => call(port, 'open')));
+  const stalled = assert.rejects(call(ports[0], 'write', Buffer.alloc(1024 * 1024)), { canceled: true });
+  await Promise.all(
+    ports.slice(1).map(async (port, index) => {
+      const expected = Buffer.from(`port-${index}`);
+      const data = once(port, 'data');
+      await terminals[index + 1].command(`write ${expected.toString('hex')}`);
+      assert.deepEqual((await data)[0], expected);
+      await call(port, 'write', expected);
+      assert.equal(await terminals[index + 1].command(`read ${expected.length}`), expected.toString('hex'));
+    }),
+  );
+  await Promise.all(ports.map((port) => call(port, 'close')));
   await stalled;
 });
 
-test('corked writes preserve order across batched native transfers', {timeout: 5000}, async t => {
+test('corked writes preserve order across batched native transfers', { timeout: 5000 }, async (t) => {
   const terminal = await pty(t);
-  const port = new SerialPort({path: terminal.path, baudRate: 115200, autoOpen: false});
+  const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
   t.after(() => port.destroy());
   await call(port, 'open');
-  const expected = Buffer.from(Array.from({length: 2048}, (_, i) => i & 0xff));
+  const expected = Buffer.from(Array.from({ length: 2048 }, (_, i) => i & 0xff));
   port.cork();
-  const writes = Array.from(expected, byte => call(port, 'write', Buffer.from([byte])));
+  const writes = Array.from(expected, (byte) => call(port, 'write', Buffer.from([byte])));
   port.uncork();
   // A macOS PTY may not drain until its peer consumes the output.
-  const [received] = await Promise.all([
-    terminal.command(`read ${expected.length}`),
-    ...writes,
-    call(port, 'drain'),
-  ]);
+  const [received] = await Promise.all([terminal.command(`read ${expected.length}`), ...writes, call(port, 'drain')]);
   assert.equal(received, expected.toString('hex'));
   await call(port, 'close');
 });
 
-test('native writes snapshot borrowed memory before returning to JavaScript', {timeout: 5000}, async t => {
+test('native writes snapshot borrowed memory before returning to JavaScript', { timeout: 5000 }, async (t) => {
   const terminal = await pty(t);
-  const port = await RustBinding.open({path: terminal.path, baudRate: 115200});
-  t.after(() => { if (port.isOpen) return port.close(); });
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => {
+    if (port.isOpen) return port.close();
+  });
   const buffer = Buffer.alloc(1024, 0x5a);
   const expected = buffer.toString('hex');
   const written = port.write(buffer);
@@ -98,9 +114,9 @@ test('native writes snapshot borrowed memory before returning to JavaScript', {t
   await port.close();
 });
 
-test('vectored writes snapshot repeated and overlapping buffers', {timeout: 5000}, async t => {
+test('vectored writes snapshot repeated and overlapping buffers', { timeout: 5000 }, async (t) => {
   const terminal = await pty(t);
-  const port = await RustBinding.open({path: terminal.path, baudRate: 115200});
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
   const buffer = Buffer.from('overlapping');
   const parts = [buffer, buffer.subarray(3), buffer, buffer.subarray(0, 4)];
@@ -111,15 +127,17 @@ test('vectored writes snapshot repeated and overlapping buffers', {timeout: 5000
   await written;
 });
 
-test('small writes complete asynchronously and stay behind queued controls', {timeout: 10000}, async t => {
+test('small writes complete asynchronously and stay behind queued controls', { timeout: 10000 }, async (t) => {
   const terminal = await pty(t);
-  const port = await RustBinding.open({path: terminal.path, baudRate: 115200});
-  t.after(() => { if (port.isOpen) return port.close(); });
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => {
+    if (port.isOpen) return port.close();
+  });
   const byte = Buffer.from([0x5a]);
   for (let i = 0; i < 100; i++) {
     let returned = false;
     const order = [];
-    const updated = port.update({baudRate: i % 2 ? 115200 : 57600}).then(() => order.push('update'));
+    const updated = port.update({ baudRate: i % 2 ? 115200 : 57600 }).then(() => order.push('update'));
     const written = port.write(byte).then(() => {
       assert.equal(returned, true);
       order.push('write');
@@ -132,18 +150,21 @@ test('small writes complete asynchronously and stay behind queued controls', {ti
   await port.close();
 });
 
-test('shared memory is snapshotted before native writes borrow it', {timeout: 5000}, async t => {
+test('shared memory is snapshotted before native writes borrow it', { timeout: 5000 }, async (t) => {
   const terminal = await pty(t);
-  const port = await RustBinding.open({path: terminal.path, baudRate: 115200});
-  t.after(() => { if (port.isOpen) return port.close(); });
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => {
+    if (port.isOpen) return port.close();
+  });
   const nativeWrite = port._native.write;
   const nativeWritev = port._native.writev;
-  const check = buffer => assert.equal(isSharedArrayBuffer(buffer.buffer), false, 'Shared memory must not be borrowed by Rust');
-  port._native.write = function(id, buffer, inline) {
+  const check = (buffer) =>
+    assert.equal(isSharedArrayBuffer(buffer.buffer), false, 'Shared memory must not be borrowed by Rust');
+  port._native.write = function (id, buffer, inline) {
     check(buffer);
     return nativeWrite.call(this, id, buffer, inline);
   };
-  port._native.writev = function(id, buffers) {
+  port._native.writev = function (id, buffers) {
     buffers.forEach(check);
     return nativeWritev.call(this, id, buffers);
   };
@@ -154,19 +175,19 @@ test('shared memory is snapshotted before native writes borrow it', {timeout: 50
   await port.writev([shared.subarray(0, 128), shared.subarray(128)]);
   assert.equal(await terminal.command('read 256'), 'a5'.repeat(256));
   const getStore = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'buffer').get;
-  port._native.write = function(id, buffer, inline) {
+  port._native.write = function (id, buffer, inline) {
     assert.equal(isSharedArrayBuffer(getStore.call(buffer)), false);
     return nativeWrite.call(this, id, buffer, inline);
   };
-  Object.defineProperty(shared, 'buffer', {value: new ArrayBuffer(256)});
+  Object.defineProperty(shared, 'buffer', { value: new ArrayBuffer(256) });
   await port.write(shared);
   assert.equal(await terminal.command('read 256'), 'a5'.repeat(256));
   await port.close();
 });
 
-test('stream read-ahead is bounded while paused and resumes without losing bytes', {timeout: 10000}, async t => {
+test('stream read-ahead is bounded while paused and resumes without losing bytes', { timeout: 10000 }, async (t) => {
   const terminal = await pty(t);
-  const port = new SerialPort({path: terminal.path, baudRate: 115200, autoOpen: false, highWaterMark: 4096});
+  const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false, highWaterMark: 4096 });
   t.after(() => port.destroy());
   await call(port, 'open');
   const readable = once(port, 'readable');
@@ -179,10 +200,10 @@ test('stream read-ahead is bounded while paused and resumes without losing bytes
   await readable;
   await delay(100);
   assert(port.readableLength > 0 && port.readableLength <= 8192, `Buffered ${port.readableLength} bytes`);
-  const received = new Promise(resolve => {
+  const received = new Promise((resolve) => {
     const chunks = [];
     let length = 0;
-    port.on('data', data => {
+    port.on('data', (data) => {
       chunks.push(data);
       length += data.length;
       if (length >= expected.length) resolve(Buffer.concat(chunks));
@@ -194,30 +215,38 @@ test('stream read-ahead is bounded while paused and resumes without losing bytes
   await call(port, 'close');
 });
 
-test('terminated Node worker releases its pending read and port lock', {timeout: 10000}, async t => {
+test('terminated Node worker releases its pending read and port lock', { timeout: 10000 }, async (t) => {
   const terminal = await pty(t);
-  const worker = new Worker(`
+  const worker = new Worker(
+    `
     const {parentPort, workerData} = require('node:worker_threads');
     const {RustBinding} = require(workerData.root);
     RustBinding.open({path: workerData.path, baudRate: 115200}).then(port => {
       port.read(Buffer.alloc(32), 0, 32).catch(() => {});
       parentPort.postMessage('ready');
     });
-  `, {eval: true, workerData: {root: require.resolve('..'), path: terminal.path}});
+  `,
+    { eval: true, workerData: { root: require.resolve('..'), path: terminal.path } },
+  );
   t.after(() => worker.terminate());
   assert.equal((await once(worker, 'message'))[0], 'ready');
   await worker.terminate();
   let binding;
   for (let i = 0; i < 100; i++) {
-    try { binding = await RustBinding.open({path: terminal.path, baudRate: 115200}); break; }
-    catch (error) { if (i === 99) throw error; await delay(10); }
+    try {
+      binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+      break;
+    } catch (error) {
+      if (i === 99) throw error;
+      await delay(10);
+    }
   }
   await binding.close();
 });
 
-test('after receiving data, a waiting read does not busy-spin', {timeout: 5000}, async t => {
+test('after receiving data, a waiting read does not busy-spin', { timeout: 5000 }, async (t) => {
   const terminal = await pty(t);
-  const port = new SerialPort({path: terminal.path, baudRate: 115200, autoOpen: false});
+  const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
   t.after(() => port.destroy());
   await call(port, 'open');
   const received = once(port, 'data');
@@ -233,11 +262,15 @@ test('after receiving data, a waiting read does not busy-spin', {timeout: 5000},
 });
 
 for (const mode of ['binding', 'stream']) {
-  test(`${mode} callbacks advance promises on an otherwise idle event loop`, {timeout: 10000}, async t => {
+  test(`${mode} callbacks advance promises on an otherwise idle event loop`, { timeout: 10000 }, async (t) => {
     const terminal = await pty(t);
     // Only the parent owns a watchdog and idle delays. A timer in the child could
     // hide a missing Node callback scope by flushing otherwise stranded promises.
-    const child = promisify(execFile)(process.execPath, ['-e', `
+    const child = promisify(execFile)(
+      process.execPath,
+      [
+        '-e',
+        `
       const assert = require('node:assert/strict');
       const {once} = require('node:events');
       const {RustBinding, SerialPort} = require(process.argv[1]);
@@ -264,7 +297,13 @@ for (const mode of ['binding', 'stream']) {
         else { await call(port, 'drain'); await call(port, 'close'); }
         process.stdout.write('complete');
       })().catch(error => { console.error(error); process.exitCode = 1; });
-    `, require.resolve('..'), terminal.path, mode], {timeout: 8000});
+    `,
+        require.resolve('..'),
+        terminal.path,
+        mode,
+      ],
+      { timeout: 8000 },
+    );
     t.after(() => child.child.kill());
     const exchange = (async () => {
       const [ready] = await once(child.child.stdout, 'data');
@@ -276,7 +315,7 @@ for (const mode of ['binding', 'stream']) {
         await terminal.command(`write ${expected}`);
       }
     })();
-    const [{stdout}] = await Promise.all([child, exchange]);
+    const [{ stdout }] = await Promise.all([child, exchange]);
     assert.equal(stdout, 'readycomplete');
   });
 }

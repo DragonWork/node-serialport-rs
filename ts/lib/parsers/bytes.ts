@@ -71,7 +71,9 @@ class DelimiterMatcher {
   declare delimiter: Buffer;
   #matched = 0;
 
-  get pendingBytes() { return this.#matched; }
+  get pendingBytes() {
+    return this.#matched;
+  }
 
   constructor(delimiter: string | Buffer | number[] | undefined) {
     if (delimiter === undefined) throw new TypeError('delimiter is required');
@@ -110,8 +112,9 @@ class DelimiterMatcher {
 }
 
 function integer(value: unknown, name: string, min = 1, max = Number.MAX_SAFE_INTEGER): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) throw new TypeError(`Invalid ${name}`);
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max)
+    throw new TypeError(`Invalid ${name}`);
   return value;
 }
 
-export {ByteQueue, DelimiterMatcher, integer};
+export { ByteQueue, DelimiterMatcher, integer };

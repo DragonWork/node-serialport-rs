@@ -3,7 +3,7 @@
 
 /// <reference types="node" />
 
-import {Duplex, Transform, type TransformOptions} from 'node:stream';
+import { Duplex, Transform, type TransformOptions } from 'node:stream';
 
 export interface BindingOpenOptions {
   path: string;
@@ -29,9 +29,21 @@ export interface PortInfo {
   locationId: string | undefined;
 }
 
-export interface PortStatus {cts: boolean; dsr: boolean; dcd: boolean;}
-export interface SetOptions {dtr?: boolean; rts?: boolean; brk?: boolean; cts?: boolean; dsr?: boolean;}
-export interface UpdateOptions {baudRate: number;}
+export interface PortStatus {
+  cts: boolean;
+  dsr: boolean;
+  dcd: boolean;
+}
+export interface SetOptions {
+  dtr?: boolean;
+  rts?: boolean;
+  brk?: boolean;
+  cts?: boolean;
+  dsr?: boolean;
+}
+export interface UpdateOptions {
+  baudRate: number;
+}
 export type ErrorCallback = (error: Error | null) => void;
 export type ModemBitsCallback = (error: Error | null, status?: PortStatus) => void;
 
@@ -39,18 +51,20 @@ export interface BindingPortInterface {
   readonly openOptions: Required<BindingOpenOptions>;
   isOpen: boolean;
   close(): Promise<void>;
-  read(buffer: Buffer, offset: number, length: number): Promise<{buffer: Buffer; bytesRead: number}>;
+  read(buffer: Buffer, offset: number, length: number): Promise<{ buffer: Buffer; bytesRead: number }>;
   write(buffer: Buffer): Promise<void>;
   update(options: UpdateOptions): Promise<void>;
   set(options: SetOptions): Promise<void>;
   get(): Promise<PortStatus>;
-  getBaudRate(): Promise<{baudRate: number}>;
+  getBaudRate(): Promise<{ baudRate: number }>;
   flush(): Promise<void>;
   drain(): Promise<void>;
 }
 
-export interface BindingInterface<P extends BindingPortInterface = BindingPortInterface,
-  O extends BindingOpenOptions = BindingOpenOptions> {
+export interface BindingInterface<
+  P extends BindingPortInterface = BindingPortInterface,
+  O extends BindingOpenOptions = BindingOpenOptions,
+> {
   list(): Promise<PortInfo[]>;
   open(options: O): Promise<P>;
 }
@@ -74,9 +88,13 @@ export interface StreamOptions<B extends BindingInterface = AutoDetectTypes> {
   endOnClose?: boolean;
 }
 export type OpenOptions<B extends BindingInterface = AutoDetectTypes> = StreamOptions<B> & OpenOptionsFromBinding<B>;
-export type SerialPortOpenOptions<B extends BindingInterface = AutoDetectTypes> = Omit<OpenOptions<B>, 'binding'> & {binding?: B};
+export type SerialPortOpenOptions<B extends BindingInterface = AutoDetectTypes> = Omit<OpenOptions<B>, 'binding'> & {
+  binding?: B;
+};
 
-export class DisconnectedError extends Error {disconnected: true;}
+export class DisconnectedError extends Error {
+  disconnected: true;
+}
 export class SerialPortStream<B extends BindingInterface = AutoDetectTypes> extends Duplex {
   constructor(options: OpenOptions<B>, callback?: ErrorCallback);
   readonly path: string;
@@ -132,22 +150,30 @@ export interface MockBindingInterface extends BindingInterface<MockPortBinding> 
   createPort(path: string, options?: CreatePortOptions): void;
 }
 
-export type SerialPortMockOpenOptions = Omit<OpenOptions<MockBindingInterface>, 'binding'> & {binding?: MockBindingInterface};
+export type SerialPortMockOpenOptions = Omit<OpenOptions<MockBindingInterface>, 'binding'> & {
+  binding?: MockBindingInterface;
+};
 export class SerialPortMock extends SerialPortStream<MockBindingInterface> {
   constructor(options: SerialPortMockOpenOptions, callback?: ErrorCallback);
   static binding: MockBindingInterface;
   static list(): Promise<PortInfo[]>;
 }
 
-export interface ByteLengthOptions extends TransformOptions {length: number;}
-export class ByteLengthParser extends Transform {constructor(options: ByteLengthOptions);}
+export interface ByteLengthOptions extends TransformOptions {
+  length: number;
+}
+export class ByteLengthParser extends Transform {
+  constructor(options: ByteLengthOptions);
+}
 export interface DelimiterOptions extends TransformOptions {
   delimiter: string | Buffer | number[];
   includeDelimiter?: boolean;
   /** Maximum payload bytes per frame, excluding the delimiter. Unlimited when omitted. */
   maxFrameLength?: number;
 }
-export class DelimiterParser extends Transform {constructor(options: DelimiterOptions);}
+export class DelimiterParser extends Transform {
+  constructor(options: DelimiterOptions);
+}
 export interface ReadlineOptions extends TransformOptions {
   delimiter?: string | Buffer | number[];
   includeDelimiter?: boolean;
@@ -155,17 +181,34 @@ export interface ReadlineOptions extends TransformOptions {
   maxFrameLength?: number;
   encoding?: BufferEncoding;
 }
-export class ReadlineParser extends DelimiterParser {constructor(options?: ReadlineOptions);}
-export interface ReadyParserOptions extends TransformOptions {delimiter: string | Buffer | number[];}
-export class ReadyParser extends Transform {constructor(options: ReadyParserOptions); readonly ready: boolean;}
-export interface RegexParserOptions extends TransformOptions {regex: string | RegExp; encoding?: BufferEncoding;}
-export class RegexParser extends Transform {constructor(options: RegexParserOptions);}
-export interface InterByteTimeoutOptions extends TransformOptions {interval: number; maxBufferSize?: number;}
+export class ReadlineParser extends DelimiterParser {
+  constructor(options?: ReadlineOptions);
+}
+export interface ReadyParserOptions extends TransformOptions {
+  delimiter: string | Buffer | number[];
+}
+export class ReadyParser extends Transform {
+  constructor(options: ReadyParserOptions);
+  readonly ready: boolean;
+}
+export interface RegexParserOptions extends TransformOptions {
+  regex: string | RegExp;
+  encoding?: BufferEncoding;
+}
+export class RegexParser extends Transform {
+  constructor(options: RegexParserOptions);
+}
+export interface InterByteTimeoutOptions extends TransformOptions {
+  interval: number;
+  maxBufferSize?: number;
+}
 export class InterByteTimeoutParser extends Transform {
   constructor(options: InterByteTimeoutOptions);
   emitPacket(): void;
 }
-export class CCTalkParser extends Transform {constructor(maxDelayBetweenBytesMs?: number);}
+export class CCTalkParser extends Transform {
+  constructor(maxDelayBetweenBytesMs?: number);
+}
 export interface PacketLengthOptions extends TransformOptions {
   delimiter?: number | number[];
   delimiterBytes?: number;
@@ -174,7 +217,9 @@ export interface PacketLengthOptions extends TransformOptions {
   lengthOffset?: number;
   maxLen?: number;
 }
-export class PacketLengthParser extends Transform {constructor(options?: PacketLengthOptions);}
+export class PacketLengthParser extends Transform {
+  constructor(options?: PacketLengthOptions);
+}
 export interface SlipDecoderOptions extends TransformOptions {
   START?: number;
   END?: number;
@@ -183,22 +228,30 @@ export interface SlipDecoderOptions extends TransformOptions {
   ESC_END?: number;
   ESC_ESC?: number;
 }
-export interface SlipEncoderOptions extends SlipDecoderOptions {bluetoothQuirk?: boolean;}
-export class SlipEncoder extends Transform {constructor(options?: SlipEncoderOptions);}
-export class SlipDecoder extends Transform {constructor(options?: SlipDecoderOptions);}
+export interface SlipEncoderOptions extends SlipDecoderOptions {
+  bluetoothQuirk?: boolean;
+}
+export class SlipEncoder extends Transform {
+  constructor(options?: SlipEncoderOptions);
+}
+export class SlipDecoder extends Transform {
+  constructor(options?: SlipDecoderOptions);
+}
 export interface SpacePacketHeader {
   versionNumber: 1 | 'UNKNOWN_VERSION';
-  identification: {apid: number; secondaryHeader: number; type: number};
-  sequenceControl: {packetName: number; sequenceFlags: number};
+  identification: { apid: number; secondaryHeader: number; type: number };
+  sequenceControl: { packetName: number; sequenceFlags: number };
   dataLength: number;
 }
 export interface SpacePacket {
   header: SpacePacketHeader;
-  secondaryHeader?: {timeCode?: string; ancillaryData?: string};
+  secondaryHeader?: { timeCode?: string; ancillaryData?: string };
   data: string;
 }
 export interface SpacePacketOptions extends Omit<TransformOptions, 'objectMode'> {
   timeCodeFieldLength?: number;
   ancillaryDataFieldLength?: number;
 }
-export class SpacePacketParser extends Transform {constructor(options?: SpacePacketOptions);}
+export class SpacePacketParser extends Transform {
+  constructor(options?: SpacePacketOptions);
+}

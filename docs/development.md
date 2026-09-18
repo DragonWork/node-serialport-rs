@@ -20,6 +20,8 @@ Use `npm run build` for an optimized release build. Pull requests use dev builds
 
 Runtime source lives in `ts/`. `npm run build:js` compiles it in strict mode to `index.js` and `lib/`, and copies `ts/public-api.d.ts` to `index.d.ts`. Edit the TypeScript sources; generated files are ignored by Git. `npm test` and `npm pack` compile the runtime first.
 
+JavaScript, TypeScript and JSON use the pinned [Prettier](https://prettier.io/docs/install) version in `devDependencies`. Run `npm run format` to format maintained files, or `npm run format:check` to check them without writing. The shared `.prettierrc.json` uses spaces inside braces (`{ value }`), two-space indentation, single quotes in JS/TS, LF endings and a 120-column target. Prettier-enabled editors read the same configuration. Generated JavaScript/declarations, dependencies and build artifacts are excluded by `.prettierignore`. Formatting is checked by both `npm run check` and CI; Rust continues to use `cargo fmt`.
+
 Dev builds cache Cargo dependencies and share compiled addons and test helpers across Node versions. Release builds do not restore these caches.
 
 Native builds use `target/.serialport-build.lock`. Successful releases remove release and debug compiler caches in their matching project-local target directory while retaining the addon and PTY/echo helpers. Failed builds retain their cache and the previous addon. Debug builds retain their caches; separate development lanes and external `CARGO_TARGET_DIR` caches are preserved. Use a separate target directory for concurrent development work. Check the recorded PID before removing a lock left by a force-killed build.

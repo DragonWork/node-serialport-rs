@@ -3,16 +3,16 @@
 
 'use strict';
 
-import {Transform, type TransformCallback} from 'node:stream';
-import type {ReadyParserOptions} from '../../public-api';
-import {DelimiterMatcher} from './bytes';
+import { Transform, type TransformCallback } from 'node:stream';
+import type { ReadyParserOptions } from '../../public-api';
+import { DelimiterMatcher } from './bytes';
 
 class ReadyParser extends Transform {
   #matcher: DelimiterMatcher;
   declare delimiter: Buffer;
   ready = false;
 
-  constructor({delimiter, ...options}: Partial<ReadyParserOptions> = {}) {
+  constructor({ delimiter, ...options }: Partial<ReadyParserOptions> = {}) {
     super(options);
     this.#matcher = new DelimiterMatcher(delimiter);
     this.delimiter = this.#matcher.delimiter;
@@ -31,4 +31,4 @@ class ReadyParser extends Transform {
   }
 }
 
-export {ReadyParser};
+export { ReadyParser };

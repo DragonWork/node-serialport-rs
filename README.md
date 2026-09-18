@@ -49,15 +49,15 @@ const port = new SerialPort({
 
 const lines = port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
 
-port.on('error', error => console.error('Serial port error:', error.message));
+port.on('error', (error) => console.error('Serial port error:', error.message));
 port.on('close', () => console.log('Serial port closed'));
-lines.on('error', error => console.error('Parser error:', error.message));
-lines.on('data', line => console.log('Received:', line));
+lines.on('error', (error) => console.error('Parser error:', error.message));
+lines.on('data', (line) => console.log('Received:', line));
 
 port.on('open', () => {
   console.log('Serial port opened');
   // Replace this with a command understood by your device.
-  port.write('status\r\n', error => {
+  port.write('status\r\n', (error) => {
     if (error) console.error('Write failed:', error.message);
   });
 });

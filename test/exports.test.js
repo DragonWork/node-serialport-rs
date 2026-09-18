@@ -5,12 +5,24 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {pathToFileURL} = require('node:url');
+const { pathToFileURL } = require('node:url');
 const library = require('..');
 
-const exports13 = ['SerialPort', 'SerialPortMock', 'ByteLengthParser', 'CCTalkParser', 'DelimiterParser',
-  'InterByteTimeoutParser', 'PacketLengthParser', 'ReadlineParser', 'ReadyParser', 'RegexParser',
-  'SlipEncoder', 'SlipDecoder', 'SpacePacketParser'];
+const exports13 = [
+  'SerialPort',
+  'SerialPortMock',
+  'ByteLengthParser',
+  'CCTalkParser',
+  'DelimiterParser',
+  'InterByteTimeoutParser',
+  'PacketLengthParser',
+  'ReadlineParser',
+  'ReadyParser',
+  'RegexParser',
+  'SlipEncoder',
+  'SlipDecoder',
+  'SpacePacketParser',
+];
 
 test('SerialPort 13 constructors are available through CommonJS and ESM named imports', async () => {
   const esm = await import(pathToFileURL(require.resolve('..')).href);
@@ -21,9 +33,9 @@ test('SerialPort 13 constructors are available through CommonJS and ESM named im
 });
 
 test('static discovery functions can be passed around without a receiver', async () => {
-  const {SerialPort, SerialPortMock} = library;
-  const {list: listReal} = SerialPort;
-  const {list: listMock} = SerialPortMock;
+  const { SerialPort, SerialPortMock } = library;
+  const { list: listReal } = SerialPort;
+  const { list: listMock } = SerialPortMock;
   SerialPortMock.binding.reset();
   SerialPortMock.binding.createPort('/mock/discovery');
   assert.equal((await listMock())[0].path, '/mock/discovery');

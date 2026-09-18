@@ -3,8 +3,8 @@
 
 'use strict';
 
-import {Transform, type TransformCallback} from 'node:stream';
-import {ByteQueue} from './bytes';
+import { Transform, type TransformCallback } from 'node:stream';
+import { ByteQueue } from './bytes';
 
 class CCTalkParser extends Transform {
   #bytes = new ByteQueue();
@@ -32,4 +32,4 @@ class CCTalkParser extends Transform {
   }
 }
 
-export {CCTalkParser};
+export { CCTalkParser };

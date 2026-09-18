@@ -6,20 +6,20 @@
 Install the package, then change the import:
 
 ```diff
-- import {SerialPort} from 'serialport';
-+ import {SerialPort} from 'serialport-rs';
+- import { SerialPort } from 'serialport';
++ import { SerialPort } from 'serialport-rs';
 ```
 
 Keep your port options, event handlers, and read/write code. Parsers come from the same package:
 
 ```js
-import {SerialPort, ReadlineParser} from 'serialport-rs';
+import { SerialPort, ReadlineParser } from 'serialport-rs';
 ```
 
 For tests, replace a separate mock-binding import with:
 
 ```js
-import {SerialPortMock} from 'serialport-rs';
+import { SerialPortMock } from 'serialport-rs';
 const MockBinding = SerialPortMock.binding;
 ```
 

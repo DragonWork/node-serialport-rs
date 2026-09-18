@@ -143,7 +143,8 @@ jobs:
           npm install --no-save --ignore-scripts --package-lock=false serialport@13.0.0
           node scripts/compare-parsers.js node_modules/serialport
           SERIALPORT_REFERENCE_STREAM="$PWD/node_modules/@serialport/stream" node --expose-gc --test test/compatibility.test.js test/consumer.test.js
-      - name: Check TypeScript API
+      - name: Check formatting and TypeScript API
         if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26
         run: |
+          npm run format:check
           npm run check:types

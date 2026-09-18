@@ -4,24 +4,28 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const {existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync} = require('node:fs');
-const {isAbsolute, join, relative, resolve, sep} = require('node:path');
+const { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } = require('node:fs');
+const { isAbsolute, join, relative, resolve, sep } = require('node:path');
 
 function withBuildLock(root, operation) {
   root = realpathSync(root);
   const target = join(root, 'target');
-  mkdirSync(target, {recursive: true});
+  mkdirSync(target, { recursive: true });
   assert.equal(realpathSync(target), target, 'Build target must not be a symlink');
   const lock = join(target, '.serialport-build.lock');
-  try { mkdirSync(lock); }
-  catch (error) {
-    if (error.code === 'EEXIST') throw new Error(`Build lock exists: ${lock}. Check its pid file before removing an interrupted build's lock.`);
+  try {
+    mkdirSync(lock);
+  } catch (error) {
+    if (error.code === 'EEXIST')
+      throw new Error(`Build lock exists: ${lock}. Check its pid file before removing an interrupted build's lock.`);
     throw error;
   }
   try {
     writeFileSync(join(lock, 'pid'), String(process.pid));
     return operation();
-  } finally { rmSync(lock, {recursive: true}); }
+  } finally {
+    rmSync(lock, { recursive: true });
+  }
 }
 
 function cleanRelease(root, targetDirectory, target = '') {
@@ -42,8 +46,10 @@ function cleanRelease(root, targetDirectory, target = '') {
   const paths = [];
   function inspect(path) {
     const info = lstatSync(path);
-    assert(!info.isSymbolicLink() && info.dev === owner.dev && info.uid === owner.uid,
-      `Unexpected ownership, mount or symlink in release cache: ${path}`);
+    assert(
+      !info.isSymbolicLink() && info.dev === owner.dev && info.uid === owner.uid,
+      `Unexpected ownership, mount or symlink in release cache: ${path}`,
+    );
     assert(info.isDirectory() || info.isFile(), `Unexpected special file in release cache: ${path}`);
     assert(!/\.(profraw|profdata)$/.test(path), 'Preserve PGO profiles and finish their workflow before cleanup');
     if (info.isDirectory()) for (const name of readdirSync(path)) inspect(join(path, name));
@@ -53,11 +59,15 @@ function cleanRelease(root, targetDirectory, target = '') {
     assert.equal(realpathSync(profile), profile, 'Build cache must not contain symlink parents');
     inspect(profile);
   }
-  const helpers = new Set(profiles.flatMap(profile => ['echo', 'echo.exe', 'pty', 'pty.exe'].map(name => join(profile, 'examples', name))));
+  const helpers = new Set(
+    profiles.flatMap((profile) =>
+      ['echo', 'echo.exe', 'pty', 'pty.exe'].map((name) => join(profile, 'examples', name)),
+    ),
+  );
   for (const [path, isDirectory] of paths) {
     if (helpers.has(path)) continue;
-    if (!isDirectory || readdirSync(path).length === 0) rmSync(path, {recursive: isDirectory});
+    if (!isDirectory || readdirSync(path).length === 0) rmSync(path, { recursive: isDirectory });
   }
 }
 
-module.exports = {withBuildLock, cleanRelease};
+module.exports = { withBuildLock, cleanRelease };

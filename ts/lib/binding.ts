@@ -112,6 +112,15 @@ class BindingPort {
       this._rejectOpen = reject;
     });
     const { NativePort } = loadNative();
+    // Reuse the delivery closure while keeping each batch's microtask boundary.
+    // The FIFO fallback also handles callbacks queued during reentrant dispatch.
+    let pendingBatch: Buffer[] | undefined;
+    let queuedBatches: Buffer[][] | undefined;
+    const deliverBatch = () => {
+      const events = pendingBatch!;
+      pendingBatch = queuedBatches?.shift();
+      this._deliverBatch(events);
+    };
     this._native = new NativePort(
       this.openOptions,
       (error, event) => {
@@ -125,8 +134,11 @@ class BindingPort {
             this._readSlots--;
             this.onData?.(event);
           });
-        } else if (Array.isArray(event)) queueMicrotask(() => this._deliverBatch(event));
-        else this._event(event);
+        } else if (Array.isArray(event)) {
+          if (pendingBatch) (queuedBatches ??= []).push(event);
+          else pendingBatch = event;
+          queueMicrotask(deliverBatch);
+        } else this._event(event);
       },
       Buffer.allocUnsafe,
     );

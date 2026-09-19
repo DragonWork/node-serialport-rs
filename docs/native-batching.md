@@ -14,6 +14,11 @@ binding `read()` and `readChunk()` calls keep their single-request behavior.
 Using the original `@serialport/stream` with only the Rust binding does not use
 this streaming read-ahead path.
 
+The JS binding reuses its batch-delivery callback per connection. Delivery keeps
+the same microtask boundary, allowing native callback cleanup to finish before
+data handlers and their Promise continuations run. Pending batches remain FIFO;
+the ordinary single-buffer path is unchanged.
+
 The 64 KiB byte-credit and 32-chunk read-ahead limits still apply. Credits return
 per delivered chunk; close and queued control/write operations interrupt further
 batch collection. Batching reduces native callbacks, not wire latency or the

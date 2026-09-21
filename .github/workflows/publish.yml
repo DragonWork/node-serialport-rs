@@ -45,12 +45,10 @@ jobs:
           node-version: 26
           package-manager-cache: false
       - name: Install git-cliff
-        shell: bash
-        run: |
-          curl --fail --location --retry 3 https://github.com/orhun/git-cliff/releases/download/v2.14.1/git-cliff-2.14.1-x86_64-unknown-linux-musl.tar.gz --output "$RUNNER_TEMP/git-cliff.tar.gz"
-          echo 'cba6ae86f0a4205784eed8ef049fe53c904138806e33a1bda2e25026b17198eb  git-cliff.tar.gz' | (cd "$RUNNER_TEMP" && sha256sum --check)
-          tar -xzf "$RUNNER_TEMP/git-cliff.tar.gz" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/git-cliff-2.14.1" >> "$GITHUB_PATH"
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
+        with:
+          tool: git-cliff
+          fallback: none
       - name: Check release preparation
         env:
           GIT_CLIFF: git-cliff

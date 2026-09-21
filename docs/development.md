@@ -42,9 +42,9 @@ The [`bench/` directory](../bench/README.md) contains separate latency, throughp
 
 ## Releases
 
-Releases start only through the manual **Publish** workflow. Choose a branch and set `version` to `auto`, `patch`, `minor`, `major`, or an exact version such as `0.2.0` or `0.3.0-rc.1`. Automatic selection uses Conventional Commits since the latest reachable release tag: breaking changes select major, features select minor, and other changes select patch. `chore:` commits are excluded.
+Releases start only through the manual **Publish** workflow. Choose a branch and set `version` to `auto`, `patch`, `minor`, `major`, or an exact version such as `0.2.0` or `0.3.0-rc.1`. Automatic selection uses Conventional Commits since the latest reachable release tag: breaking changes select major, features select minor, and other changes select patch. Release notes exclude chores except for `chore(deps):` updates.
 
-The workflow uses git-cliff 2.14.1 and `cliff.toml` to generate release notes and prepend them to `CHANGELOG.md`. It updates both npm and Cargo manifests and lockfiles together. With `publish` enabled, GitHub records these files in a signed preparation commit on the selected branch before the builds start. A concurrent branch update aborts preparation. With `publish` disabled, the prepared files are used only in the build artifacts.
+The workflow installs git-cliff through `taiki-e/install-action`, pinned to a commit and tracked by the existing Dependabot GitHub Actions group. The action's manifest selects the git-cliff version and provides its checksum, so updating the action also updates the available tool version. git-cliff uses `cliff.toml` to generate release notes and prepend them to `CHANGELOG.md`. The workflow updates both npm and Cargo manifests and lockfiles together. With `publish` enabled, GitHub records these files in a signed preparation commit on the selected branch before the builds start. A concurrent branch update aborts preparation. With `publish` disabled, the prepared files are used only in the build artifacts.
 
 Every native build, test job and package step uses the same prepared version. A GitHub draft is created only after all builds, tests and package checks pass. The draft body comes from the notes saved with that archive, so a publication retry uses the same changelog.
 

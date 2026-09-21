@@ -13,6 +13,7 @@
 * test: avoid macOS PTY deadlock in batching tests by @DragonWork
 * perf(native): deliver first read before batching followers by @DragonWork
 * style: prefer concise arrows and multiline JSON by @DragonWork
+* chore(deps): bump the cargo group with 2 updates (#3) by @dependabot[bot] in [#3](https://github.com/DragonWork/node-serialport-rs/pull/3)
 
 **Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.2.0...v0.3.0
 
@@ -35,3 +36,13 @@
 * feat(release): automate manual versioned releases by @DragonWork
 
 **Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.1.1...v0.2.0
+
+## What's Changed in v0.1.1 (2026-09-15)
+
+* chore: rename npm package to serialport-rs by @DragonWork
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.1.0...v0.1.1
+
+## What's Changed in v0.1.0 (2026-09-14)
+
+* init: first commit by @DragonWork

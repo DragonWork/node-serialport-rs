@@ -20,7 +20,10 @@ conventional_commits = true
 filter_unconventional = false
 split_commits = false
 protect_breaking_commits = false
-commit_parsers = [{ message = '^chore(?:\(|!?:)', skip = true }]
+commit_parsers = [
+    { message = '^chore\(deps\)!?:', skip = false },
+    { message = '^chore(?:\(|!?:)', skip = true },
+]
 filter_commits = false
 tag_pattern = '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$'
 sort_commits = "oldest"

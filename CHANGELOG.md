@@ -1,5 +1,13 @@
 # Changelog
 
+## What's Changed in v0.3.1 (2026-09-21)
+
+* perf: reuse batch delivery callback by @DragonWork
+* chore(deps): bump dtolnay/rust-toolchain from 6c977a6 to 02cb101 in the actions group (#5) by @dependabot[bot] in [#5](https://github.com/DragonWork/node-serialport-rs/pull/5)
+* chore(deps): bump the cargo group with 3 updates (#4) by @dependabot[bot] in [#4](https://github.com/DragonWork/node-serialport-rs/pull/4)
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.3.0...v0.3.1
+
 ## What's Changed in v0.3.0 (2026-09-18)
 
 * fix(stream): preserve close context and recover failed cancellation by @DragonWork

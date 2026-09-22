@@ -5,15 +5,27 @@ version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
+    versioning-strategy: increase
     schedule:
-      interval: weekly
+      interval: daily
+    commit-message:
+      prefix: build(deps)
+    cooldown:
+      semver-patch-days: 1
+      semver-minor-days: 3
+      semver-major-days: 5
     groups:
-      cargo:
+      compatible-cargo-updates:
         patterns: ['*']
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: daily
+    commit-message:
+      prefix: chore(deps)
+    cooldown:
+      default-days: 3
     groups:
       actions:
         patterns: ['*']

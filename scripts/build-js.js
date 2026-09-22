@@ -5,9 +5,10 @@
 
 const { spawnSync } = require('node:child_process');
 const { copyFileSync } = require('node:fs');
-const { join } = require('node:path');
+const { dirname, join } = require('node:path');
 const root = join(__dirname, '..');
-const result = spawnSync(process.execPath, [require.resolve('typescript/bin/tsc'), '-p', join(root, 'tsconfig.json')], {
+const compiler = join(dirname(require.resolve('typescript/package.json')), require('typescript/package.json').bin.tsc);
+const result = spawnSync(process.execPath, [compiler, '-p', join(root, 'tsconfig.json')], {
   cwd: root,
   stdio: 'inherit',
 });

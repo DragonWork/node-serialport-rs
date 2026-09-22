@@ -148,3 +148,8 @@ jobs:
         run: |
           npm run format:check
           npm run check:types
+      - name: Check Node 20 type compatibility
+        if: matrix.node == 20
+        run: |
+          npm install --no-save --ignore-scripts --package-lock=false @types/node@20
+          npm run check:types

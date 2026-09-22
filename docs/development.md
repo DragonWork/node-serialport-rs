@@ -36,7 +36,7 @@ node scripts/compare-parsers.js node_modules/serialport
 SERIALPORT_REFERENCE_STREAM="$PWD/node_modules/@serialport/stream" node --expose-gc --test test/compatibility.test.js test/consumer.test.js
 ```
 
-Run `npm run check:types` to check the runtime and the public consumer fixture in `test/types.ts` against the pinned compiler and Node 20 declarations.
+Run `npm run check:types` to check the runtime and the public consumer fixture in `test/types.ts` against the pinned compiler and Node declarations. CI also checks both against Node 20 declarations in its Node 20 test job to preserve compatibility with the minimum supported runtime.
 
 The [`bench/` directory](../bench/README.md) contains separate latency, throughput, and parser measurement tools. PTY results measure the host software path, not physical UART speed. Throughput records count echoed payload once, exclude echo-helper CPU, and include sampled memory usage.
 

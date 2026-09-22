@@ -1,5 +1,12 @@
 # Changelog
 
+## What's Changed in v0.3.2 (2026-09-22)
+
+* build(deps): update dependencies and fix dependabot.yml by @DragonWork
+* chore(deps): update npm dev dependencies by @DragonWork
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.3.1...v0.3.2
+
 ## What's Changed in v0.3.1 (2026-09-21)
 
 * perf: reuse batch delivery callback by @DragonWork

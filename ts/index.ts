@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export { SerialPort, SerialPortStream, DisconnectedError } from './lib/stream';
-export { RustBinding, autoDetect } from './lib/binding';
-export { SerialPortMock } from './lib/mock';
+export { RustBinding, BindingsError, autoDetect } from './lib/binding';
+export { SerialPortMock, MockBinding, MockPortBinding, CanceledError } from './lib/mock';
 export { ByteLengthParser } from './lib/parsers/byte-length';
 export { CCTalkParser } from './lib/parsers/cctalk';
 export { DelimiterParser } from './lib/parsers/delimiter';

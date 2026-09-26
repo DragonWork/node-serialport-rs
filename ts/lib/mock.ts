@@ -18,7 +18,11 @@ import type {
 const devices = new Map<string, VirtualDevice>();
 let sequence = 0;
 const nextTick = () => new Promise<void>(resolve => process.nextTick(resolve));
-const canceled = () => Object.assign(new Error('Port is closed'), { canceled: true });
+class CanceledError extends Error {
+  canceled = true as const;
+}
+
+const canceled = () => new CanceledError('Port is closed');
 
 class VirtualDevice {
   #bytes = new ByteQueue();
@@ -296,4 +300,4 @@ class SerialPortMock extends SerialPortStream {
   }
 }
 
-export { SerialPortMock };
+export { SerialPortMock, MockBinding, MockPortBinding, CanceledError };

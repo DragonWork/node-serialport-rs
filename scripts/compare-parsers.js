@@ -44,13 +44,15 @@ async function compare(name, options, input) {
   }
   await compare('ReadlineParser', {}, Buffer.from('a\nb\r\nc\nd'));
   cases++;
-  await compare('RegexParser', { regex: /[\r\n]+/ }, Buffer.from('a\nb\r\nc\nd'));
-  cases++;
+  for (const regex of [/[\r\n]+/, '[\\r\\n]+', Buffer.from('[\\r\\n]+')]) {
+    await compare('RegexParser', { regex }, Buffer.from('a\nb\r\nc\nd'));
+    cases++;
+  }
   await compare('ReadyParser', { delimiter: 'START' }, Buffer.from('ignoredSTARTpayloadSTARTtail'));
   cases++;
   for (const options of [
     {},
-    { bluetoothQuirk: true },
+    { bluetoothQuirk: true, readableHighWaterMark: 17, writableHighWaterMark: 19 },
     { START: 0xab, END: 0xbc, ESC: 0xcd, ESC_START: 0xac, ESC_END: 0xbd, ESC_ESC: 0xce },
   ]) {
     await compare('SlipEncoder', options, binary);

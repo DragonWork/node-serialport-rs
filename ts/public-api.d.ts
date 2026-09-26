@@ -34,6 +34,13 @@ export interface PortStatus {
   dsr: boolean;
   dcd: boolean;
 }
+export interface BindingsErrorInterface extends Error {
+  canceled?: boolean;
+}
+export class BindingsError extends Error implements BindingsErrorInterface {
+  canceled: boolean;
+  constructor(message: string, options?: { canceled?: boolean });
+}
 export interface SetOptions {
   dtr?: boolean;
   rts?: boolean;
@@ -64,8 +71,9 @@ export interface BindingPortInterface {
 export interface BindingInterface<
   P extends BindingPortInterface = BindingPortInterface,
   O extends BindingOpenOptions = BindingOpenOptions,
+  I extends PortInfo = PortInfo,
 > {
-  list(): Promise<PortInfo[]>;
+  list(): Promise<I[]>;
   open(options: O): Promise<P>;
 }
 
@@ -80,6 +88,7 @@ export type AutoDetectTypes = typeof RustBinding;
 export function autoDetect(): AutoDetectTypes;
 export type PortInterfaceFromBinding<B extends BindingInterface> = Awaited<ReturnType<B['open']>>;
 export type OpenOptionsFromBinding<B extends BindingInterface> = Parameters<B['open']>[0];
+export type PortInfoFromBinding<B extends BindingInterface> = Awaited<ReturnType<B['list']>>[number];
 
 export interface StreamOptions<B extends BindingInterface = AutoDetectTypes> {
   binding: B;
@@ -128,27 +137,49 @@ export interface CreatePortOptions {
   productId?: string;
 }
 
-export interface MockPortBinding extends BindingPortInterface {
+export interface MockPortInternal {
+  data: Buffer;
+  echo: boolean;
+  record: boolean;
+  info: PortInfo;
+  maxReadSize: number;
+  readyData?: Buffer;
+  openOpt?: BindingOpenOptions;
+}
+
+export class CanceledError extends Error implements BindingsErrorInterface {
+  canceled: true;
+  constructor(message: string);
+}
+
+export class MockPortBinding implements BindingPortInterface {
+  /** Open instances with MockBinding.open() or a serial stream. */
+  private constructor();
+  readonly openOptions: Required<BindingOpenOptions>;
+  isOpen: boolean;
   lastWrite: Buffer | null;
   recording: Buffer;
   writeOperation: Promise<void> | null;
   serialNumber?: string;
   emitData(data: Buffer | string): void;
-  readonly port: {
-    data: Buffer;
-    echo: boolean;
-    record: boolean;
-    info: PortInfo;
-    maxReadSize: number;
-    readyData?: Buffer;
-    openOpt?: BindingOpenOptions;
-  };
+  readonly port: MockPortInternal;
+  close(): Promise<void>;
+  read(buffer: Buffer, offset: number, length: number): Promise<{ buffer: Buffer; bytesRead: number }>;
+  write(buffer: Buffer): Promise<void>;
+  update(options: UpdateOptions): Promise<void>;
+  set(options: SetOptions): Promise<void>;
+  get(): Promise<PortStatus>;
+  getBaudRate(): Promise<{ baudRate: number }>;
+  flush(): Promise<void>;
+  drain(): Promise<void>;
 }
 
 export interface MockBindingInterface extends BindingInterface<MockPortBinding> {
   reset(): void;
   createPort(path: string, options?: CreatePortOptions): void;
 }
+
+export const MockBinding: MockBindingInterface;
 
 export type SerialPortMockOpenOptions = Omit<OpenOptions<MockBindingInterface>, 'binding'> & {
   binding?: MockBindingInterface;
@@ -192,7 +223,7 @@ export class ReadyParser extends Transform {
   readonly ready: boolean;
 }
 export interface RegexParserOptions extends TransformOptions {
-  regex: string | RegExp;
+  regex: string | RegExp | Buffer;
   encoding?: BufferEncoding;
 }
 export class RegexParser extends Transform {

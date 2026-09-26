@@ -28,8 +28,17 @@ const defaults = {
   hupcl: true,
 };
 
+class BindingsError extends Error {
+  canceled: boolean;
+
+  constructor(message: string, { canceled = false }: { canceled?: boolean } = {}) {
+    super(message);
+    this.canceled = canceled;
+  }
+}
+
 function canceled(message = 'Port is closed') {
-  return Object.assign(new Error(message), { canceled: true });
+  return new BindingsError(message, { canceled: true });
 }
 
 function localBuffer(buffer: Buffer): Buffer {
@@ -413,4 +422,4 @@ const RustBinding = {
 };
 
 export const autoDetect = () => RustBinding;
-export { RustBinding, BindingPort, validateOptions };
+export { RustBinding, BindingPort, BindingsError, validateOptions };

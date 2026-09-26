@@ -9,18 +9,20 @@ const { once } = require('node:events');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { setImmediate: nextTurn } = require('node:timers/promises');
-const { SerialPortMock } = require('..');
+const { SerialPortMock, SerialPortStream, MockBinding, MockPortBinding, CanceledError } = require('..');
 const { call } = require('./helpers');
 
 test.beforeEach(() => SerialPortMock.binding.reset());
 
 test('SerialPortMock supports echo and recording without hardware', { timeout: 5000 }, async t => {
   assert.equal(typeof SerialPortMock, 'function');
-  SerialPortMock.binding.reset();
-  SerialPortMock.binding.createPort('/mock/echo', { echo: true, record: true });
+  assert.equal(MockBinding, SerialPortMock.binding);
+  MockBinding.reset();
+  MockBinding.createPort('/mock/echo', { echo: true, record: true });
   const port = new SerialPortMock({ path: '/mock/echo', baudRate: 115200, autoOpen: false });
   t.after(() => port.destroy());
   await call(port, 'open');
+  assert(port.port instanceof MockPortBinding);
   const data = once(port, 'data');
   const expected = Buffer.from([0, 0xff, 7]);
   await call(port, 'write', expected);
@@ -65,11 +67,13 @@ test('ready data obeys read limits and destination offsets', async t => {
 });
 
 test('close cancels pending reads and writes and permits reopening', async () => {
-  SerialPortMock.binding.createPort('/mock/cancel');
+  MockBinding.createPort('/mock/cancel');
   const options = { path: '/mock/cancel', baudRate: 9600 };
-  const port = await SerialPortMock.binding.open(options);
-  const read = assert.rejects(port.read(Buffer.alloc(4), 0, 4), { canceled: true });
-  const write = assert.rejects(port.write(Buffer.from([1])), { canceled: true });
+  const port = await MockBinding.open(options);
+  assert(port instanceof MockPortBinding);
+  const isCanceled = error => error instanceof CanceledError && error.canceled === true;
+  const read = assert.rejects(port.read(Buffer.alloc(4), 0, 4), isCanceled);
+  const write = assert.rejects(port.write(Buffer.from([1])), isCanceled);
   await port.close();
   await Promise.all([read, write]);
   assert.equal(port.writeOperation, null);
@@ -156,8 +160,8 @@ test('detaching a pending read destination rejects without consuming queued inpu
 });
 
 test('corked stream writes retain order and a closed session cannot echo into its replacement', async t => {
-  SerialPortMock.binding.createPort('/mock/stream', { record: true, echo: true });
-  const port = new SerialPortMock({ path: '/mock/stream', baudRate: 9600, autoOpen: false });
+  MockBinding.createPort('/mock/stream', { record: true, echo: true });
+  const port = new SerialPortStream({ path: '/mock/stream', baudRate: 9600, autoOpen: false, binding: MockBinding });
   t.after(() => port.destroy());
   await call(port, 'open');
   port.cork();
@@ -189,10 +193,13 @@ test('SerialPortMock operates when loading a native addon is prohibited', async 
       return original.call(this, request, ...args);
     };
     (async () => {
-      const {SerialPortMock} = require(process.argv[1]);
-      SerialPortMock.binding.createPort('/mock/pure-js', {echo: true});
+      const {SerialPortMock, MockBinding, MockPortBinding, CanceledError} = require(process.argv[1]);
+      assert.equal(MockBinding, SerialPortMock.binding);
+      assert.equal(new CanceledError('closed').canceled, true);
+      MockBinding.createPort('/mock/pure-js', {echo: true});
       const port = new SerialPortMock({path: '/mock/pure-js', baudRate: 9600});
       await once(port, 'open');
+      assert(port.port instanceof MockPortBinding);
       const reply = once(port, 'data');
       port.write('ok');
       assert.equal((await reply)[0].toString(), 'ok');

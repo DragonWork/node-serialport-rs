@@ -61,8 +61,14 @@ test('ready emits once and strips the handshake', async () => {
 
 test('SLIP encoder and decoder preserve every byte value', async () => {
   const expected = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
-  const encoded = await parse(new SlipEncoder(), [expected]);
-  const decoded = await parse(new SlipDecoder(), encoded);
+  const encoder = new SlipEncoder({ readableHighWaterMark: 17, writableHighWaterMark: 19 });
+  const decoder = new SlipDecoder({ readableHighWaterMark: 23, writableHighWaterMark: 29 });
+  assert.equal(encoder.readableHighWaterMark, 17);
+  assert.equal(encoder.writableHighWaterMark, 19);
+  assert.equal(decoder.readableHighWaterMark, 23);
+  assert.equal(decoder.writableHighWaterMark, 29);
+  const encoded = await parse(encoder, [expected]);
+  const decoded = await parse(decoder, encoded);
   assert.deepEqual(Buffer.concat(decoded), expected);
 });
 
@@ -163,7 +169,8 @@ test('ready handles a prefix restarting inside another prefix', async () => {
 
 test('regex decoding keeps UTF-8 characters intact across every byte boundary', async () => {
   const bytes = Buffer.from('Grüße;🔌;完了');
-  assert.deepEqual(await parse(new RegexParser({ regex: ';' }), fragments(bytes, 1)), ['Grüße', '🔌', '完了']);
+  for (const regex of [';', /;/, Buffer.from(';')])
+    assert.deepEqual(await parse(new RegexParser({ regex }), fragments(bytes, 1)), ['Grüße', '🔌', '完了']);
 });
 
 test('readline supports UTF-16 delimiters and fragmented multibyte characters', async () => {

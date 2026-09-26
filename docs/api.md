@@ -86,7 +86,7 @@ try {
 
 Binding operations return promises. `read()` returns at least one byte or rejects; only one read and one write may be pending per connection. Extensions include `readChunk(length)`, which returns a buffer directly, and `writev(buffers)`, which batches buffers.
 
-After an unexpected I/O failure, a raw binding stays logically open until its consumer calls `close()`. This allows existing stream wrappers to perform their disconnect handling. Native resource cleanup does not depend on that acknowledgement. Intentional close cancels pending operations with an error carrying `canceled: true`.
+After an unexpected I/O failure, a raw binding stays logically open until its consumer calls `close()`. This allows existing stream wrappers to perform their disconnect handling. Native resource cleanup does not depend on that acknowledgement. Intentional close cancels pending operations with the exported `BindingsError` class carrying `canceled: true`.
 
 ## Parsers
 

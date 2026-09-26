@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { once } = require('node:events');
 const { AsyncLocalStorage } = require('node:async_hooks');
-const { SerialPort, RustBinding } = require('..');
+const { SerialPort, RustBinding, BindingsError } = require('..');
 const { pty, call } = require('./helpers');
 
 test('discovery returns the complete metadata shape without opening ports', async () => {
@@ -123,7 +123,10 @@ test('pending native read cancels on close and bindings can reopen', { timeout: 
   for (let i = 0; i < 10; i++) {
     const binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
     const buffer = Buffer.alloc(128);
-    const read = assert.rejects(binding.read(buffer, 0, buffer.length), { canceled: true });
+    const read = assert.rejects(
+      binding.read(buffer, 0, buffer.length),
+      error => error instanceof BindingsError && error.canceled === true,
+    );
     await binding.close();
     await read;
   }

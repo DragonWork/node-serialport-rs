@@ -43,7 +43,17 @@ test('static discovery functions can be passed around without a receiver', async
 });
 
 test('public exports stay within the serial stream, binding and compatible parser API', async () => {
-  const names = [...exports13, 'SerialPortStream', 'DisconnectedError', 'RustBinding', 'autoDetect'].sort();
+  const names = [
+    ...exports13,
+    'SerialPortStream',
+    'DisconnectedError',
+    'RustBinding',
+    'BindingsError',
+    'autoDetect',
+    'MockBinding',
+    'MockPortBinding',
+    'CanceledError',
+  ].sort();
   assert.deepEqual(Object.keys(library).sort(), names);
   const esm = await import(pathToFileURL(require.resolve('..')).href);
   for (const name of names) assert.equal(esm[name], library[name], name);

@@ -1,5 +1,16 @@
 # Changelog
 
+## What's Changed in v0.4.0 (2026-09-27)
+
+* feat: expand SerialPort compatibility exports by @DragonWork
+* ci: run tests on pushes and pull requests by @DragonWork
+* chore(deps): bump prettier from 3.9.8 to 3.9.9 in the compatible-npm-updates group across 1 directory (#7) by @dependabot[bot] in [#7](https://github.com/DragonWork/node-serialport-rs/pull/7)
+* perf: reuse small read buffers by @DragonWork
+* chore(deps): bump taiki-e/install-action from 2.87.18 to 2.87.20 in the actions group across 1 directory (#8) by @dependabot[bot] in [#8](https://github.com/DragonWork/node-serialport-rs/pull/8)
+* chore(deps): bump @types/node from 26.6.2 to 26.6.3 in the compatible-npm-updates group (#9) by @dependabot[bot] in [#9](https://github.com/DragonWork/node-serialport-rs/pull/9)
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.3.2...v0.4.0
+
 ## What's Changed in v0.3.2 (2026-09-22)
 
 * build(deps): update dependencies and fix dependabot.yml by @DragonWork

@@ -29,9 +29,43 @@ use tokio::sync::{Notify, mpsc};
 
 pub(crate) const CHUNK_SIZE: usize = 64 * 1024;
 pub(crate) const READ_SLOTS: usize = 32;
+const INLINE_READ_CAPACITY: usize = 64;
 pub(crate) type CallbackValue = Either3<Buffer, Vec<Buffer>, NativeEvent>;
 pub(crate) type Callback =
-    ThreadsafeFunction<CallbackValue, (), CallbackValue, Status, true, false, 128>;
+    ThreadsafeFunction<CallbackEvent, (), CallbackValue, Status, true, false, 128>;
+
+pub(crate) enum CallbackEvent {
+    InlineRead {
+        bytes: [u8; INLINE_READ_CAPACITY],
+        len: usize,
+    },
+    Read(Buffer),
+    ReadBatch(Vec<Buffer>),
+    Event(NativeEvent),
+}
+
+impl CallbackEvent {
+    pub fn read(buffer: &mut Vec<u8>) -> Self {
+        if buffer.len() > INLINE_READ_CAPACITY {
+            return Self::Read(std::mem::take(buffer).into());
+        }
+        let len = buffer.len();
+        let mut bytes = [0; INLINE_READ_CAPACITY];
+        bytes[..len].copy_from_slice(buffer);
+        // The queued event owns its bytes, so the worker can reuse its read allocation.
+        buffer.clear();
+        Self::InlineRead { bytes, len }
+    }
+}
+
+fn pooled_read(allocator: &Function<'_, u32, Buffer>, data: &[u8]) -> Result<Buffer> {
+    let mut buffer = allocator.call(data.len() as u32)?;
+    if buffer.len() != data.len() {
+        return Err(Error::from_reason("Invalid read buffer allocation"));
+    }
+    buffer.copy_from_slice(data);
+    Ok(buffer)
+}
 
 #[napi(object)]
 pub struct NativeOptions {
@@ -139,34 +173,27 @@ impl NativePort {
     ) -> Result<Self> {
         let allocator = allocator.create_ref()?;
         let callback = callback
-            .build_threadsafe_function::<CallbackValue>()
+            .build_threadsafe_function::<CallbackEvent>()
             .callee_handled::<true>()
             .max_queue_size::<128>()
             .build_callback(move |ctx| match ctx.value {
-                Either3::A(data) if data.len() <= 1024 => {
-                    // Copy on the JS thread; no JS-owned memory crosses into the I/O worker.
-                    let mut buffer = allocator.borrow_back(&ctx.env)?.call(data.len() as u32)?;
-                    if buffer.len() != data.len() {
-                        return Err(Error::from_reason("Invalid read buffer allocation"));
-                    }
-                    buffer.copy_from_slice(&data);
-                    Ok(Either3::A(buffer))
+                // Copy on the JS thread; no JS-owned memory crosses into the I/O worker.
+                CallbackEvent::InlineRead { bytes, len } => {
+                    pooled_read(&allocator.borrow_back(&ctx.env)?, &bytes[..len]).map(Either3::A)
                 }
-                Either3::B(mut buffers) => {
+                CallbackEvent::Read(data) if data.len() <= 1024 => {
+                    pooled_read(&allocator.borrow_back(&ctx.env)?, &data).map(Either3::A)
+                }
+                CallbackEvent::Read(data) => Ok(Either3::A(data)),
+                CallbackEvent::ReadBatch(mut buffers) => {
                     for data in &mut buffers {
                         if data.len() <= 1024 {
-                            let mut buffer =
-                                allocator.borrow_back(&ctx.env)?.call(data.len() as u32)?;
-                            if buffer.len() != data.len() {
-                                return Err(Error::from_reason("Invalid read buffer allocation"));
-                            }
-                            buffer.copy_from_slice(data);
-                            *data = buffer;
+                            *data = pooled_read(&allocator.borrow_back(&ctx.env)?, data)?;
                         }
                     }
                     Ok(Either3::B(buffers))
                 }
-                event => Ok(event),
+                CallbackEvent::Event(event) => Ok(Either3::C(event)),
             })?;
         let control = Arc::new(Control {
             stop: AtomicBool::new(false),

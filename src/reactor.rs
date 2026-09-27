@@ -10,12 +10,12 @@ use std::{
     time::Duration,
 };
 
-use napi::{Status, bindgen_prelude::Either3, threadsafe_function::ThreadsafeFunctionCallMode};
+use napi::{Status, threadsafe_function::ThreadsafeFunctionCallMode};
 use tokio::sync::mpsc;
 use tokio_serial::{ClearBuffer, SerialPort, SerialStream};
 
 use crate::{
-    Callback, Command, Control, NativeEvent, NativeOptions, Operation, settings,
+    Callback, CallbackEvent, Command, Control, NativeEvent, NativeOptions, Operation, settings,
     transfer::{Transfer, TransferPoller},
 };
 
@@ -31,7 +31,7 @@ struct ReadWindow {
 fn send(callback: &Callback, event: NativeEvent) -> bool {
     // At most 64 requests and 32 read-ahead events share the 128-entry queue.
     callback.call(
-        Ok(Either3::C(event)),
+        Ok(CallbackEvent::Event(event)),
         ThreadsafeFunctionCallMode::NonBlocking,
     ) == Status::Ok
 }
@@ -41,9 +41,9 @@ fn send_stream_buffers(
     mut buffers: Vec<napi::bindgen_prelude::Buffer>,
 ) -> bool {
     let value = if buffers.len() == 1 {
-        Either3::A(buffers.pop().expect("one read buffer"))
+        CallbackEvent::Read(buffers.pop().expect("one read buffer"))
     } else {
-        Either3::B(buffers)
+        CallbackEvent::ReadBatch(buffers)
     };
     callback.call(Ok(value), ThreadsafeFunctionCallMode::NonBlocking) == Status::Ok
 }
@@ -221,7 +221,6 @@ async fn run_open(
                     window.size = if filled { (window.size * 2).min(crate::CHUNK_SIZE) }
                         else { length.next_power_of_two().clamp(64, crate::CHUNK_SIZE) };
                     read_buffer.truncate(length);
-                    let data = std::mem::take(&mut read_buffer);
                     let sent = if streaming {
                         window.bytes -= length;
                         window.slots -= 1;
@@ -229,14 +228,14 @@ async fn run_open(
                         // their existing path, and give queued writes/controls priority.
                         if write.is_some() || (!filled && length < 1024)
                             || control.pending_ops.load(Ordering::Acquire) != 0 {
-                            callback.call(Ok(Either3::A(data.into())), ThreadsafeFunctionCallMode::NonBlocking) == Status::Ok
+                            send_read(callback, &mut read_buffer)
                         } else {
-                            send_ready_reads(control, callback, &mut transfers, data, &mut read_buffer, &mut window)?
+                            send_ready_reads(control, callback, &mut transfers, &mut read_buffer, &mut window)?
                         }
                     } else {
                         let (id, _) = read.take().ok_or_else(|| io::Error::other("Unexpected read completion"))?;
                         let mut event = NativeEvent::new(id, "read");
-                        event.data = Some(data.into());
+                        event.data = Some(std::mem::take(&mut read_buffer).into());
                         send(callback, event)
                     };
                     if !sent { return Ok(()); }
@@ -248,22 +247,24 @@ async fn run_open(
     }
 }
 
+fn send_read(callback: &Callback, buffer: &mut Vec<u8>) -> bool {
+    callback.call(
+        Ok(CallbackEvent::read(buffer)),
+        ThreadsafeFunctionCallMode::NonBlocking,
+    ) == Status::Ok
+}
+
 // Keep burst-only storage and polling out of the latency-sensitive reactor path.
 #[inline(never)]
 fn send_ready_reads(
     control: &Control,
     callback: &Callback,
     transfers: &mut TransferPoller,
-    data: Vec<u8>,
     read_buffer: &mut Vec<u8>,
     window: &mut ReadWindow,
 ) -> io::Result<bool> {
     // Let JS process the first chunk while Rust collects ready followers.
-    if callback.call(
-        Ok(Either3::A(data.into())),
-        ThreadsafeFunctionCallMode::NonBlocking,
-    ) != Status::Ok
-    {
+    if !send_read(callback, read_buffer) {
         return Ok(false);
     }
     let mut first = None;
@@ -325,7 +326,7 @@ fn send_ready_reads(
     }
     let sent = if let Some(data) = first {
         callback.call(
-            Ok(Either3::A(data)),
+            Ok(CallbackEvent::Read(data)),
             ThreadsafeFunctionCallMode::NonBlocking,
         ) == Status::Ok
     } else if !batch.is_empty() {

@@ -18,6 +18,8 @@ Idle serial I/O has no heartbeat interval. Readiness wakes pending reads and wri
 
 This is not an end-to-end zero-copy implementation. Keep submitted buffers unchanged until their operation completes. Received buffers remain valid after the port closes. Read-ahead is bounded by byte and event credits; pending native operations and callback queues are also bounded. Applications must still respect Node stream backpressure.
 
+Individual stream reads of up to 64 bytes travel inline in the native callback event, allowing Rust to reuse its read buffer. The event owns a small copy of the bytes until JavaScript receives its independent pooled buffer; no JavaScript-owned memory is reused by the I/O worker. The retained Rust read allocation is bounded by 64 KiB per port. Batched followers and larger reads retain their owned buffers.
+
 Vectored writes reuse complete JavaScript buffer views. Only segments split at the native transfer boundary need an additional view; queued bytes still receive their own Rust-owned snapshot.
 
 Native completion events borrow fixed Rust string labels instead of allocating a `String` for each event. JavaScript still receives the same ordinary string fields; the event object is only marshalled from Rust to JavaScript.

@@ -118,6 +118,44 @@ test(
   },
 );
 
+test(
+  'small received buffers stay independent across later reads and buffer-size changes',
+  { timeout: 10000 },
+  async t => {
+    const terminal = await pty(t);
+    const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
+    t.after(() => port.destroy());
+    const chunks = [];
+    const payloads = [];
+    let length = 0;
+    let target = 0;
+    let complete;
+    port.on('data', data => {
+      assert(Buffer.isBuffer(data));
+      chunks.push(data);
+      length += data.length;
+      if (length === target) complete();
+    });
+    await call(port, 'open');
+    for (let round = 0; round < 3; round++) {
+      for (const size of [1, 31, 32, 63, 64, 65, 1024, 32]) {
+        const payload = Buffer.from(Array.from({ length: size }, (_, index) => (index * 17 + size + round) & 255));
+        payloads.push(payload);
+        target += size;
+        const received = new Promise(resolve => {
+          complete = resolve;
+        });
+        await Promise.all([received, terminal.command(`write ${payload.toString('hex')}`)]);
+      }
+    }
+    await call(port, 'close');
+    global.gc?.();
+    for (let i = 0; i < 256; i++) Buffer.allocUnsafe(1024).fill(0xa5);
+    global.gc?.();
+    assert.deepEqual(Buffer.concat(chunks), Buffer.concat(payloads));
+  },
+);
+
 test('pending native read cancels on close and bindings can reopen', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   for (let i = 0; i < 10; i++) {

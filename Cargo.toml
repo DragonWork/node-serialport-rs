@@ -23,6 +23,10 @@ tokio-serial = { version = "5.5.0", default-features = false }
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31.3", default-features = false, features = ["term"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Enable location metadata in the serialport crate already used by tokio-serial.
+serialport = { version = "4.10.1", default-features = false, features = ["usbportinfo-location"] }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Devices_Communication", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_System_Registry"] }
 

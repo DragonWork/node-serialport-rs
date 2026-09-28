@@ -5,6 +5,8 @@ use crate::NativeOptions;
 use std::io;
 use tokio_serial::{SerialPort, SerialPortBuilder, SerialStream};
 
+#[cfg(any(target_os = "macos", test))]
+pub(crate) mod macos_list;
 #[cfg(any(windows, test))]
 pub(crate) mod windows_list;
 

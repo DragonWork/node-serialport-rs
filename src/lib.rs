@@ -366,28 +366,30 @@ impl Task for ListTask {
         let pnp_ids = crate::platform::port_ids();
         let mut result = Vec::with_capacity(ports.len());
         for port in ports {
-            let (manufacturer, serial_number, vendor_id, product_id, friendly_name) =
-                match port.port_type {
-                    tokio_serial::SerialPortType::UsbPort(usb) => (
-                        usb.manufacturer,
-                        usb.serial_number,
-                        Some(format!("{:04x}", usb.vid)),
-                        Some(format!("{:04x}", usb.pid)),
-                        if cfg!(windows) { usb.product } else { None },
-                    ),
-                    _ => (None, None, None, None, None),
-                };
             let pnp_id = pnp_ids.get(std::path::Path::new(&port.port_name)).cloned();
-            result.push(PortInfo {
+            let mut info = PortInfo {
                 path: port.port_name,
-                manufacturer,
-                serial_number,
-                vendor_id,
-                product_id,
                 pnp_id,
-                location_id: None,
-                friendly_name,
-            });
+                ..Default::default()
+            };
+            if let tokio_serial::SerialPortType::UsbPort(usb) = port.port_type {
+                #[cfg(target_os = "macos")]
+                {
+                    info.location_id = usb
+                        .location
+                        .as_ref()
+                        .and_then(crate::platform::macos_list::location_id);
+                }
+                info.manufacturer = usb.manufacturer;
+                info.serial_number = usb.serial_number;
+                info.vendor_id = Some(format!("{:04x}", usb.vid));
+                info.product_id = Some(format!("{:04x}", usb.pid));
+                #[cfg(windows)]
+                {
+                    info.friendly_name = usb.product;
+                }
+            }
+            result.push(info);
         }
         #[cfg(windows)]
         crate::platform::windows_list::enrich(&mut result);

@@ -47,7 +47,7 @@ Each entry includes `path`, `manufacturer`, `serialNumber`, `vendorId`, `product
 
 On Windows, `pnpId` is the full device instance ID (including `BTHENUM` for Bluetooth ports), `locationId` is the Device Manager location such as `Port_#0003.Hub_#0006`, and `friendlyName` is the Device Manager display name. Manufacturer and display metadata are queried for non-USB ports too. USB vendor/product IDs use uppercase hexadecimal, matching SerialPort on Windows. USB serial numbers preserve the complete instance component; composite USB and FTDI ports use the matching parent USB device when available. Optional property lookup failures leave existing metadata intact.
 
-Linux discovery uses `/dev/serial/by-id` when available for `pnpId`. `locationId` is not currently populated outside Windows. `friendlyName` is Windows-only.
+On macOS, USB `locationId` uses the eight-digit lowercase hexadecimal IOKit location, such as `14320000`, matching SerialPort. Linux discovery uses `/dev/serial/by-id` when available for `pnpId`; `locationId` remains `undefined` there, as in SerialPort. `friendlyName` is Windows-only.
 
 ### Options and controls
 

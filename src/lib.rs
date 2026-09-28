@@ -342,6 +342,7 @@ impl Drop for NativePort {
 }
 
 #[napi(object)]
+#[derive(Default)]
 pub struct PortInfo {
     pub path: String,
     pub manufacturer: Option<String>,
@@ -350,6 +351,7 @@ pub struct PortInfo {
     pub product_id: Option<String>,
     pub pnp_id: Option<String>,
     pub location_id: Option<String>,
+    pub friendly_name: Option<String>,
 }
 
 pub struct ListTask;
@@ -364,15 +366,17 @@ impl Task for ListTask {
         let pnp_ids = crate::platform::port_ids();
         let mut result = Vec::with_capacity(ports.len());
         for port in ports {
-            let (manufacturer, serial_number, vendor_id, product_id) = match port.port_type {
-                tokio_serial::SerialPortType::UsbPort(usb) => (
-                    usb.manufacturer,
-                    usb.serial_number,
-                    Some(format!("{:04x}", usb.vid)),
-                    Some(format!("{:04x}", usb.pid)),
-                ),
-                _ => (None, None, None, None),
-            };
+            let (manufacturer, serial_number, vendor_id, product_id, friendly_name) =
+                match port.port_type {
+                    tokio_serial::SerialPortType::UsbPort(usb) => (
+                        usb.manufacturer,
+                        usb.serial_number,
+                        Some(format!("{:04x}", usb.vid)),
+                        Some(format!("{:04x}", usb.pid)),
+                        if cfg!(windows) { usb.product } else { None },
+                    ),
+                    _ => (None, None, None, None, None),
+                };
             let pnp_id = pnp_ids.get(std::path::Path::new(&port.port_name)).cloned();
             result.push(PortInfo {
                 path: port.port_name,
@@ -382,8 +386,11 @@ impl Task for ListTask {
                 product_id,
                 pnp_id,
                 location_id: None,
+                friendly_name,
             });
         }
+        #[cfg(windows)]
+        crate::platform::windows_list::enrich(&mut result);
         result.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(result)
     }

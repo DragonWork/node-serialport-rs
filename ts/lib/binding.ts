@@ -408,6 +408,7 @@ const RustBinding = {
       productId: port.productId ?? undefined,
       pnpId: port.pnpId ?? undefined,
       locationId: port.locationId ?? undefined,
+      friendlyName: port.friendlyName ?? undefined,
     }));
   },
   open(options: BindingOpenOptions) {

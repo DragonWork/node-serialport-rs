@@ -38,6 +38,7 @@ interface NativePortInfo {
   productId?: string | null;
   pnpId?: string | null;
   locationId?: string | null;
+  friendlyName?: string | null;
 }
 
 export interface NativeAddon {

@@ -10,7 +10,58 @@ const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { runInNewContext } = require('node:vm');
 const { loadNative, selectTarget } = require('../lib/native');
+const { SerialPort, RustBinding } = require('..');
 const targets = require('../lib/targets.json');
+
+test('list preserves Windows metadata, including names and Bluetooth device IDs', async t => {
+  const ports = [
+    {
+      path: 'COM14',
+      manufacturer: 'wch.cn',
+      serialNumber: '7&33129A7&1&3',
+      pnpId: 'USB\\VID_1A86&PID_7523\\7&33129A7&1&3',
+      locationId: 'Port_#0003.Hub_#0006',
+      friendlyName: 'USB-SERIAL CH340 (COM14)',
+      vendorId: '1A86',
+      productId: '7523',
+    },
+    {
+      path: 'COM8',
+      manufacturer: 'Microsoft',
+      serialNumber: undefined,
+      pnpId: 'BTHENUM\\{00001101-0000-1000-8000-00805f9b34fb}\\device',
+      locationId: undefined,
+      friendlyName: 'Standard Serial over Bluetooth link (COM8)',
+      vendorId: undefined,
+      productId: undefined,
+    },
+  ];
+  t.mock.method(loadNative(), 'listPorts', async () => ports);
+  assert.deepEqual(await RustBinding.list(), ports);
+  assert.deepEqual(await SerialPort.list(), ports);
+  assert.deepEqual(
+    (await SerialPort.list()).filter(port => !port.pnpId?.startsWith('BTHENUM')),
+    [ports[0]],
+  );
+});
+
+test('list keeps ports whose optional metadata is unavailable', async t => {
+  t.mock.method(loadNative(), 'listPorts', async () => [
+    { path: 'COM1', manufacturer: null, friendlyName: null, locationId: null },
+  ]);
+  assert.deepEqual(await RustBinding.list(), [
+    {
+      path: 'COM1',
+      manufacturer: undefined,
+      serialNumber: undefined,
+      pnpId: undefined,
+      locationId: undefined,
+      friendlyName: undefined,
+      vendorId: undefined,
+      productId: undefined,
+    },
+  ]);
+});
 
 function isolatedLoader({ platform = 'linux', arch = 'arm64', glibc = true, exists = () => true } = {}) {
   const module = { exports: {} };

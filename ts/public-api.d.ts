@@ -27,6 +27,8 @@ export interface PortInfo {
   productId: string | undefined;
   pnpId: string | undefined;
   locationId: string | undefined;
+  /** Device Manager name, when available on Windows. */
+  friendlyName?: string;
 }
 
 export interface PortStatus {

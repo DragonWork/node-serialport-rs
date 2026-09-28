@@ -24,7 +24,7 @@ tokio-serial = { version = "5.5.0", default-features = false }
 nix = { version = "0.31.3", default-features = false, features = ["term"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Devices_Communication", "Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_Devices_Communication", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_System_Registry"] }
 
 [dev-dependencies]
 mio-serial = { version = "5.0.7", default-features = false }

@@ -16,6 +16,7 @@ test('discovery returns the complete metadata shape without opening ports', asyn
   for (const port of ports) {
     assert.equal(typeof port.path, 'string');
     assert.deepEqual(Object.keys(port).sort(), [
+      'friendlyName',
       'locationId',
       'manufacturer',
       'path',

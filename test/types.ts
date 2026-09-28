@@ -74,6 +74,7 @@ interface CustomInfo extends PortInfo {
 declare const customBinding: BindingInterface<CustomPort, CustomOptions, CustomInfo>;
 declare const customInfo: PortInfoFromBinding<typeof customBinding>;
 const discoveredChannel: number = customInfo.channel;
+const friendlyName: string | undefined = customInfo.friendlyName;
 const customOptions: OpenOptionsFromBinding<typeof customBinding> = { path: '/custom', baudRate: 9600, channel: 2 };
 const custom = new SerialPortStream({ ...customOptions, binding: customBinding });
 const customPort: PortInterfaceFromBinding<typeof customBinding> | undefined = custom.port;

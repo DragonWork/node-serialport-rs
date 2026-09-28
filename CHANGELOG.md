@@ -1,5 +1,13 @@
 # Changelog
 
+## What's Changed in v0.5.0 (2026-09-28)
+
+* feat: expand Windows port metadata by @DragonWork
+* feat: add macOS port locations by @DragonWork
+* chore(deps): update dependencies by @DragonWork
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.4.0...v0.5.0
+
 ## What's Changed in v0.4.0 (2026-09-27)
 
 * feat: expand SerialPort compatibility exports by @DragonWork

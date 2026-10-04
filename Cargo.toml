@@ -15,9 +15,9 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-napi = { version = "3.13.0", default-features = false, features = ["napi8"] }
-napi-derive = "3.6.9"
-tokio = { version = "1.53.1", default-features = false, features = ["rt", "net", "sync", "time", "macros"] }
+napi = { version = "3.14.0", default-features = false, features = ["napi8"] }
+napi-derive = "3.6.10"
+tokio = { version = "1.53.2", default-features = false, features = ["rt", "net", "sync", "time", "macros"] }
 tokio-serial = { version = "5.5.0", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
@@ -32,10 +32,10 @@ windows-sys = { version = "0.61", features = ["Win32_Devices_Communication", "Wi
 
 [dev-dependencies]
 mio-serial = { version = "5.0.7", default-features = false }
-mio = { version = "1.2.3", default-features = false, features = ["os-poll"] }
+mio = { version = "1.2.4", default-features = false, features = ["os-poll"] }
 
 [build-dependencies]
-napi-build = "2.5.0"
+napi-build = "2.6.0"
 
 [profile.release]
 lto = "fat"

@@ -112,7 +112,7 @@ fn instance_id(set: &DeviceSet, device: &SP_DEVINFO_DATA) -> Option<String> {
 fn parent_id(device: &SP_DEVINFO_DATA) -> Option<String> {
     let mut parent = 0;
     // SAFETY: DevInst came from SetupAPI and parent is a writable output value.
-    if unsafe { CM_Get_Parent(&mut parent, device.DevInst, 0) } != CR_SUCCESS {
+    if unsafe { CM_Get_Parent(&raw mut parent, device.DevInst, 0) } != CR_SUCCESS {
         return None;
     }
     let mut buffer = [0u16; MAX_DEVICE_ID_LEN as usize];
@@ -132,7 +132,8 @@ pub(crate) fn enrich(ports: &mut [PortInfo]) {
     // or removes ports, including its registry-only fallback devices.
     for class in [GUID_DEVCLASS_PORTS, GUID_DEVCLASS_MODEM] {
         // SAFETY: class is an SDK GUID; optional filters and window are null.
-        let handle = unsafe { SetupDiGetClassDevsW(&class, null(), null_mut(), DIGCF_PRESENT) };
+        let handle =
+            unsafe { SetupDiGetClassDevsW(&raw const class, null(), null_mut(), DIGCF_PRESENT) };
         if handle == INVALID_HANDLE_VALUE as HDEVINFO {
             continue;
         }
@@ -143,7 +144,7 @@ pub(crate) fn enrich(ports: &mut [PortInfo]) {
                 ..Default::default()
             };
             // SAFETY: the set is live and device is a correctly sized writable structure.
-            if unsafe { SetupDiEnumDeviceInfo(set.0, index, &mut device) } == 0 {
+            if unsafe { SetupDiEnumDeviceInfo(set.0, index, &raw mut device) } == 0 {
                 break;
             }
             let Some(name) = port_name(&set, &device) else {

@@ -15,7 +15,7 @@ use command::{Command, Operation};
 
 use std::collections::HashMap;
 use std::sync::{
-    Arc, Mutex, OnceLock, Weak,
+    Arc, LazyLock, Mutex, Weak,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
@@ -60,9 +60,8 @@ impl CallbackEvent {
 
 fn pooled_read(allocator: &Function<'_, u32, Buffer>, data: &[u8]) -> Result<Buffer> {
     let mut buffer = allocator.call(data.len() as u32)?;
-    if buffer.len() != data.len() {
-        return Err(Error::from_reason("Invalid read buffer allocation"));
-    }
+    (buffer.len() == data.len())
+        .ok_or_else(|| Error::from_reason("Invalid read buffer allocation"))?;
     buffer.copy_from_slice(data);
     Ok(buffer)
 }
@@ -126,12 +125,11 @@ impl Control {
 }
 
 type Registry = Arc<Mutex<Vec<Weak<Control>>>>;
-static ENVIRONMENTS: OnceLock<Mutex<HashMap<usize, Registry>>> = OnceLock::new();
+static ENVIRONMENTS: LazyLock<Mutex<HashMap<usize, Registry>>> = LazyLock::new(Default::default);
 
 fn register_cleanup(env: Env, control: &Arc<Control>) -> Result<()> {
     let key = env.raw() as usize;
     let mut environments = ENVIRONMENTS
-        .get_or_init(Default::default)
         .lock()
         .map_err(|_| Error::from_reason("Session registry poisoned"))?;
     if let std::collections::hash_map::Entry::Vacant(entry) = environments.entry(key) {
@@ -142,7 +140,7 @@ fn register_cleanup(env: Env, control: &Arc<Control>) -> Result<()> {
                     session.stop();
                 }
             }
-            if let Ok(mut environments) = ENVIRONMENTS.get_or_init(Default::default).lock() {
+            if let Ok(mut environments) = ENVIRONMENTS.lock() {
                 environments.remove(&key);
             }
         })?;
@@ -211,9 +209,8 @@ impl NativePort {
 
     #[napi]
     pub fn read(&self, id: u32, length: u32) -> Result<()> {
-        if length == 0 || length as usize > CHUNK_SIZE {
-            return Err(Error::new(Status::InvalidArg, "Invalid transfer size"));
-        }
+        (length != 0 && length as usize <= CHUNK_SIZE)
+            .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transfer size"))?;
         self.enqueue(Command {
             id,
             operation: Operation::Read(length as usize),
@@ -222,10 +219,11 @@ impl NativePort {
 
     #[napi]
     pub fn read_credit(&self, bytes: u32, events: u32) -> Result<()> {
-        if bytes == 0 || bytes as usize > CHUNK_SIZE || events == 0 || events as usize > READ_SLOTS
-        {
-            return Err(Error::new(Status::InvalidArg, "Invalid read credit"));
-        }
+        (bytes != 0
+            && bytes as usize <= CHUNK_SIZE
+            && events != 0
+            && events as usize <= READ_SLOTS)
+            .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid read credit"))?;
         self.enqueue(Command {
             id: 0,
             operation: Operation::ReadCredit {
@@ -237,12 +235,10 @@ impl NativePort {
 
     #[napi]
     pub fn write(&self, id: u32, data: BufferSlice<'_>, allow_inline: bool) -> Result<bool> {
-        if data.len() > CHUNK_SIZE {
-            return Err(Error::new(Status::InvalidArg, "Invalid transfer size"));
-        }
-        if self.control.stop.load(Ordering::Acquire) {
-            return Err(Error::from_reason("Port is closed"));
-        }
+        (data.len() <= CHUNK_SIZE)
+            .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transfer size"))?;
+        (!self.control.stop.load(Ordering::Acquire))
+            .ok_or_else(|| Error::from_reason("Port is closed"))?;
         let mut written = 0;
         // Never wait for the port lock or bypass an earlier write/control operation.
         if allow_inline
@@ -285,13 +281,11 @@ impl NativePort {
 
     #[napi]
     pub fn writev(&self, id: u32, buffers: Array<'_>, length_hint: Option<u32>) -> Result<()> {
-        if self.control.stop.load(Ordering::Acquire) {
-            return Err(Error::from_reason("Port is closed"));
-        }
+        (!self.control.stop.load(Ordering::Acquire))
+            .ok_or_else(|| Error::from_reason("Port is closed"))?;
         let capacity = length_hint.unwrap_or(0) as usize;
-        if capacity > CHUNK_SIZE || buffers.len() > 1024 {
-            return Err(Error::new(Status::InvalidArg, "Invalid transfer size"));
-        }
+        (capacity <= CHUNK_SIZE && buffers.len() <= 1024)
+            .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transfer size"))?;
         let mut data = Vec::with_capacity(capacity);
         for index in 0..buffers.len() {
             // Borrow one segment at a time: callers may repeat or overlap buffers.
@@ -299,9 +293,8 @@ impl NativePort {
             let buffer: BufferSlice<'_> = buffers
                 .get(index)?
                 .ok_or_else(|| Error::new(Status::InvalidArg, "Missing write buffer"))?;
-            if buffer.len() > CHUNK_SIZE - data.len() {
-                return Err(Error::new(Status::InvalidArg, "Invalid transfer size"));
-            }
+            (buffer.len() <= CHUNK_SIZE - data.len())
+                .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transfer size"))?;
             data.extend_from_slice(&buffer);
         }
         self.enqueue(Command {
@@ -318,9 +311,8 @@ impl NativePort {
 
 impl NativePort {
     fn enqueue(&self, command: Command) -> Result<()> {
-        if self.control.stop.load(Ordering::Acquire) {
-            return Err(Error::from_reason("Port is closed"));
-        }
+        (!self.control.stop.load(Ordering::Acquire))
+            .ok_or_else(|| Error::from_reason("Port is closed"))?;
         let ordered = command.ordered();
         if ordered {
             self.control.pending_ops.fetch_add(1, Ordering::AcqRel);

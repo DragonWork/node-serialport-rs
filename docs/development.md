@@ -3,7 +3,7 @@
 
 # Development and verification
 
-Source builds require Rust/Cargo and a native linker or platform SDK. The crate declares Rust 1.88 as its minimum; the release workflow pins Rust 1.98.1. Release builds use fat LTO and stripped symbols, with an atomic replacement of `native/serialport-rs.node`. Cargo's `CARGO_PROFILE_RELEASE_LTO=thin` override remains available when comparing toolchains or diagnosing target-specific link failures.
+Source builds require Rust/Cargo and a native linker or platform SDK. The crate uses edition 2024 and requires Rust 1.98 or newer; development and release CI pin Rust 1.99.0. Release builds use fat LTO and stripped symbols, with an atomic replacement of `native/serialport-rs.node`. Cargo's `CARGO_PROFILE_RELEASE_LTO=thin` override remains available when comparing toolchains or diagnosing target-specific link failures.
 
 Build the addon and the Unix pseudo-terminal test helper from the source checkout, then run the checks:
 
@@ -17,6 +17,18 @@ cargo test --locked --lib
 ```
 
 Use `npm run build` for an optimized release build. Pull requests use dev builds through `test.yml`; publication runs the same tests against the release artifacts.
+
+CI checks every Cargo target (library, tests and examples) on the exact minimum compiler across Linux x64/ARM64, macOS ARM64 and Windows x64. The crate defines no optional Cargo features or `no_std` configuration. To verify the minimum locally without changing the lockfile:
+
+```sh
+cargo +1.98.0 check --workspace --all-targets --locked
+cargo +1.98.0 test --workspace --locked
+cargo +1.98.0 test --workspace --release --locked
+cargo +1.98.0 clippy --workspace --all-targets --locked -- -D warnings
+cargo +1.98.0 fmt --all -- --check
+```
+
+The exact 1.98.0 toolchain checks compatibility; prefer Rust 1.99.0 for ordinary builds, or 1.98.1 when staying on the minimum minor line because it contains a compiler fix. Keep `Cargo.toml`, `RUST_MSRV` in `test.yml`, and these instructions in sync when the minimum changes. Cross-compilation checks types and platform gates; platform runtime CI and hardware testing remain necessary for driver behavior.
 
 Runtime source lives in `ts/`. `npm run build:js` compiles it in strict mode to `index.js` and `lib/`, and copies `ts/public-api.d.ts` to `index.d.ts`. Edit the TypeScript sources; generated files are ignored by Git. `npm test` and `npm pack` compile the runtime first.
 

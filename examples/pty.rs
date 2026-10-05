@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (op, value) = line.split_once(' ').unwrap_or((&line, ""));
         match op {
             "write" => {
-                if !value.is_ascii() || value.len() % 2 != 0 {
+                if !value.is_ascii() || !value.len().is_multiple_of(2) {
                     return Err("Invalid hexadecimal data".into());
                 }
                 let bytes: Result<Vec<_>, _> = (0..value.len())

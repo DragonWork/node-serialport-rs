@@ -107,11 +107,12 @@ fn registry_string(
     let mut kind = 0;
     let mut size = 0;
     query(&mut [], &mut kind, &mut size);
-    if size == 0 || size > 64 * 1024 || size % 2 != 0 {
+    if size == 0 || size > 64 * 1024 || !size.is_multiple_of(2) {
         return None;
     }
     let mut buffer = vec![0u16; size as usize / 2];
-    if !query(&mut buffer, &mut kind, &mut size) || kind != 1 /* REG_SZ */ || size % 2 != 0 {
+    if !query(&mut buffer, &mut kind, &mut size) || kind != 1 /* REG_SZ */ || !size.is_multiple_of(2)
+    {
         return None;
     }
     wide_string(buffer.get(..size as usize / 2)?)

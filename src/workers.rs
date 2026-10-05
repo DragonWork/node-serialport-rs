@@ -5,7 +5,7 @@ use std::{
     future::Future,
     io,
     sync::{
-        Arc, Mutex, OnceLock, Weak,
+        Arc, LazyLock, Mutex, Weak,
         atomic::{AtomicUsize, Ordering},
     },
 };
@@ -54,15 +54,14 @@ impl Drop for Lease {
 }
 
 fn acquire() -> io::Result<Lease> {
-    static WORKERS: OnceLock<Mutex<Vec<Weak<Worker>>>> = OnceLock::new();
-    static LIMIT: OnceLock<usize> = OnceLock::new();
-    let limit = *LIMIT.get_or_init(|| {
+    static WORKERS: Mutex<Vec<Weak<Worker>>> = Mutex::new(Vec::new());
+    static LIMIT: LazyLock<usize> = LazyLock::new(|| {
         std::thread::available_parallelism()
             .map_or(1, usize::from)
             .clamp(1, 4)
     });
+    let limit = *LIMIT;
     let mut pool = WORKERS
-        .get_or_init(Default::default)
         .lock()
         .map_err(|_| io::Error::other("I/O worker pool poisoned"))?;
     let mut active = Vec::new();

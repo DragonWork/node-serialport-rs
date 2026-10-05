@@ -52,25 +52,24 @@ fn descriptor(port: &SerialStream) -> std::os::fd::BorrowedFd<'_> {
     unsafe { BorrowedFd::borrow_raw(port.as_raw_fd()) }
 }
 
-#[cfg(target_os = "linux")]
 pub(crate) fn port_ids() -> std::collections::HashMap<std::path::PathBuf, String> {
-    let mut ids = std::collections::HashMap::new();
-    if let Ok(entries) = std::fs::read_dir("/dev/serial/by-id") {
-        let mut entries: Vec<_> = entries.flatten().collect();
-        entries.sort_by_key(std::fs::DirEntry::file_name);
-        for entry in entries {
-            if let Ok(path) = entry.path().canonicalize() {
-                ids.entry(path)
-                    .or_insert_with(|| entry.file_name().to_string_lossy().into_owned());
+    std::cfg_select! {
+        target_os = "linux" => {
+            let mut ids = std::collections::HashMap::new();
+            if let Ok(entries) = std::fs::read_dir("/dev/serial/by-id") {
+                let mut entries: Vec<_> = entries.flatten().collect();
+                entries.sort_by_key(std::fs::DirEntry::file_name);
+                for entry in entries {
+                    if let Ok(path) = entry.path().canonicalize() {
+                        ids.entry(path)
+                            .or_insert_with(|| entry.file_name().to_string_lossy().into_owned());
+                    }
+                }
             }
+            ids
         }
+        _ => { std::collections::HashMap::new() }
     }
-    ids
-}
-
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn port_ids() -> std::collections::HashMap<std::path::PathBuf, String> {
-    std::collections::HashMap::new()
 }
 
 #[cfg(unix)]
@@ -119,13 +118,13 @@ pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Res
     use windows_sys::Win32::Devices::Communication::{DCB, GetCommState, SetCommState};
 
     let handle = port.as_raw_handle();
-    // SAFETY: DCB is a plain Windows ABI structure; zero initialization is valid.
-    let mut settings: DCB = unsafe { std::mem::zeroed() };
-    settings.DCBlength = std::mem::size_of::<DCB>() as u32;
+    let mut settings = DCB {
+        DCBlength: std::mem::size_of::<DCB>() as u32,
+        ..Default::default()
+    };
     // SAFETY: the port owns a live handle and settings is writable for the complete call.
-    if unsafe { GetCommState(handle, &mut settings) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
+    (unsafe { GetCommState(handle, &raw mut settings) } != 0)
+        .ok_or_else(io::Error::last_os_error)?;
     settings.BaudRate = options.baud_rate;
     settings.ByteSize = options.data_bits as u8;
     settings.Parity = match options.parity.as_str() {
@@ -155,8 +154,5 @@ pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Res
         settings._bitfield = (settings._bitfield & !(1 << bit)) | (u32::from(value) << bit);
     }
     // SAFETY: both the handle and DCB remain valid until this synchronous call returns.
-    if unsafe { SetCommState(handle, &settings) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
+    (unsafe { SetCommState(handle, &raw const settings) } != 0).ok_or_else(io::Error::last_os_error)
 }

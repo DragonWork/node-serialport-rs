@@ -56,7 +56,7 @@ fn poll_read<T: AsyncRead + Unpin>(
     let mut buffer = ReadBuf::new(bytes);
     let result = Pin::new(port)
         .poll_read(cx, &mut buffer)
-        .map(|result| result.map(|()| Transfer::Read(buffer.filled().len())));
+        .map_ok(|()| Transfer::Read(buffer.filled().len()));
     retry_interrupted(result, cx)
 }
 
@@ -68,9 +68,7 @@ fn poll_write<T: AsyncWrite + Unpin>(
     let Some(bytes) = bytes else {
         return Poll::Pending;
     };
-    let result = Pin::new(port)
-        .poll_write(cx, bytes)
-        .map(|result| result.map(Transfer::Write));
+    let result = Pin::new(port).poll_write(cx, bytes).map_ok(Transfer::Write);
     retry_interrupted(result, cx)
 }
 
@@ -92,6 +90,7 @@ fn retry_interrupted(
 mod tests {
     use super::*;
     use std::{
+        assert_matches,
         sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -163,18 +162,18 @@ mod tests {
         let mut port = ReadyPort::default();
         let mut cx = Context::from_waker(Waker::noop());
         let mut buffer = [0];
-        assert!(matches!(
+        assert_matches!(
             poller.poll(&mut port, &mut cx, Some(&mut buffer), None),
             Poll::Ready(Ok(Transfer::Read(1)))
-        ));
-        assert!(matches!(
+        );
+        assert_matches!(
             poller.poll(&mut port, &mut cx, Some(&mut buffer), None),
             Poll::Ready(Ok(Transfer::Read(1)))
-        ));
-        assert!(matches!(
+        );
+        assert_matches!(
             poller.poll(&mut port, &mut cx, None, Some(&[7])),
             Poll::Ready(Ok(Transfer::Write(1)))
-        ));
+        );
     }
 
     #[derive(Default)]
@@ -243,17 +242,17 @@ mod tests {
         let mut poller = TransferPoller::default();
         let mut cx = Context::from_waker(Waker::noop());
         let mut buffer = [0];
-        assert!(matches!(
+        assert_matches!(
             poller.poll(&mut port, &mut cx, Some(&mut buffer), Some(&[7])),
             Poll::Ready(Ok(Transfer::Write(1)))
-        ));
+        );
         port.read_error = None;
         port.write_error = Some(io::ErrorKind::Interrupted);
         poller.write_first = true;
-        assert!(matches!(
+        assert_matches!(
             poller.poll(&mut port, &mut cx, Some(&mut buffer), Some(&[7])),
             Poll::Ready(Ok(Transfer::Read(1)))
-        ));
+        );
     }
 
     #[test]

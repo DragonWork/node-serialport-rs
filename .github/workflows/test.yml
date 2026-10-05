@@ -22,10 +22,37 @@ permissions:
   contents: read
 
 env:
-  RUST_VERSION: 1.98.1
+  RUST_VERSION: 1.99.0
+  RUST_MSRV: 1.98.0
   CARGO_INCREMENTAL: '0'
 
 jobs:
+  msrv:
+    name: MSRV ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-26.04, target: x86_64-unknown-linux-gnu}
+          - {runner: ubuntu-26.04-arm, target: aarch64-unknown-linux-gnu}
+          - {runner: macos-latest, target: aarch64-apple-darwin}
+          - {runner: windows-latest, target: x86_64-pc-windows-msvc}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release-commit || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: ${{ env.RUST_MSRV }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: msrv-${{ matrix.target }}
+          cache-bin: false
+      - run: cargo check --workspace --all-targets --locked
+
   build:
     if: '!inputs.prebuilt'
     name: Dev build ${{ matrix.target }}

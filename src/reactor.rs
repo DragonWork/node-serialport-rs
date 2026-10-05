@@ -151,7 +151,7 @@ async fn run_open(
                     tokio::task::spawn_blocking(move || with_port(&control, |port| port.flush()))
                         .await
                         .map_err(io::Error::other)
-                        .and_then(|result| result);
+                        .flatten();
                 let event = match drained {
                     Ok(()) => NativeEvent::new(command.id, "ok"),
                     Err(error) => NativeEvent::error(command.id, error),

@@ -33,14 +33,11 @@ struct ReadWindow {
 
 fn send(callback: &Callback, event: NativeEvent) -> bool {
     // At most 64 requests and 32 read-ahead events share the 128-entry queue.
-    let sent = callback.call(
+    // Callback closure during environment teardown is an ordinary lifecycle path.
+    callback.call(
         Ok(CallbackEvent::Event(event)),
         ThreadsafeFunctionCallMode::NonBlocking,
-    ) == Status::Ok;
-    if !sent {
-        cold_path();
-    }
-    sent
+    ) == Status::Ok
 }
 
 fn send_stream_buffers(
@@ -52,11 +49,7 @@ fn send_stream_buffers(
     } else {
         CallbackEvent::ReadBatch(buffers)
     };
-    let sent = callback.call(Ok(value), ThreadsafeFunctionCallMode::NonBlocking) == Status::Ok;
-    if !sent {
-        cold_path();
-    }
-    sent
+    callback.call(Ok(value), ThreadsafeFunctionCallMode::NonBlocking) == Status::Ok
 }
 
 struct Completion {
@@ -292,14 +285,10 @@ async fn run_open(
 }
 
 fn send_read(callback: &Callback, buffer: &mut Vec<u8>, length: usize) -> bool {
-    let sent = callback.call(
+    callback.call(
         Ok(CallbackEvent::read(buffer, length)),
         ThreadsafeFunctionCallMode::NonBlocking,
-    ) == Status::Ok;
-    if !sent {
-        cold_path();
-    }
-    sent
+    ) == Status::Ok
 }
 
 // Keep burst-only storage and polling out of the latency-sensitive reactor path.
@@ -398,7 +387,6 @@ fn send_ready_reads(
         true
     };
     if !sent {
-        cold_path();
         return Ok(false);
     }
     if let Some(error) = deferred_error {

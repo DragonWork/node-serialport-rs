@@ -23,7 +23,9 @@ pub(crate) struct SerialStream {
 
 impl SerialStream {
     pub fn open(builder: &SerialPortBuilder) -> serialport::Result<Self> {
-        let port = TTYPort::open(builder).inspect_err(|_| cold_path())?;
+        // macOS PTYs can return ENOTTY before the caller retries with a POSIX speed.
+        // Only the caller can classify the final open failure as cold.
+        let port = TTYPort::open(builder)?;
         // TTYPort opens in blocking mode. Keep its settings/ownership, but use
         // nonblocking descriptor I/O instead of its timeout-based Read/Write.
         let fd = super::descriptor(&port);
@@ -56,7 +58,8 @@ impl SerialStream {
     pub fn drain_output(&mut self) -> io::Result<()> {
         loop {
             match termios::tcdrain(&self.io) {
-                Err(nix::errno::Errno::EINTR) => cold_path(),
+                // Signals may interrupt a slow drain repeatedly; this is a retry.
+                Err(nix::errno::Errno::EINTR) => continue,
                 result => return result.map_err(Into::into),
             }
         }
@@ -86,10 +89,8 @@ impl AsyncRead for SerialStream {
                     buffer.advance(length);
                     return Poll::Ready(Ok(()));
                 }
-                Ok(Err(error)) => {
-                    cold_path();
-                    return Poll::Ready(Err(error));
-                }
+                // The transfer poller distinguishes retries from permanent errors.
+                Ok(Err(error)) => return Poll::Ready(Err(error)),
                 Err(_) => continue,
             }
         }
@@ -105,7 +106,7 @@ impl AsyncWrite for SerialStream {
         loop {
             let mut ready = ready!(self.io.poll_write_ready(cx))?;
             match ready.try_io(|io| unistd::write(io, bytes).map_err(io::Error::from)) {
-                Ok(result) => return Poll::Ready(result.inspect_err(|_| cold_path())),
+                Ok(result) => return Poll::Ready(result),
                 Err(_) => continue,
             }
         }

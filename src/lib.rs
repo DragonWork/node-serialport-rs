@@ -357,7 +357,7 @@ impl NativePort {
             self.control.pending_ops.fetch_add(1, Ordering::AcqRel);
         }
         if let Err(error) = self.sender.try_send(command) {
-            cold_path();
+            // A bounded queue can fill under load or close during teardown.
             if ordered {
                 self.control.pending_ops.fetch_sub(1, Ordering::Release);
             }

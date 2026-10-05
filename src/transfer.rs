@@ -78,12 +78,13 @@ fn retry_interrupted(
     cx: &Context<'_>,
 ) -> Poll<io::Result<Transfer>> {
     if let Poll::Ready(Err(error)) = &result {
-        cold_path();
         if error.kind() == io::ErrorKind::Interrupted {
             // Retry on the next poll so the other direction and ports can progress.
             cx.waker().wake_by_ref();
             return Poll::Pending;
         }
+        // Interrupted I/O is recoverable and its frequency depends on signal traffic.
+        cold_path();
     }
     result
 }

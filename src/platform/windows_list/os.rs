@@ -116,7 +116,7 @@ fn parent_id(device: &SP_DEVINFO_DATA) -> Option<String> {
     let mut parent = 0;
     // SAFETY: DevInst came from SetupAPI and parent is a writable output value.
     if unsafe { CM_Get_Parent(&raw mut parent, device.DevInst, 0) } != CR_SUCCESS {
-        cold_path();
+        // Parent metadata is optional and may disappear during device enumeration.
         return None;
     }
     let mut buffer = [0u16; MAX_DEVICE_ID_LEN as usize];

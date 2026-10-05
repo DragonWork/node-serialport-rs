@@ -4,6 +4,7 @@
 use std::{
     collections::VecDeque,
     future::poll_fn,
+    hint::cold_path,
     io::{self, Write},
     sync::{Arc, atomic::Ordering},
     task::{Context, Poll, Waker},
@@ -30,10 +31,14 @@ struct ReadWindow {
 
 fn send(callback: &Callback, event: NativeEvent) -> bool {
     // At most 64 requests and 32 read-ahead events share the 128-entry queue.
-    callback.call(
+    let sent = callback.call(
         Ok(CallbackEvent::Event(event)),
         ThreadsafeFunctionCallMode::NonBlocking,
-    ) == Status::Ok
+    ) == Status::Ok;
+    if !sent {
+        cold_path();
+    }
+    sent
 }
 
 fn send_stream_buffers(
@@ -45,7 +50,11 @@ fn send_stream_buffers(
     } else {
         CallbackEvent::ReadBatch(buffers)
     };
-    callback.call(Ok(value), ThreadsafeFunctionCallMode::NonBlocking) == Status::Ok
+    let sent = callback.call(Ok(value), ThreadsafeFunctionCallMode::NonBlocking) == Status::Ok;
+    if !sent {
+        cold_path();
+    }
+    sent
 }
 
 struct Completion {
@@ -61,7 +70,10 @@ impl Drop for Completion {
         self.control
             .session
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(|error| {
+                cold_path();
+                error.into_inner()
+            })
             .take();
         let mut closed = NativeEvent::new(0, "close");
         closed.message = self.error.take();
@@ -85,21 +97,30 @@ pub(crate) async fn run(
     let opened = tokio::task::spawn_blocking(move || settings::open(&options)).await;
     let result = match opened {
         Ok(Ok(port)) => {
-            *control
-                .session
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(port);
+            *control.session.lock().unwrap_or_else(|error| {
+                cold_path();
+                error.into_inner()
+            }) = Some(port);
             if control.stop.load(Ordering::Acquire) || !send(callback, NativeEvent::new(0, "open"))
             {
                 Ok(())
             } else {
                 run_open(receiver, control, callback)
                     .await
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| {
+                        cold_path();
+                        error.to_string()
+                    })
             }
         }
-        Ok(Err(error)) => Err(error),
-        Err(error) => Err(error.to_string()),
+        Ok(Err(error)) => {
+            cold_path();
+            Err(error)
+        }
+        Err(error) => {
+            cold_path();
+            Err(error.to_string())
+        }
     };
     completion.error = result.err();
 }
@@ -139,7 +160,10 @@ async fn run_open(
                 }
             } else if matches!(command.operation, Operation::Drain) {
                 if with_port(control, |port| {
-                    port.bytes_to_write().map_err(io::Error::other)
+                    port.bytes_to_write().map_err(|error| {
+                        cold_path();
+                        io::Error::other(error)
+                    })
                 })? != 0
                 {
                     draining = true;
@@ -150,7 +174,10 @@ async fn run_open(
                 let drained =
                     tokio::task::spawn_blocking(move || with_port(&control, |port| port.flush()))
                         .await
-                        .map_err(io::Error::other)
+                        .map_err(|error| {
+                            cold_path();
+                            io::Error::other(error)
+                        })
                         .flatten();
                 let event = match drained {
                     Ok(()) => NativeEvent::new(command.id, "ok"),
@@ -161,7 +188,10 @@ async fn run_open(
                 }
             } else {
                 let event = with_port(control, |port| {
-                    operation(port, command).map_err(io::Error::other)
+                    operation(port, command).map_err(|error| {
+                        cold_path();
+                        io::Error::other(error)
+                    })
                 })
                 .unwrap_or_else(|error| NativeEvent::error(command.id, error));
                 if !send(callback, event) {
@@ -200,6 +230,7 @@ async fn run_open(
                         window.bytes += bytes;
                         window.slots += slots;
                         if read.is_some() || window.bytes > crate::CHUNK_SIZE || window.slots > crate::READ_SLOTS {
+                            cold_path();
                             return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid read credit"));
                         }
                         streaming = true;
@@ -210,12 +241,18 @@ async fn run_open(
             },
             ready = poll_fn(|cx| with_port(control, |port| {
                 Ok(transfers.poll(port, cx, read_length.map(|_| read_buffer.as_mut_slice()), write))
-            }).unwrap_or_else(|error| Poll::Ready(Err(error)))), if read_length.is_some() || write.is_some() => {
+            }).unwrap_or_else(|error| {
+                cold_path();
+                Poll::Ready(Err(error))
+            })), if read_length.is_some() || write.is_some() => {
                 let (is_read, length) = match ready? {
                     Transfer::Read(length) => (true, length),
                     Transfer::Write(length) => (false, length),
                 };
-                if length == 0 { return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Serial device disconnected")); }
+                if length == 0 {
+                    cold_path();
+                    return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Serial device disconnected"));
+                }
                 if is_read {
                     let filled = length == read_buffer.len();
                     window.size = if filled { (window.size * 2).min(crate::CHUNK_SIZE) }
@@ -233,7 +270,10 @@ async fn run_open(
                             send_ready_reads(control, callback, &mut transfers, &mut read_buffer, &mut window)?
                         }
                     } else {
-                        let (id, _) = read.take().ok_or_else(|| io::Error::other("Unexpected read completion"))?;
+                        let (id, _) = read.take().ok_or_else(|| {
+                            cold_path();
+                            io::Error::other("Unexpected read completion")
+                        })?;
                         let mut event = NativeEvent::new(id, "read");
                         event.data = Some(std::mem::take(&mut read_buffer).into());
                         send(callback, event)
@@ -248,10 +288,14 @@ async fn run_open(
 }
 
 fn send_read(callback: &Callback, buffer: &mut Vec<u8>) -> bool {
-    callback.call(
+    let sent = callback.call(
         Ok(CallbackEvent::read(buffer)),
         ThreadsafeFunctionCallMode::NonBlocking,
-    ) == Status::Ok
+    ) == Status::Ok;
+    if !sent {
+        cold_path();
+    }
+    sent
 }
 
 // Keep burst-only storage and polling out of the latency-sensitive reactor path.
@@ -282,6 +326,7 @@ fn send_ready_reads(
         let ready = match poll_read_now(control, transfers, read_buffer) {
             Ok(ready) => ready,
             Err(error) => {
+                cold_path();
                 deferred_error = Some(error);
                 break;
             }
@@ -289,16 +334,19 @@ fn send_ready_reads(
         let next_length = match ready {
             Poll::Pending => break,
             Poll::Ready(Err(error)) => {
+                cold_path();
                 deferred_error = Some(error);
                 break;
             }
             Poll::Ready(Ok(Transfer::Write(_))) => {
+                cold_path();
                 deferred_error = Some(io::Error::other("Unexpected write while batching reads"));
                 break;
             }
             Poll::Ready(Ok(Transfer::Read(length))) => length,
         };
         if next_length == 0 {
+            cold_path();
             deferred_error = Some(io::Error::new(
                 io::ErrorKind::BrokenPipe,
                 "Serial device disconnected",
@@ -335,9 +383,11 @@ fn send_ready_reads(
         true
     };
     if !sent {
+        cold_path();
         return Ok(false);
     }
     if let Some(error) = deferred_error {
+        cold_path();
         return Err(error);
     }
     Ok(true)
@@ -358,13 +408,14 @@ fn with_port<T>(
     control: &Control,
     operation: impl FnOnce(&mut SerialStream) -> io::Result<T>,
 ) -> io::Result<T> {
-    let mut state = control
-        .session
-        .lock()
-        .map_err(|_| io::Error::other("Serial state poisoned"))?;
-    let port = state
-        .as_mut()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "Port is closed"))?;
+    let mut state = control.session.lock().map_err(|_| {
+        cold_path();
+        io::Error::other("Serial state poisoned")
+    })?;
+    let port = state.as_mut().ok_or_else(|| {
+        cold_path();
+        io::Error::new(io::ErrorKind::BrokenPipe, "Port is closed")
+    })?;
     operation(port)
 }
 
@@ -372,42 +423,60 @@ fn operation(port: &mut SerialStream, command: &Command) -> Result<NativeEvent, 
     let mut event = NativeEvent::new(command.id, "ok");
     match &command.operation {
         Operation::Update(baud_rate) => {
-            crate::platform::set_baud_rate(port, *baud_rate).map_err(|error| error.to_string())?
+            crate::platform::set_baud_rate(port, *baud_rate).map_err(|error| {
+                cold_path();
+                error.to_string()
+            })?
         }
         Operation::GetBaudRate => {
-            event.baud_rate =
-                Some(crate::platform::baud_rate(port).map_err(|error| error.to_string())?)
+            event.baud_rate = Some(crate::platform::baud_rate(port).map_err(|error| {
+                cold_path();
+                error.to_string()
+            })?)
         }
         Operation::Set(flags) => {
             port.write_data_terminal_ready(flags & 1 != 0)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| {
+                    cold_path();
+                    error.to_string()
+                })?;
             port.write_request_to_send(flags & 2 != 0)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| {
+                    cold_path();
+                    error.to_string()
+                })?;
             if flags & 4 != 0 {
                 port.set_break()
             } else {
                 port.clear_break()
             }
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| {
+                cold_path();
+                error.to_string()
+            })?;
         }
         Operation::Get => {
-            event.cts = Some(
-                port.read_clear_to_send()
-                    .map_err(|error| error.to_string())?,
-            );
-            event.dsr = Some(
-                port.read_data_set_ready()
-                    .map_err(|error| error.to_string())?,
-            );
-            event.dcd = Some(
-                port.read_carrier_detect()
-                    .map_err(|error| error.to_string())?,
-            );
+            event.cts = Some(port.read_clear_to_send().map_err(|error| {
+                cold_path();
+                error.to_string()
+            })?);
+            event.dsr = Some(port.read_data_set_ready().map_err(|error| {
+                cold_path();
+                error.to_string()
+            })?);
+            event.dcd = Some(port.read_carrier_detect().map_err(|error| {
+                cold_path();
+                error.to_string()
+            })?);
         }
-        Operation::Flush => port
-            .clear(ClearBuffer::All)
-            .map_err(|error| error.to_string())?,
-        _ => return Err("Unexpected transfer in control queue".into()),
+        Operation::Flush => port.clear(ClearBuffer::All).map_err(|error| {
+            cold_path();
+            error.to_string()
+        })?,
+        _ => {
+            cold_path();
+            return Err("Unexpected transfer in control queue".into());
+        }
     }
     Ok(event)
 }

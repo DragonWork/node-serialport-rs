@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::NativeOptions;
-use std::io;
+use std::{hint::cold_path, io};
 use tokio_serial::{SerialPort, SerialPortBuilder, SerialStream};
 
 #[cfg(any(target_os = "macos", test))]
@@ -77,6 +77,7 @@ pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Res
     use nix::sys::termios::{self, ControlFlags, InputFlags, SetArg};
 
     if options.stop_bits == 1.5 {
+        cold_path();
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "1.5 stop bits requires Windows",
@@ -103,6 +104,7 @@ pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Res
     }
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     if matches!(options.parity.as_str(), "mark" | "space") {
+        cold_path();
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "Mark/space parity is not available on this platform",
@@ -123,8 +125,10 @@ pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Res
         ..Default::default()
     };
     // SAFETY: the port owns a live handle and settings is writable for the complete call.
-    (unsafe { GetCommState(handle, &raw mut settings) } != 0)
-        .ok_or_else(io::Error::last_os_error)?;
+    (unsafe { GetCommState(handle, &raw mut settings) } != 0).ok_or_else(|| {
+        cold_path();
+        io::Error::last_os_error()
+    })?;
     settings.BaudRate = options.baud_rate;
     settings.ByteSize = options.data_bits as u8;
     settings.Parity = match options.parity.as_str() {
@@ -154,5 +158,8 @@ pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Res
         settings._bitfield = (settings._bitfield & !(1 << bit)) | (u32::from(value) << bit);
     }
     // SAFETY: both the handle and DCB remain valid until this synchronous call returns.
-    (unsafe { SetCommState(handle, &raw const settings) } != 0).ok_or_else(io::Error::last_os_error)
+    (unsafe { SetCommState(handle, &raw const settings) } != 0).ok_or_else(|| {
+        cold_path();
+        io::Error::last_os_error()
+    })
 }

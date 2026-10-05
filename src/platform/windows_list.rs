@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::PortInfo;
+use std::hint::cold_path;
 
 #[cfg(windows)]
 mod os;
@@ -75,6 +76,7 @@ fn usb_identity(id: &str) -> Option<UsbIdentity<'_>> {
         .iter()
         .any(|value| value.len() != 4 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()))
     {
+        cold_path();
         return None;
     }
     // SerialPort's FTDI fallback removes the optional channel-A suffix. A
@@ -89,6 +91,7 @@ fn usb_identity(id: &str) -> Option<UsbIdentity<'_>> {
         instance
     };
     if serial.is_empty() {
+        cold_path();
         return None;
     }
     Some(UsbIdentity {
@@ -107,15 +110,26 @@ fn registry_string(
     let mut kind = 0;
     let mut size = 0;
     query(&mut [], &mut kind, &mut size);
-    if size == 0 || size > 64 * 1024 || !size.is_multiple_of(2) {
+    if size == 0 {
+        return None;
+    }
+    if size > 64 * 1024 || !size.is_multiple_of(2) {
+        cold_path();
         return None;
     }
     let mut buffer = vec![0u16; size as usize / 2];
-    if !query(&mut buffer, &mut kind, &mut size) || kind != 1 /* REG_SZ */ || !size.is_multiple_of(2)
-    {
+    if !query(&mut buffer, &mut kind, &mut size) {
         return None;
     }
-    wide_string(buffer.get(..size as usize / 2)?)
+    if kind != 1 /* REG_SZ */ || !size.is_multiple_of(2) {
+        cold_path();
+        return None;
+    }
+    let Some(buffer) = buffer.get(..size as usize / 2) else {
+        cold_path();
+        return None;
+    };
+    wide_string(buffer)
 }
 
 fn wide_string(buffer: &[u16]) -> Option<String> {

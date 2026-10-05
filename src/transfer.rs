@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
+    hint::cold_path,
     io,
     pin::Pin,
     task::{Context, Poll},
@@ -76,14 +77,15 @@ fn retry_interrupted(
     result: Poll<io::Result<Transfer>>,
     cx: &Context<'_>,
 ) -> Poll<io::Result<Transfer>> {
-    match result {
-        Poll::Ready(Err(error)) if error.kind() == io::ErrorKind::Interrupted => {
+    if let Poll::Ready(Err(error)) = &result {
+        cold_path();
+        if error.kind() == io::ErrorKind::Interrupted {
             // Retry on the next poll so the other direction and ports can progress.
             cx.waker().wake_by_ref();
-            Poll::Pending
+            return Poll::Pending;
         }
-        result => result,
     }
+    result
 }
 
 #[cfg(test)]

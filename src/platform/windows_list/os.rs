@@ -3,7 +3,10 @@
 
 use super::{Metadata, registry_string, wide_string};
 use crate::PortInfo;
-use std::ptr::{null, null_mut};
+use std::{
+    hint::cold_path,
+    ptr::{null, null_mut},
+};
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
     CM_Get_Device_IDW, CM_Get_Parent, CR_SUCCESS, DICS_FLAG_GLOBAL, DIGCF_PRESENT, DIREG_DEV,
     GUID_DEVCLASS_MODEM, GUID_DEVCLASS_PORTS, HDEVINFO, MAX_DEVICE_ID_LEN, SP_DEVINFO_DATA,
@@ -113,6 +116,7 @@ fn parent_id(device: &SP_DEVINFO_DATA) -> Option<String> {
     let mut parent = 0;
     // SAFETY: DevInst came from SetupAPI and parent is a writable output value.
     if unsafe { CM_Get_Parent(&raw mut parent, device.DevInst, 0) } != CR_SUCCESS {
+        cold_path();
         return None;
     }
     let mut buffer = [0u16; MAX_DEVICE_ID_LEN as usize];
@@ -135,6 +139,7 @@ pub(crate) fn enrich(ports: &mut [PortInfo]) {
         let handle =
             unsafe { SetupDiGetClassDevsW(&raw const class, null(), null_mut(), DIGCF_PRESENT) };
         if handle == INVALID_HANDLE_VALUE as HDEVINFO {
+            cold_path();
             continue;
         }
         let set = DeviceSet(handle);

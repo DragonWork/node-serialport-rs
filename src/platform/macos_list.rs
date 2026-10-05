@@ -1,6 +1,8 @@
 // Copyright 2026 DragonWork
 // SPDX-License-Identifier: Apache-2.0
 
+use std::hint::cold_path;
+
 #[cfg(target_os = "macos")]
 pub(crate) fn location_id(location: &serialport::Location) -> Option<String> {
     format_location(location.bus_id(), location.port_chain())
@@ -9,8 +11,12 @@ pub(crate) fn location_id(location: &serialport::Location) -> Option<String> {
 fn format_location(bus: &str, ports: &[u8]) -> Option<String> {
     // serialport decodes the IOKit locationID into a bus byte and six port
     // nibbles, dropping trailing zeroes. Restore SerialPort's %08x spelling.
-    let bus: u8 = bus.parse().ok()?;
+    let Ok(bus) = bus.parse::<u8>() else {
+        cold_path();
+        return None;
+    };
     if ports.len() > 6 || ports.iter().any(|&port| port > 15) {
+        cold_path();
         return None;
     }
     let mut id = u32::from(bus) << 24;

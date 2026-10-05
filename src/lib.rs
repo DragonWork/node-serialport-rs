@@ -14,6 +14,7 @@ mod workers;
 use command::{Command, Operation};
 
 use std::collections::HashMap;
+use std::hint::cold_path;
 use std::sync::{
     Arc, LazyLock, Mutex, Weak,
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -60,8 +61,10 @@ impl CallbackEvent {
 
 fn pooled_read(allocator: &Function<'_, u32, Buffer>, data: &[u8]) -> Result<Buffer> {
     let mut buffer = allocator.call(data.len() as u32)?;
-    (buffer.len() == data.len())
-        .ok_or_else(|| Error::from_reason("Invalid read buffer allocation"))?;
+    (buffer.len() == data.len()).ok_or_else(|| {
+        cold_path();
+        Error::from_reason("Invalid read buffer allocation")
+    })?;
     buffer.copy_from_slice(data);
     Ok(buffer)
 }
@@ -103,6 +106,7 @@ impl NativeEvent {
         }
     }
     pub(crate) fn error(id: u32, error: impl std::fmt::Display) -> Self {
+        cold_path();
         Self {
             message: Some(error.to_string()),
             ..Self::new(id, "error")
@@ -129,9 +133,10 @@ static ENVIRONMENTS: LazyLock<Mutex<HashMap<usize, Registry>>> = LazyLock::new(D
 
 fn register_cleanup(env: Env, control: &Arc<Control>) -> Result<()> {
     let key = env.raw() as usize;
-    let mut environments = ENVIRONMENTS
-        .lock()
-        .map_err(|_| Error::from_reason("Session registry poisoned"))?;
+    let mut environments = ENVIRONMENTS.lock().map_err(|_| {
+        cold_path();
+        Error::from_reason("Session registry poisoned")
+    })?;
     if let std::collections::hash_map::Entry::Vacant(entry) = environments.entry(key) {
         let registry: Registry = Arc::default();
         env.add_env_cleanup_hook(Arc::clone(&registry), move |registry| {
@@ -146,9 +151,10 @@ fn register_cleanup(env: Env, control: &Arc<Control>) -> Result<()> {
         })?;
         entry.insert(registry);
     }
-    let mut sessions = environments[&key]
-        .lock()
-        .map_err(|_| Error::from_reason("Session registry poisoned"))?;
+    let mut sessions = environments[&key].lock().map_err(|_| {
+        cold_path();
+        Error::from_reason("Session registry poisoned")
+    })?;
     sessions.retain(|session| session.strong_count() != 0);
     sessions.push(Arc::downgrade(control));
     Ok(())
@@ -202,15 +208,21 @@ impl NativePort {
         register_cleanup(env, &control)?;
         let (sender, receiver) = mpsc::channel(64 + READ_SLOTS);
         let worker_control = Arc::clone(&control);
-        workers::spawn(reactor::run(options, receiver, worker_control, callback))
-            .map_err(|error| Error::from_reason(error.to_string()))?;
+        workers::spawn(reactor::run(options, receiver, worker_control, callback)).map_err(
+            |error| {
+                cold_path();
+                Error::from_reason(error.to_string())
+            },
+        )?;
         Ok(Self { control, sender })
     }
 
     #[napi]
     pub fn read(&self, id: u32, length: u32) -> Result<()> {
-        (length != 0 && length as usize <= CHUNK_SIZE)
-            .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transfer size"))?;
+        (length != 0 && length as usize <= CHUNK_SIZE).ok_or_else(|| {
+            cold_path();
+            Error::new(Status::InvalidArg, "Invalid transfer size")
+        })?;
         self.enqueue(Command {
             id,
             operation: Operation::Read(length as usize),
@@ -223,7 +235,10 @@ impl NativePort {
             && bytes as usize <= CHUNK_SIZE
             && events != 0
             && events as usize <= READ_SLOTS)
-            .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid read credit"))?;
+            .ok_or_else(|| {
+                cold_path();
+                Error::new(Status::InvalidArg, "Invalid read credit")
+            })?;
         self.enqueue(Command {
             id: 0,
             operation: Operation::ReadCredit {
@@ -235,10 +250,14 @@ impl NativePort {
 
     #[napi]
     pub fn write(&self, id: u32, data: BufferSlice<'_>, allow_inline: bool) -> Result<bool> {
-        (data.len() <= CHUNK_SIZE)
-            .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transfer size"))?;
-        (!self.control.stop.load(Ordering::Acquire))
-            .ok_or_else(|| Error::from_reason("Port is closed"))?;
+        (data.len() <= CHUNK_SIZE).ok_or_else(|| {
+            cold_path();
+            Error::new(Status::InvalidArg, "Invalid transfer size")
+        })?;
+        (!self.control.stop.load(Ordering::Acquire)).ok_or_else(|| {
+            cold_path();
+            Error::from_reason("Port is closed")
+        })?;
         let mut written = 0;
         // Never wait for the port lock or bypass an earlier write/control operation.
         if allow_inline
@@ -270,6 +289,7 @@ impl NativePort {
             "flush" => Operation::Flush,
             "drain" => Operation::Drain,
             _ => {
+                cold_path();
                 return Err(Error::new(
                     Status::InvalidArg,
                     "Unknown serial control operation",
@@ -281,20 +301,27 @@ impl NativePort {
 
     #[napi]
     pub fn writev(&self, id: u32, buffers: Array<'_>, length_hint: Option<u32>) -> Result<()> {
-        (!self.control.stop.load(Ordering::Acquire))
-            .ok_or_else(|| Error::from_reason("Port is closed"))?;
+        (!self.control.stop.load(Ordering::Acquire)).ok_or_else(|| {
+            cold_path();
+            Error::from_reason("Port is closed")
+        })?;
         let capacity = length_hint.unwrap_or(0) as usize;
-        (capacity <= CHUNK_SIZE && buffers.len() <= 1024)
-            .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transfer size"))?;
+        (capacity <= CHUNK_SIZE && buffers.len() <= 1024).ok_or_else(|| {
+            cold_path();
+            Error::new(Status::InvalidArg, "Invalid transfer size")
+        })?;
         let mut data = Vec::with_capacity(capacity);
         for index in 0..buffers.len() {
             // Borrow one segment at a time: callers may repeat or overlap buffers.
             // No borrow survives the next JS array access or this synchronous call.
-            let buffer: BufferSlice<'_> = buffers
-                .get(index)?
-                .ok_or_else(|| Error::new(Status::InvalidArg, "Missing write buffer"))?;
-            (buffer.len() <= CHUNK_SIZE - data.len())
-                .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transfer size"))?;
+            let buffer: BufferSlice<'_> = buffers.get(index)?.ok_or_else(|| {
+                cold_path();
+                Error::new(Status::InvalidArg, "Missing write buffer")
+            })?;
+            (buffer.len() <= CHUNK_SIZE - data.len()).ok_or_else(|| {
+                cold_path();
+                Error::new(Status::InvalidArg, "Invalid transfer size")
+            })?;
             data.extend_from_slice(&buffer);
         }
         self.enqueue(Command {
@@ -311,13 +338,16 @@ impl NativePort {
 
 impl NativePort {
     fn enqueue(&self, command: Command) -> Result<()> {
-        (!self.control.stop.load(Ordering::Acquire))
-            .ok_or_else(|| Error::from_reason("Port is closed"))?;
+        (!self.control.stop.load(Ordering::Acquire)).ok_or_else(|| {
+            cold_path();
+            Error::from_reason("Port is closed")
+        })?;
         let ordered = command.ordered();
         if ordered {
             self.control.pending_ops.fetch_add(1, Ordering::AcqRel);
         }
         if let Err(error) = self.sender.try_send(command) {
+            cold_path();
             if ordered {
                 self.control.pending_ops.fetch_sub(1, Ordering::Release);
             }
@@ -353,8 +383,14 @@ impl Task for ListTask {
     type JsValue = Vec<PortInfo>;
     fn compute(&mut self) -> Result<Self::Output> {
         let ports = std::panic::catch_unwind(tokio_serial::available_ports)
-            .map_err(|_| Error::from_reason("Serial port enumeration failed"))?
-            .map_err(|error| Error::from_reason(error.to_string()))?;
+            .map_err(|_| {
+                cold_path();
+                Error::from_reason("Serial port enumeration failed")
+            })?
+            .map_err(|error| {
+                cold_path();
+                Error::from_reason(error.to_string())
+            })?;
         let pnp_ids = crate::platform::port_ids();
         let mut result = Vec::with_capacity(ports.len());
         for port in ports {

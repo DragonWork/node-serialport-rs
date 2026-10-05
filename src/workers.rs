@@ -3,6 +3,7 @@
 
 use std::{
     future::Future,
+    hint::cold_path,
     io,
     sync::{
         Arc, LazyLock, Mutex, Weak,
@@ -61,9 +62,10 @@ fn acquire() -> io::Result<Lease> {
             .clamp(1, 4)
     });
     let limit = *LIMIT;
-    let mut pool = WORKERS
-        .lock()
-        .map_err(|_| io::Error::other("I/O worker pool poisoned"))?;
+    let mut pool = WORKERS.lock().map_err(|_| {
+        cold_path();
+        io::Error::other("I/O worker pool poisoned")
+    })?;
     let mut active = Vec::new();
     pool.retain(|weak| match weak.upgrade() {
         Some(worker) => {

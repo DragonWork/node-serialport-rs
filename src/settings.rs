@@ -1,6 +1,7 @@
 // Copyright 2026 DragonWork
 // SPDX-License-Identifier: Apache-2.0
 
+use std::hint::cold_path;
 use tokio_serial::{DataBits, FlowControl, Parity, SerialStream, StopBits};
 
 use crate::NativeOptions;
@@ -11,21 +12,31 @@ pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
         6 => DataBits::Six,
         7 => DataBits::Seven,
         8 => DataBits::Eight,
-        _ => return Err("Invalid dataBits".into()),
+        _ => {
+            cold_path();
+            return Err("Invalid dataBits".into());
+        }
     };
     let stop_bits = match options.stop_bits {
         1.0 | 1.5 => StopBits::One,
         2.0 => StopBits::Two,
-        _ => return Err("Invalid stopBits".into()),
+        _ => {
+            cold_path();
+            return Err("Invalid stopBits".into());
+        }
     };
     let parity = match options.parity.as_str() {
         "none" | "mark" | "space" => Parity::None,
         "odd" => Parity::Odd,
         "even" => Parity::Even,
-        _ => return Err("Invalid parity".into()),
+        _ => {
+            cold_path();
+            return Err("Invalid parity".into());
+        }
     };
     #[cfg(windows)]
     if !options.lock {
+        cold_path();
         return Err("Windows requires exclusive serial access".into());
     }
     let flow = if options.rtscts {
@@ -42,10 +53,18 @@ pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
         .flow_control(flow);
     #[cfg(unix)]
     let builder = builder.exclusive(options.lock);
-    let mut port = crate::platform::open(&builder).map_err(|error| error.to_string())?;
-    crate::platform::configure(&port, options).map_err(|error| error.to_string())?;
+    let mut port = crate::platform::open(&builder).map_err(|error| {
+        cold_path();
+        error.to_string()
+    })?;
+    crate::platform::configure(&port, options).map_err(|error| {
+        cold_path();
+        error.to_string()
+    })?;
     // Reapply custom speeds after changing the platform termios/DCB flags.
-    crate::platform::set_baud_rate(&mut port, options.baud_rate)
-        .map_err(|error| error.to_string())?;
+    crate::platform::set_baud_rate(&mut port, options.baud_rate).map_err(|error| {
+        cold_path();
+        error.to_string()
+    })?;
     Ok(port)
 }

@@ -30,7 +30,9 @@ use tokio::sync::{Notify, mpsc};
 
 pub(crate) const CHUNK_SIZE: usize = 64 * 1024;
 pub(crate) const READ_SLOTS: usize = 32;
-const INLINE_READ_CAPACITY: usize = 64;
+// On 64-bit targets, 96 inline bytes still fit inside the control-event layout.
+// Keep the existing size on 32-bit targets, where pointer-bearing events are smaller.
+const INLINE_READ_CAPACITY: usize = if usize::BITS == 64 { 96 } else { 64 };
 pub(crate) type CallbackValue = Either3<Buffer, Vec<Buffer>, NativeEvent>;
 pub(crate) type Callback =
     ThreadsafeFunction<CallbackEvent, (), CallbackValue, Status, true, false, 128>;
@@ -46,15 +48,15 @@ pub(crate) enum CallbackEvent {
 }
 
 impl CallbackEvent {
-    pub fn read(buffer: &mut Vec<u8>) -> Self {
-        if buffer.len() > INLINE_READ_CAPACITY {
+    pub fn read(buffer: &mut Vec<u8>, len: usize) -> Self {
+        if len > INLINE_READ_CAPACITY {
+            buffer.truncate(len);
             return Self::Read(std::mem::take(buffer).into());
         }
-        let len = buffer.len();
         let mut bytes = [0; INLINE_READ_CAPACITY];
-        bytes[..len].copy_from_slice(buffer);
-        // The queued event owns its bytes, so the worker can reuse its read allocation.
-        buffer.clear();
+        bytes[..len].copy_from_slice(&buffer[..len]);
+        // Retain initialized storage as well as capacity. The next read can
+        // overwrite it without zero-filling the same allocation again.
         Self::InlineRead { bytes, len }
     }
 }
@@ -190,9 +192,14 @@ impl NativePort {
                 }
                 CallbackEvent::Read(data) => Ok(Either3::A(data)),
                 CallbackEvent::ReadBatch(mut buffers) => {
+                    let mut borrowed_allocator = None;
                     for data in &mut buffers {
                         if data.len() <= 1024 {
-                            *data = pooled_read(&allocator.borrow_back(&ctx.env)?, data)?;
+                            let allocate = match &mut borrowed_allocator {
+                                Some(allocate) => allocate,
+                                None => borrowed_allocator.insert(allocator.borrow_back(&ctx.env)?),
+                            };
+                            *data = pooled_read(allocate, data)?;
                         }
                     }
                     Ok(Either3::B(buffers))

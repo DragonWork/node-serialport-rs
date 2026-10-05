@@ -213,10 +213,11 @@ async fn run_open(
         let read_length = read
             .map(|(_, length)| length)
             .or_else(|| (window.bytes > 0 && window.slots > 0).then_some(window.bytes));
-        if let Some(length) = read_length
-            && read_buffer.is_empty()
+        let read_capacity = read_length.map(|length| length.min(window.size));
+        if let Some(length) = read_capacity
+            && read_buffer.len() < length
         {
-            read_buffer.resize(length.min(window.size), 0);
+            read_buffer.resize(length, 0);
         }
         tokio::select! {
             biased;
@@ -243,7 +244,7 @@ async fn run_open(
                 }
             },
             ready = poll_fn(|cx| with_port(control, |port| {
-                Ok(transfers.poll(port, cx, read_length.map(|_| read_buffer.as_mut_slice()), write))
+                Ok(transfers.poll(port, cx, read_capacity.map(|length| &mut read_buffer[..length]), write))
             }).unwrap_or_else(|error| {
                 cold_path();
                 Poll::Ready(Err(error))
@@ -257,10 +258,9 @@ async fn run_open(
                     return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Serial device disconnected"));
                 }
                 if is_read {
-                    let filled = length == read_buffer.len();
+                    let filled = Some(length) == read_capacity;
                     window.size = if filled { (window.size * 2).min(crate::CHUNK_SIZE) }
                         else { length.next_power_of_two().clamp(64, crate::CHUNK_SIZE) };
-                    read_buffer.truncate(length);
                     let sent = if streaming {
                         window.bytes -= length;
                         window.slots -= 1;
@@ -268,9 +268,9 @@ async fn run_open(
                         // their existing path, and give queued writes/controls priority.
                         if write.is_some() || (!filled && length < 1024)
                             || control.pending_ops.load(Ordering::Acquire) != 0 {
-                            send_read(callback, &mut read_buffer)
+                            send_read(callback, &mut read_buffer, length)
                         } else {
-                            send_ready_reads(control, callback, &mut read_buffer, &mut window)?
+                            send_ready_reads(control, callback, &mut read_buffer, length, &mut window)?
                         }
                     } else {
                         let (id, _) = read.take().ok_or_else(|| {
@@ -278,6 +278,7 @@ async fn run_open(
                             io::Error::other("Unexpected read completion")
                         })?;
                         let mut event = NativeEvent::new(id, "read");
+                        read_buffer.truncate(length);
                         event.data = Some(std::mem::take(&mut read_buffer).into());
                         send(callback, event)
                     };
@@ -290,9 +291,9 @@ async fn run_open(
     }
 }
 
-fn send_read(callback: &Callback, buffer: &mut Vec<u8>) -> bool {
+fn send_read(callback: &Callback, buffer: &mut Vec<u8>, length: usize) -> bool {
     let sent = callback.call(
-        Ok(CallbackEvent::read(buffer)),
+        Ok(CallbackEvent::read(buffer, length)),
         ThreadsafeFunctionCallMode::NonBlocking,
     ) == Status::Ok;
     if !sent {
@@ -307,10 +308,11 @@ fn send_ready_reads(
     control: &Control,
     callback: &Callback,
     read_buffer: &mut Vec<u8>,
+    length: usize,
     window: &mut ReadWindow,
 ) -> io::Result<bool> {
     // Let JS process the first chunk while Rust collects ready followers.
-    if !send_read(callback, read_buffer) {
+    if !send_read(callback, read_buffer, length) {
         return Ok(false);
     }
     let mut first = None;
@@ -331,10 +333,15 @@ fn send_ready_reads(
         let Poll::Ready(budget) = tokio::task::coop::poll_proceed(&mut budget_context) else {
             break;
         };
-        read_buffer.resize(window.bytes.min(window.size), 0);
+        let read_capacity = window.bytes.min(window.size);
+        if read_buffer.len() < read_capacity {
+            read_buffer.resize(read_capacity, 0);
+        }
         // Read only already-ready bytes; WouldBlock is the ordinary end of a burst.
         // The main poller retains its waker and handles the next readiness edge.
-        let next_length = match with_port(control, |port| port.try_read(read_buffer)) {
+        let next_length = match with_port(control, |port| {
+            port.try_read(&mut read_buffer[..read_capacity])
+        }) {
             Ok(length) => {
                 budget.made_progress();
                 length
@@ -361,7 +368,7 @@ fn send_ready_reads(
             ));
             break;
         }
-        window.size = if next_length == read_buffer.len() {
+        window.size = if next_length == read_capacity {
             (window.size * 2).min(crate::CHUNK_SIZE)
         } else {
             next_length.next_power_of_two().clamp(64, crate::CHUNK_SIZE)

@@ -139,7 +139,7 @@ test(
     });
     await call(port, 'open');
     for (let round = 0; round < 3; round++) {
-      for (const size of [1, 31, 32, 63, 64, 65, 1024, 32]) {
+      for (const size of [1, 31, 32, 63, 64, 65, 95, 96, 97, 1024, 32]) {
         const payload = Buffer.from(Array.from({ length: size }, (_, index) => (index * 17 + size + round) & 255));
         payloads.push(payload);
         target += size;

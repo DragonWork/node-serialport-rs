@@ -5,6 +5,8 @@
 
 Rust runs event-driven I/O on lazily created, single-threaded Tokio runtimes. One active port starts one I/O worker. Additional ports use up to `min(available CPUs, 4)` workers per loaded addon; further ports share those workers. Workers retire after their last connection finishes cleanup. Opening a device and physical output drain use bounded blocking-worker pools.
 
+Device discovery and configuration use `serialport`. Unix I/O uses Tokio's `AsyncFd` with nonblocking descriptor reads and writes. On Windows, Tokio owns the overlapped I/O handle and `serialport::COMPort` owns a duplicate for control operations. Each handle has a single owner.
+
 Idle serial I/O has no heartbeat interval. Readiness wakes pending reads and writes. Explicit physical-drain operations may poll the driver's output queue; the timeout parser also uses timers when it has buffered data.
 
 | Data path | Ownership and copies |

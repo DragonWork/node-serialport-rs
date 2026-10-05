@@ -2,8 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::NativeOptions;
+use serialport::{SerialPort, SerialPortBuilder};
 use std::{hint::cold_path, io};
-use tokio_serial::{SerialPort, SerialPortBuilder, SerialStream};
+
+std::cfg_select! {
+    unix => {
+        mod unix;
+        pub(crate) use unix::SerialStream;
+    }
+    windows => {
+        mod windows;
+        pub(crate) use windows::SerialStream;
+    }
+}
 
 #[cfg(any(target_os = "macos", test))]
 pub(crate) mod macos_list;
@@ -25,18 +36,20 @@ pub(crate) fn open(builder: &SerialPortBuilder) -> io::Result<SerialStream> {
 
 pub(crate) fn set_baud_rate(port: &mut SerialStream, baud_rate: u32) -> io::Result<()> {
     #[cfg(target_os = "macos")]
-    if port.baud_rate()? == 0 {
+    if port.control().baud_rate()? == 0 {
         use nix::sys::termios::{self, SetArg};
         let mut settings = termios::tcgetattr(descriptor(port))?;
         termios::cfsetspeed(&mut settings, baud_rate)?;
         return termios::tcsetattr(descriptor(port), SetArg::TCSANOW, &settings)
             .map_err(Into::into);
     }
-    port.set_baud_rate(baud_rate).map_err(Into::into)
+    port.control_mut()
+        .set_baud_rate(baud_rate)
+        .map_err(Into::into)
 }
 
 pub(crate) fn baud_rate(port: &SerialStream) -> io::Result<u32> {
-    let baud_rate = port.baud_rate()?;
+    let baud_rate = port.control().baud_rate()?;
     #[cfg(target_os = "macos")]
     if baud_rate == 0 {
         let settings = nix::sys::termios::tcgetattr(descriptor(port))?;
@@ -46,8 +59,8 @@ pub(crate) fn baud_rate(port: &SerialStream) -> io::Result<u32> {
 }
 
 #[cfg(unix)]
-fn descriptor(port: &SerialStream) -> std::os::fd::BorrowedFd<'_> {
-    use std::os::fd::{AsRawFd, BorrowedFd};
+fn descriptor(port: &impl std::os::fd::AsRawFd) -> std::os::fd::BorrowedFd<'_> {
+    use std::os::fd::BorrowedFd;
     // SAFETY: the borrowed descriptor cannot outlive the port that owns it.
     unsafe { BorrowedFd::borrow_raw(port.as_raw_fd()) }
 }

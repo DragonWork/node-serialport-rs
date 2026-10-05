@@ -4,6 +4,8 @@ The native addon incorporates Rust dependencies with their own licenses and copy
 
 For dependencies offering a choice that includes MIT, the MIT license text is reproduced below. Additional required notices are included where applicable.
 
+The asynchronous transport adapter also credits tokio-serial; its license is included below.
+
 | Crate | Declared license | License text |
 | --- | --- | --- |
 | [bitflags 1.3.2](https://crates.io/api/v1/crates/bitflags/1.3.2/download) | MIT/Apache-2.0 | [1](#license-1) |

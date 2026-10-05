@@ -118,7 +118,7 @@ pub(crate) struct Control {
     stop: AtomicBool,
     changed: Notify,
     pending_ops: AtomicUsize,
-    session: Mutex<Option<tokio_serial::SerialStream>>,
+    session: Mutex<Option<platform::SerialStream>>,
 }
 
 impl Control {
@@ -382,7 +382,7 @@ impl Task for ListTask {
     type Output = Vec<PortInfo>;
     type JsValue = Vec<PortInfo>;
     fn compute(&mut self) -> Result<Self::Output> {
-        let ports = std::panic::catch_unwind(tokio_serial::available_ports)
+        let ports = std::panic::catch_unwind(serialport::available_ports)
             .map_err(|_| {
                 cold_path();
                 Error::from_reason("Serial port enumeration failed")
@@ -400,7 +400,7 @@ impl Task for ListTask {
                 pnp_id,
                 ..Default::default()
             };
-            if let tokio_serial::SerialPortType::UsbPort(usb) = port.port_type {
+            if let serialport::SerialPortType::UsbPort(usb) = port.port_type {
                 #[cfg(target_os = "macos")]
                 {
                     info.location_id = usb

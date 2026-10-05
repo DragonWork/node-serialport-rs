@@ -1,10 +1,10 @@
 // Copyright 2026 DragonWork
 // SPDX-License-Identifier: Apache-2.0
 
+use serialport::{DataBits, FlowControl, Parity, StopBits};
 use std::hint::cold_path;
-use tokio_serial::{DataBits, FlowControl, Parity, SerialStream, StopBits};
 
-use crate::NativeOptions;
+use crate::{NativeOptions, platform::SerialStream};
 
 pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
     let data_bits = match options.data_bits {
@@ -46,7 +46,7 @@ pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
     } else {
         FlowControl::None
     };
-    let builder = tokio_serial::new(&options.path, options.baud_rate)
+    let builder = serialport::new(&options.path, options.baud_rate)
         .data_bits(data_bits)
         .stop_bits(stop_bits)
         .parity(parity)

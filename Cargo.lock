@@ -310,7 +310,6 @@ dependencies = [
  "nix 0.31.3",
  "serialport",
  "tokio",
- "tokio-serial",
  "windows-sys 0.61.2",
 ]
 
@@ -461,21 +460,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
-]
-
-[[package]]
-name = "tokio-serial"
-version = "5.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd00f5f8b1e01c3e5afccd9e42ed80c2ad2df6d007877f29f8592c62e69cd116"
-dependencies = [
- "cfg-if",
- "futures-core",
- "futures-sink",
- "log",
- "mio-serial",
- "serialport",
- "tokio",
 ]
 
 [[package]]

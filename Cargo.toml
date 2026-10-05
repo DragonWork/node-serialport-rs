@@ -18,17 +18,17 @@ crate-type = ["cdylib", "rlib"]
 napi = { version = "3.14.0", default-features = false, features = ["napi8"] }
 napi-derive = "3.6.10"
 tokio = { version = "1.53.2", default-features = false, features = ["rt", "net", "sync", "time", "macros"] }
-tokio-serial = { version = "5.5.0", default-features = false }
+serialport = { version = "4.10.1", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31.3", default-features = false, features = ["term"] }
+nix = { version = "0.31.3", default-features = false, features = ["fs", "term"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# Enable location metadata in the serialport crate already used by tokio-serial.
+# Enable IOKit location metadata on macOS.
 serialport = { version = "4.10.1", default-features = false, features = ["usbportinfo-location"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Devices_Communication", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_System_Registry"] }
+windows-sys = { version = "0.61", features = ["Win32_Devices_Communication", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Registry"] }
 
 [dev-dependencies]
 mio-serial = { version = "5.0.7", default-features = false }

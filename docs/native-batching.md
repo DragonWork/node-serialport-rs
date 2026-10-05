@@ -24,5 +24,10 @@ per delivered chunk; close and queued control/write operations interrupt further
 batch collection. Batching reduces native callbacks, not wire latency or the
 number of OS reads. Consumers should not depend on native callback boundaries.
 
+Follow-up reads use cached readiness without replacing the main reader's waker.
+They still consume Tokio's cooperative task budget and check cancellation,
+pending operations, byte credit and event credit between reads. A normal
+`WouldBlock` ends the burst.
+
 A fatal JavaScript allocation failure rejects the affected native callback and
 closes the port. Buffers delivered by earlier callbacks remain valid.

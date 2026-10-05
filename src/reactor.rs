@@ -5,18 +5,20 @@ use std::{
     collections::VecDeque,
     future::poll_fn,
     hint::cold_path,
-    io::{self, Write},
+    io,
     sync::{Arc, atomic::Ordering},
     task::{Context, Poll, Waker},
     time::Duration,
 };
 
 use napi::{Status, threadsafe_function::ThreadsafeFunctionCallMode};
+use serialport::{ClearBuffer, SerialPort};
 use tokio::sync::mpsc;
-use tokio_serial::{ClearBuffer, SerialPort, SerialStream};
 
 use crate::{
-    Callback, CallbackEvent, Command, Control, NativeEvent, NativeOptions, Operation, settings,
+    Callback, CallbackEvent, Command, Control, NativeEvent, NativeOptions, Operation,
+    platform::SerialStream,
+    settings,
     transfer::{Transfer, TransferPoller},
 };
 
@@ -160,7 +162,7 @@ async fn run_open(
                 }
             } else if matches!(command.operation, Operation::Drain) {
                 if with_port(control, |port| {
-                    port.bytes_to_write().map_err(|error| {
+                    port.control().bytes_to_write().map_err(|error| {
                         cold_path();
                         io::Error::other(error)
                     })
@@ -171,14 +173,15 @@ async fn run_open(
                 }
                 // Physical drain can block even after the driver's queue becomes empty.
                 let control = Arc::clone(control);
-                let drained =
-                    tokio::task::spawn_blocking(move || with_port(&control, |port| port.flush()))
-                        .await
-                        .map_err(|error| {
-                            cold_path();
-                            io::Error::other(error)
-                        })
-                        .flatten();
+                let drained = tokio::task::spawn_blocking(move || {
+                    with_port(&control, |port| port.drain_output())
+                })
+                .await
+                .map_err(|error| {
+                    cold_path();
+                    io::Error::other(error)
+                })
+                .flatten();
                 let event = match drained {
                     Ok(()) => NativeEvent::new(command.id, "ok"),
                     Err(error) => NativeEvent::error(command.id, error),
@@ -267,7 +270,7 @@ async fn run_open(
                             || control.pending_ops.load(Ordering::Acquire) != 0 {
                             send_read(callback, &mut read_buffer)
                         } else {
-                            send_ready_reads(control, callback, &mut transfers, &mut read_buffer, &mut window)?
+                            send_ready_reads(control, callback, &mut read_buffer, &mut window)?
                         }
                     } else {
                         let (id, _) = read.take().ok_or_else(|| {
@@ -303,7 +306,6 @@ fn send_read(callback: &Callback, buffer: &mut Vec<u8>) -> bool {
 fn send_ready_reads(
     control: &Control,
     callback: &Callback,
-    transfers: &mut TransferPoller,
     read_buffer: &mut Vec<u8>,
     window: &mut ReadWindow,
 ) -> io::Result<bool> {
@@ -314,6 +316,10 @@ fn send_ready_reads(
     let mut first = None;
     let mut batch = Vec::new();
     let mut deferred_error = None;
+    // Charge successful follow-up reads to Tokio's task budget just like poll_read.
+    // This context never touches I/O readiness. If the budget runs out, the main
+    // loop repolls with the real task waker after delivering the collected bytes.
+    let mut budget_context = Context::from_waker(Waker::noop());
     for _ in 1..READ_BURST_LIMIT {
         if control.stop.load(Ordering::Acquire)
             || control.pending_ops.load(Ordering::Acquire) != 0
@@ -322,28 +328,30 @@ fn send_ready_reads(
         {
             break;
         }
+        let Poll::Ready(budget) = tokio::task::coop::poll_proceed(&mut budget_context) else {
+            break;
+        };
         read_buffer.resize(window.bytes.min(window.size), 0);
-        let ready = match poll_read_now(control, transfers, read_buffer) {
-            Ok(ready) => ready,
+        // Read only already-ready bytes; WouldBlock is the ordinary end of a burst.
+        // The main poller retains its waker and handles the next readiness edge.
+        let next_length = match with_port(control, |port| port.try_read(read_buffer)) {
+            Ok(length) => {
+                budget.made_progress();
+                length
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) =>
+            {
+                break;
+            }
             Err(error) => {
                 cold_path();
                 deferred_error = Some(error);
                 break;
             }
-        };
-        let next_length = match ready {
-            Poll::Pending => break,
-            Poll::Ready(Err(error)) => {
-                cold_path();
-                deferred_error = Some(error);
-                break;
-            }
-            Poll::Ready(Ok(Transfer::Write(_))) => {
-                cold_path();
-                deferred_error = Some(io::Error::other("Unexpected write while batching reads"));
-                break;
-            }
-            Poll::Ready(Ok(Transfer::Read(length))) => length,
         };
         if next_length == 0 {
             cold_path();
@@ -393,17 +401,6 @@ fn send_ready_reads(
     Ok(true)
 }
 
-fn poll_read_now(
-    control: &Control,
-    transfers: &mut TransferPoller,
-    buffer: &mut [u8],
-) -> io::Result<Poll<io::Result<Transfer>>> {
-    let mut cx = Context::from_waker(Waker::noop());
-    with_port(control, |port| {
-        Ok(transfers.poll(port, &mut cx, Some(buffer), None))
-    })
-}
-
 fn with_port<T>(
     control: &Control,
     operation: impl FnOnce(&mut SerialStream) -> io::Result<T>,
@@ -435,20 +432,22 @@ fn operation(port: &mut SerialStream, command: &Command) -> Result<NativeEvent, 
             })?)
         }
         Operation::Set(flags) => {
-            port.write_data_terminal_ready(flags & 1 != 0)
+            port.control_mut()
+                .write_data_terminal_ready(flags & 1 != 0)
                 .map_err(|error| {
                     cold_path();
                     error.to_string()
                 })?;
-            port.write_request_to_send(flags & 2 != 0)
+            port.control_mut()
+                .write_request_to_send(flags & 2 != 0)
                 .map_err(|error| {
                     cold_path();
                     error.to_string()
                 })?;
             if flags & 4 != 0 {
-                port.set_break()
+                port.control().set_break()
             } else {
-                port.clear_break()
+                port.control().clear_break()
             }
             .map_err(|error| {
                 cold_path();
@@ -456,20 +455,20 @@ fn operation(port: &mut SerialStream, command: &Command) -> Result<NativeEvent, 
             })?;
         }
         Operation::Get => {
-            event.cts = Some(port.read_clear_to_send().map_err(|error| {
+            event.cts = Some(port.control_mut().read_clear_to_send().map_err(|error| {
                 cold_path();
                 error.to_string()
             })?);
-            event.dsr = Some(port.read_data_set_ready().map_err(|error| {
+            event.dsr = Some(port.control_mut().read_data_set_ready().map_err(|error| {
                 cold_path();
                 error.to_string()
             })?);
-            event.dcd = Some(port.read_carrier_detect().map_err(|error| {
+            event.dcd = Some(port.control_mut().read_carrier_detect().map_err(|error| {
                 cold_path();
                 error.to_string()
             })?);
         }
-        Operation::Flush => port.clear(ClearBuffer::All).map_err(|error| {
+        Operation::Flush => port.control().clear(ClearBuffer::All).map_err(|error| {
             cold_path();
             error.to_string()
         })?,

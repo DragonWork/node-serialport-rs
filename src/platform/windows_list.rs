@@ -31,8 +31,8 @@ impl Metadata {
         }
         if let Some(id) = self.pnp_id {
             if let Some(usb) = usb_identity(&id) {
-                port.vendor_id = Some(usb.vendor.to_ascii_uppercase());
-                port.product_id = Some(usb.product.to_ascii_uppercase());
+                port.vendor_id = Some(usb.vendor.to_owned());
+                port.product_id = Some(usb.product.to_owned());
                 let parent = self.parent_id.as_deref().and_then(usb_identity);
                 let serial = parent
                     .filter(|parent| {

@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RUST_VERSION: 1.99.0
+  RUST_VERSION: stable
   CARGO_INCREMENTAL: '0'
 
 jobs:

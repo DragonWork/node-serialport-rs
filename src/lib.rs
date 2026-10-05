@@ -13,7 +13,7 @@ mod workers;
 
 use command::{Command, Operation};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
 use std::hint::cold_path;
 use std::sync::{
     Arc, LazyLock, Mutex, Weak,
@@ -139,21 +139,24 @@ fn register_cleanup(env: Env, control: &Arc<Control>) -> Result<()> {
         cold_path();
         Error::from_reason("Session registry poisoned")
     })?;
-    if let std::collections::hash_map::Entry::Vacant(entry) = environments.entry(key) {
-        let registry: Registry = Arc::default();
-        env.add_env_cleanup_hook(Arc::clone(&registry), move |registry| {
-            if let Ok(sessions) = registry.lock() {
-                for session in sessions.iter().filter_map(Weak::upgrade) {
-                    session.stop();
+    let registry = match environments.entry(key) {
+        Entry::Occupied(entry) => entry.into_mut(),
+        Entry::Vacant(entry) => {
+            let registry: Registry = Arc::default();
+            env.add_env_cleanup_hook(Arc::clone(&registry), move |registry| {
+                if let Ok(sessions) = registry.lock() {
+                    for session in sessions.iter().filter_map(Weak::upgrade) {
+                        session.stop();
+                    }
                 }
-            }
-            if let Ok(mut environments) = ENVIRONMENTS.lock() {
-                environments.remove(&key);
-            }
-        })?;
-        entry.insert(registry);
-    }
-    let mut sessions = environments[&key].lock().map_err(|_| {
+                if let Ok(mut environments) = ENVIRONMENTS.lock() {
+                    environments.remove(&key);
+                }
+            })?;
+            entry.insert(registry)
+        }
+    };
+    let mut sessions = registry.lock().map_err(|_| {
         cold_path();
         Error::from_reason("Session registry poisoned")
     })?;

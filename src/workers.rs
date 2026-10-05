@@ -13,6 +13,8 @@ use std::{
 
 use tokio::{runtime::Handle, sync::Notify};
 
+const MAX_WORKERS: usize = 4;
+
 struct Worker {
     handle: Handle,
     ports: AtomicUsize,
@@ -59,29 +61,36 @@ fn acquire() -> io::Result<Lease> {
     static LIMIT: LazyLock<usize> = LazyLock::new(|| {
         std::thread::available_parallelism()
             .map_or(1, usize::from)
-            .clamp(1, 4)
+            .clamp(1, MAX_WORKERS)
     });
     let limit = *LIMIT;
     let mut pool = WORKERS.lock().map_err(|_| {
         cold_path();
         io::Error::other("I/O worker pool poisoned")
     })?;
-    let mut active = Vec::new();
+    let mut active: [Option<Arc<Worker>>; MAX_WORKERS] = [const { None }; MAX_WORKERS];
+    let mut active_count = 0;
     pool.retain(|weak| match weak.upgrade() {
         Some(worker) => {
-            active.push(worker);
+            active[active_count] = Some(worker);
+            active_count += 1;
             true
         }
         None => false,
     });
     let least_busy = active
         .iter()
-        .min_by_key(|worker| worker.ports.load(Ordering::Acquire));
-    let worker = match least_busy {
-        Some(worker) if worker.ports.load(Ordering::Acquire) == 0 || active.len() >= limit => {
-            Arc::clone(worker)
-        }
-        _ => {
+        .enumerate()
+        .filter_map(|(index, worker)| worker.as_ref().map(|worker| (index, worker)))
+        .min_by_key(|(_, worker)| worker.ports.load(Ordering::Acquire))
+        .map(|(index, _)| index);
+    let reusable = least_busy.and_then(|index| {
+        active[index]
+            .take_if(|worker| worker.ports.load(Ordering::Acquire) == 0 || active_count >= limit)
+    });
+    let worker = match reusable {
+        Some(worker) => worker,
+        None => {
             let worker = Worker::start()?;
             pool.push(Arc::downgrade(&worker));
             worker

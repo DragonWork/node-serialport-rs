@@ -11,7 +11,7 @@ The asynchronous transport adapter also credits tokio-serial; its license is inc
 | [bitflags 1.3.2](https://crates.io/api/v1/crates/bitflags/1.3.2/download) | MIT/Apache-2.0 | [1](#license-1) |
 | [bitflags 2.13.2](https://crates.io/api/v1/crates/bitflags/2.13.2/download) | MIT OR Apache-2.0 | [1](#license-1) |
 | [cfg_aliases 0.2.2](https://crates.io/api/v1/crates/cfg_aliases/0.2.2/download) | MIT | [2](#license-2) |
-| [cfg-if 1.0.4](https://crates.io/api/v1/crates/cfg-if/1.0.4/download) | MIT OR Apache-2.0 | [3](#license-3) |
+| [cfg-if 1.0.5](https://crates.io/api/v1/crates/cfg-if/1.0.5/download) | MIT OR Apache-2.0 | [3](#license-3) |
 | [convert_case 0.12.0](https://crates.io/api/v1/crates/convert_case/0.12.0/download) | MIT | [4](#license-4) |
 | [core-foundation 0.10.1](https://crates.io/api/v1/crates/core-foundation/0.10.1/download) | MIT OR Apache-2.0 | [5](#license-5) |
 | [core-foundation-sys 0.8.7](https://crates.io/api/v1/crates/core-foundation-sys/0.8.7/download) | MIT OR Apache-2.0 | [5](#license-5) |
@@ -26,18 +26,18 @@ The asynchronous transport adapter also credits tokio-serial; its license is inc
 | [futures-task 0.3.34](https://crates.io/api/v1/crates/futures-task/0.3.34/download) | MIT OR Apache-2.0 | [7](#license-7) |
 | [futures-util 0.3.34](https://crates.io/api/v1/crates/futures-util/0.3.34/download) | MIT OR Apache-2.0 | [7](#license-7) |
 | [io-kit-sys 0.4.1](https://crates.io/api/v1/crates/io-kit-sys/0.4.1/download) | MIT / Apache-2.0 | [8](#license-8) |
-| [libc 0.2.189](https://crates.io/api/v1/crates/libc/0.2.189/download) | MIT OR Apache-2.0 | [9](#license-9) |
+| [libc 0.2.190](https://crates.io/api/v1/crates/libc/0.2.190/download) | MIT OR Apache-2.0 | [9](#license-9) |
 | [libloading 0.9.0](https://crates.io/api/v1/crates/libloading/0.9.0/download) | ISC | [10](#license-10) |
 | [log 0.4.34](https://crates.io/api/v1/crates/log/0.4.34/download) | MIT OR Apache-2.0 | [1](#license-1) |
 | [mach2 0.4.3](https://crates.io/api/v1/crates/mach2/0.4.3/download) | BSD-2-Clause OR MIT OR Apache-2.0 | [11](#license-11) |
 | [memchr 2.8.3](https://crates.io/api/v1/crates/memchr/2.8.3/download) | Unlicense OR MIT | [12](#license-12) |
-| [mio 1.2.3](https://crates.io/api/v1/crates/mio/1.2.3/download) | MIT | [13](#license-13) |
+| [mio 1.2.4](https://crates.io/api/v1/crates/mio/1.2.4/download) | MIT | [13](#license-13) |
 | [mio-serial 5.0.7](https://crates.io/api/v1/crates/mio-serial/5.0.7/download) | MIT | [14](#license-14) |
-| [napi 3.12.4](https://crates.io/api/v1/crates/napi/3.12.4/download) | MIT | [15](#license-15) |
-| [napi-build 2.4.2](https://crates.io/api/v1/crates/napi-build/2.4.2/download) | MIT | [15](#license-15) |
-| [napi-derive 3.6.5](https://crates.io/api/v1/crates/napi-derive/3.6.5/download) | MIT | [15](#license-15) |
-| [napi-derive-backend 6.1.3](https://crates.io/api/v1/crates/napi-derive-backend/6.1.3/download) | MIT | [15](#license-15) |
-| [napi-sys 3.3.1](https://crates.io/api/v1/crates/napi-sys/3.3.1/download) | MIT | [15](#license-15) |
+| [napi 3.14.1](https://crates.io/api/v1/crates/napi/3.14.1/download) | MIT | [15](#license-15) |
+| [napi-build 2.6.0](https://crates.io/api/v1/crates/napi-build/2.6.0/download) | MIT | [15](#license-15) |
+| [napi-derive 3.6.11](https://crates.io/api/v1/crates/napi-derive/3.6.11/download) | MIT | [15](#license-15) |
+| [napi-derive-backend 6.1.5](https://crates.io/api/v1/crates/napi-derive-backend/6.1.5/download) | MIT | [15](#license-15) |
+| [napi-sys 3.4.0](https://crates.io/api/v1/crates/napi-sys/3.4.0/download) | MIT | [15](#license-15) |
 | [nix 0.26.4](https://crates.io/api/v1/crates/nix/0.26.4/download) | MIT | [16](#license-16) |
 | [nix 0.31.3](https://crates.io/api/v1/crates/nix/0.31.3/download) | MIT | [16](#license-16) |
 | [nohash-hasher 0.2.0](https://crates.io/api/v1/crates/nohash-hasher/0.2.0/download) | Apache-2.0 OR MIT | [17](#license-17) |
@@ -50,15 +50,14 @@ The asynchronous transport adapter also credits tokio-serial; its license is inc
 | [serialport 4.10.1](https://crates.io/api/v1/crates/serialport/4.10.1/download) | MPL-2.0 | [20](#license-20) |
 | [slab 0.4.12](https://crates.io/api/v1/crates/slab/0.4.12/download) | MIT | [21](#license-21) |
 | [socket2 0.6.5](https://crates.io/api/v1/crates/socket2/0.6.5/download) | MIT OR Apache-2.0 | [3](#license-3) |
-| [syn 2.0.119](https://crates.io/api/v1/crates/syn/2.0.119/download) | MIT OR Apache-2.0 | [18](#license-18) |
-| [syn 3.0.5](https://crates.io/api/v1/crates/syn/3.0.5/download) | MIT OR Apache-2.0 | [18](#license-18) |
-| [thiserror 2.0.20](https://crates.io/api/v1/crates/thiserror/2.0.20/download) | MIT OR Apache-2.0 | [18](#license-18) |
-| [thiserror-impl 2.0.20](https://crates.io/api/v1/crates/thiserror-impl/2.0.20/download) | MIT OR Apache-2.0 | [18](#license-18) |
-| [tokio 1.53.1](https://crates.io/api/v1/crates/tokio/1.53.1/download) | MIT | [22](#license-22) |
+| [syn 3.0.6](https://crates.io/api/v1/crates/syn/3.0.6/download) | MIT OR Apache-2.0 | [18](#license-18) |
+| [thiserror 2.0.21](https://crates.io/api/v1/crates/thiserror/2.0.21/download) | MIT OR Apache-2.0 | [18](#license-18) |
+| [thiserror-impl 2.0.21](https://crates.io/api/v1/crates/thiserror-impl/2.0.21/download) | MIT OR Apache-2.0 | [18](#license-18) |
+| [tokio 1.53.2](https://crates.io/api/v1/crates/tokio/1.53.2/download) | MIT | [22](#license-22) |
 | [tokio-macros 2.7.2](https://crates.io/api/v1/crates/tokio-macros/2.7.2/download) | MIT | [23](#license-23) |
 | [tokio-serial 5.5.0](https://crates.io/api/v1/crates/tokio-serial/5.5.0/download) | MIT | [24](#license-24) |
 | [unescaper 0.1.10](https://crates.io/api/v1/crates/unescaper/0.1.10/download) | MIT OR GPL-3.0-only | [25](#license-25) |
-| [unicode-ident 1.0.24](https://crates.io/api/v1/crates/unicode-ident/1.0.24/download) | (MIT OR Apache-2.0) AND Unicode-3.0 | [18](#license-18), [26](#license-26) |
+| [unicode-ident 1.0.26](https://crates.io/api/v1/crates/unicode-ident/1.0.26/download) | (MIT OR Apache-2.0) AND Unicode-3.0 | [18](#license-18), [26](#license-26) |
 | [unicode-segmentation 1.13.3](https://crates.io/api/v1/crates/unicode-segmentation/1.13.3/download) | MIT OR Apache-2.0 | [27](#license-27) |
 | [wasi 0.11.1+wasi-snapshot-preview1](https://crates.io/api/v1/crates/wasi/0.11.1+wasi-snapshot-preview1/download) | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | [18](#license-18) |
 | [windows_aarch64_gnullvm 0.52.6](https://crates.io/api/v1/crates/windows_aarch64_gnullvm/0.52.6/download) | MIT OR Apache-2.0 | [28](#license-28) |

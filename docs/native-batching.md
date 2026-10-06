@@ -29,5 +29,11 @@ They still consume Tokio's cooperative task budget and check cancellation,
 pending operations, byte credit and event credit between reads. A normal
 `WouldBlock` ends the burst.
 
+The bounded burst holds the port mutex once instead of reacquiring it for every
+follower. A contending immediate write enters the ordered queue, which ends
+collection at the next iteration. The mutex is released before delivering the
+followers, and successfully collected bytes are delivered before a later read
+error closes the port.
+
 A fatal JavaScript allocation failure rejects the affected native callback and
 closes the port. Buffers delivered by earlier callbacks remain valid.

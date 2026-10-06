@@ -40,29 +40,18 @@ fn send(callback: &Callback, event: NativeEvent) -> bool {
     ) == Status::Ok
 }
 
-fn send_stream_buffers(
-    callback: &Callback,
-    mut buffers: Vec<napi::bindgen_prelude::Buffer>,
-) -> bool {
-    let value = if buffers.len() == 1 {
-        CallbackEvent::Read(buffers.pop().expect("one read buffer"))
-    } else {
-        CallbackEvent::ReadBatch(buffers)
-    };
-    callback.call(Ok(value), ThreadsafeFunctionCallMode::NonBlocking) == Status::Ok
-}
-
 struct Completion {
     control: Arc<Control>,
     callback: Callback,
-    error: Option<String>,
+    result: Option<Result<(), String>>,
 }
 
 impl Drop for Completion {
     fn drop(&mut self) {
         self.control.stop.store(true, Ordering::Release);
         // Release the descriptor even if the worker unwinds before normal completion.
-        self.control
+        let port = self
+            .control
             .session
             .lock()
             .unwrap_or_else(|error| {
@@ -70,8 +59,16 @@ impl Drop for Completion {
                 error.into_inner()
             })
             .take();
+        // Closing a descriptor may enter the driver; do it after releasing the mutex.
+        drop(port);
         let mut closed = NativeEvent::new(0, "close");
-        closed.message = self.error.take();
+        closed.message = match self.result.take() {
+            Some(result) => result.err(),
+            None => {
+                cold_path();
+                Some("Serial worker stopped unexpectedly".into())
+            }
+        };
         send(&self.callback, closed);
     }
 }
@@ -85,7 +82,7 @@ pub(crate) async fn run(
     let mut completion = Completion {
         control,
         callback,
-        error: Some("Serial worker stopped unexpectedly".into()),
+        result: None,
     };
     let control = &completion.control;
     let callback = &completion.callback;
@@ -117,7 +114,7 @@ pub(crate) async fn run(
             Err(error.to_string())
         }
     };
-    completion.error = result.err();
+    completion.result = Some(result);
 }
 
 async fn run_open(
@@ -180,10 +177,8 @@ async fn run_open(
                         Err(error) => NativeEvent::error(command.id, error),
                     }
                 }
-                _ => with_port(control, |port| {
-                    operation(port, command).map_err(io::Error::other)
-                })
-                .unwrap_or_else(|error| NativeEvent::error(command.id, error)),
+                _ => with_port(control, |port| operation(port, command))
+                    .unwrap_or_else(|error| NativeEvent::error(command.id, error)),
             };
             commands.pop_front();
             // Release the completed command before JS can submit its successor.
@@ -211,12 +206,16 @@ async fn run_open(
         tokio::select! {
             biased;
             _ = control.changed.notified() => {},
-            // Admission bounds ordered commands; read credits must remain receivable.
+            // Admission bounds ordered commands; never gate read-credit delivery
+            // behind a blocked write and a full command backlog.
             command = receiver.recv() => {
                 match command {
                     Some(Command {id, operation: Operation::Read(length)}) => {
-                        if read.is_some() || streaming { send(callback, NativeEvent::error(id, "Read already pending")); }
-                        else {
+                        if read.is_some() || streaming {
+                            if !send(callback, NativeEvent::error(id, "Read already pending")) {
+                                return Ok(());
+                            }
+                        } else {
                             read = Some((id, length));
                         }
                     }
@@ -235,10 +234,7 @@ async fn run_open(
             },
             ready = poll_fn(|cx| with_port(control, |port| {
                 Ok(transfers.poll(port, cx, read_capacity.map(|length| &mut read_buffer[..length]), write))
-            }).unwrap_or_else(|error| {
-                cold_path();
-                Poll::Ready(Err(error))
-            })), if read_length.is_some() || write.is_some() => {
+            }).unwrap_or_else(|error| Poll::Ready(Err(error)))), if read_length.is_some() || write.is_some() => {
                 let (is_read, length) = match ready? {
                     Transfer::Read(length) => (true, length),
                     Transfer::Write(length) => (false, length),
@@ -303,94 +299,98 @@ fn send_ready_reads(
     }
     let mut first = None;
     let mut batch = Vec::new();
-    let mut deferred_error = None;
-    // Charge successful follow-up reads to Tokio's task budget just like poll_read.
-    // This context never touches I/O readiness. If the budget runs out, the main
-    // loop repolls with the real task waker after delivering the collected bytes.
+    // Avoid even taking the mutex when the first chunk used the remaining credit.
+    if window.bytes == 0 || window.slots == 0 {
+        return Ok(true);
+    }
+    // Charge successful followers to the same cooperative budget as poll_read.
+    // This context never touches I/O readiness; the main poller owns its waker.
     let mut budget_context = Context::from_waker(Waker::noop());
-    for _ in 1..READ_BURST_LIMIT {
-        if control.stop.load(Ordering::Acquire)
-            || control.pending_ops.load(Ordering::Acquire) != 0
-            || window.bytes == 0
-            || window.slots == 0
-        {
-            break;
-        }
-        let Poll::Ready(budget) = tokio::task::coop::poll_proceed(&mut budget_context) else {
-            break;
-        };
-        let read_capacity = window.bytes.min(window.size);
-        if read_buffer.len() < read_capacity {
-            read_buffer.resize(read_capacity, 0);
-        }
-        // Read only already-ready bytes; WouldBlock is the ordinary end of a burst.
-        // The main poller retains its waker and handles the next readiness edge.
-        let next_length = match with_port(control, |port| {
-            port.try_read(&mut read_buffer[..read_capacity])
-        }) {
-            Ok(length) => {
-                budget.made_progress();
-                length
-            }
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
-                ) =>
+    let collected = with_port(control, |port| {
+        // One lock covers a bounded burst. A contending inline write is queued,
+        // making pending_ops nonzero and ending collection at the next iteration.
+        for _ in 1..READ_BURST_LIMIT {
+            if control.stop.load(Ordering::Acquire)
+                || control.pending_ops.load(Ordering::Acquire) != 0
+                || window.bytes == 0
+                || window.slots == 0
             {
                 break;
             }
-            Err(error) => {
-                cold_path();
-                deferred_error = Some(error);
+            let Poll::Ready(budget) = tokio::task::coop::poll_proceed(&mut budget_context) else {
                 break;
+            };
+            let read_capacity = window.bytes.min(window.size);
+            if read_buffer.len() < read_capacity {
+                read_buffer.resize(read_capacity, 0);
             }
-        };
-        if next_length == 0 {
-            cold_path();
-            deferred_error = Some(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "Serial device disconnected",
-            ));
-            break;
+            // WouldBlock and interruptions normally end a burst; retain the
+            // main reader's waker for the next readiness edge or retry.
+            let next_length = match port.try_read(&mut read_buffer[..read_capacity]) {
+                Ok(length) => {
+                    budget.made_progress();
+                    length
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                    ) =>
+                {
+                    break;
+                }
+                Err(error) => {
+                    cold_path();
+                    return Err(error);
+                }
+            };
+            if next_length == 0 {
+                cold_path();
+                return Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "Serial device disconnected",
+                ));
+            }
+            window.size = if next_length == read_capacity {
+                (window.size * 2).min(crate::CHUNK_SIZE)
+            } else {
+                next_length.next_power_of_two().clamp(64, crate::CHUNK_SIZE)
+            };
+            read_buffer.truncate(next_length);
+            let data = std::mem::take(read_buffer).into();
+            if let Some(previous) = first.take() {
+                batch.reserve_exact(READ_BURST_LIMIT - 1);
+                batch.push(previous);
+                batch.push(data);
+            } else if batch.is_empty() {
+                first = Some(data);
+            } else {
+                batch.push(data);
+            }
+            window.bytes -= next_length;
+            window.slots -= 1;
         }
-        window.size = if next_length == read_capacity {
-            (window.size * 2).min(crate::CHUNK_SIZE)
-        } else {
-            next_length.next_power_of_two().clamp(64, crate::CHUNK_SIZE)
-        };
-        read_buffer.truncate(next_length);
-        let data = std::mem::take(read_buffer).into();
-        if let Some(previous) = first.take() {
-            batch.reserve_exact(READ_BURST_LIMIT - 1);
-            batch.push(previous);
-            batch.push(data);
-        } else if batch.is_empty() {
-            first = Some(data);
-        } else {
-            batch.push(data);
-        }
-        window.bytes -= next_length;
-        window.slots -= 1;
-    }
+        Ok(())
+    });
+    // Release the mutex before publishing followers, even after a terminal error.
     let sent = if let Some(data) = first {
         callback.call(
             Ok(CallbackEvent::Read(data)),
             ThreadsafeFunctionCallMode::NonBlocking,
         ) == Status::Ok
     } else if !batch.is_empty() {
-        send_stream_buffers(callback, batch)
+        callback.call(
+            Ok(CallbackEvent::ReadBatch(batch)),
+            ThreadsafeFunctionCallMode::NonBlocking,
+        ) == Status::Ok
     } else {
         true
     };
     if !sent {
         return Ok(false);
     }
-    if let Some(error) = deferred_error {
-        cold_path();
-        return Err(error);
-    }
-    Ok(true)
+    // Deliver already-read bytes before reporting an error from a later read.
+    collected.map(|()| true)
 }
 
 fn with_port<T>(
@@ -408,65 +408,30 @@ fn with_port<T>(
     operation(port)
 }
 
-fn operation(port: &mut SerialStream, command: &Command) -> Result<NativeEvent, String> {
+fn operation(port: &mut SerialStream, command: &Command) -> io::Result<NativeEvent> {
     let mut event = NativeEvent::new(command.id, "ok");
     match &command.operation {
-        Operation::Update(baud_rate) => {
-            crate::platform::set_baud_rate(port, *baud_rate).map_err(|error| {
-                cold_path();
-                error.to_string()
-            })?
-        }
-        Operation::GetBaudRate => {
-            event.baud_rate = Some(crate::platform::baud_rate(port).map_err(|error| {
-                cold_path();
-                error.to_string()
-            })?)
-        }
+        Operation::Update(baud_rate) => crate::platform::set_baud_rate(port, *baud_rate)?,
+        Operation::GetBaudRate => event.baud_rate = Some(crate::platform::baud_rate(port)?),
         Operation::Set(flags) => {
             port.control_mut()
-                .write_data_terminal_ready(flags & 1 != 0)
-                .map_err(|error| {
-                    cold_path();
-                    error.to_string()
-                })?;
-            port.control_mut()
-                .write_request_to_send(flags & 2 != 0)
-                .map_err(|error| {
-                    cold_path();
-                    error.to_string()
-                })?;
+                .write_data_terminal_ready(flags & 1 != 0)?;
+            port.control_mut().write_request_to_send(flags & 2 != 0)?;
             if flags & 4 != 0 {
-                port.control().set_break()
+                port.control().set_break()?;
             } else {
-                port.control().clear_break()
+                port.control().clear_break()?;
             }
-            .map_err(|error| {
-                cold_path();
-                error.to_string()
-            })?;
         }
         Operation::Get => {
-            event.cts = Some(port.control_mut().read_clear_to_send().map_err(|error| {
-                cold_path();
-                error.to_string()
-            })?);
-            event.dsr = Some(port.control_mut().read_data_set_ready().map_err(|error| {
-                cold_path();
-                error.to_string()
-            })?);
-            event.dcd = Some(port.control_mut().read_carrier_detect().map_err(|error| {
-                cold_path();
-                error.to_string()
-            })?);
+            event.cts = Some(port.control_mut().read_clear_to_send()?);
+            event.dsr = Some(port.control_mut().read_data_set_ready()?);
+            event.dcd = Some(port.control_mut().read_carrier_detect()?);
         }
-        Operation::Flush => port.control().clear(ClearBuffer::All).map_err(|error| {
-            cold_path();
-            error.to_string()
-        })?,
+        Operation::Flush => port.control().clear(ClearBuffer::All)?,
         _ => {
             cold_path();
-            return Err("Unexpected transfer in control queue".into());
+            return Err(io::Error::other("Unexpected transfer in control queue"));
         }
     }
     Ok(event)

@@ -52,7 +52,8 @@ struct Lease(Arc<Worker>);
 
 impl Drop for Lease {
     fn drop(&mut self) {
-        self.0.ports.fetch_sub(1, Ordering::AcqRel);
+        // This count only guides worker selection; it does not publish port state.
+        self.0.ports.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -82,11 +83,11 @@ fn acquire() -> io::Result<Lease> {
         .iter()
         .enumerate()
         .filter_map(|(index, worker)| worker.as_ref().map(|worker| (index, worker)))
-        .min_by_key(|(_, worker)| worker.ports.load(Ordering::Acquire))
+        .min_by_key(|(_, worker)| worker.ports.load(Ordering::Relaxed))
         .map(|(index, _)| index);
     let reusable = least_busy.and_then(|index| {
         active[index]
-            .take_if(|worker| worker.ports.load(Ordering::Acquire) == 0 || active_count >= limit)
+            .take_if(|worker| worker.ports.load(Ordering::Relaxed) == 0 || active_count >= limit)
     });
     let worker = match reusable {
         Some(worker) => worker,
@@ -96,7 +97,7 @@ fn acquire() -> io::Result<Lease> {
             worker
         }
     };
-    worker.ports.fetch_add(1, Ordering::AcqRel);
+    worker.ports.fetch_add(1, Ordering::Relaxed);
     Ok(Lease(worker))
 }
 

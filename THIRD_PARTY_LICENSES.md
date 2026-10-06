@@ -33,9 +33,9 @@ The asynchronous transport adapter also credits tokio-serial; its license is inc
 | [memchr 2.8.3](https://crates.io/api/v1/crates/memchr/2.8.3/download) | Unlicense OR MIT | [12](#license-12) |
 | [mio 1.2.4](https://crates.io/api/v1/crates/mio/1.2.4/download) | MIT | [13](#license-13) |
 | [mio-serial 5.0.7](https://crates.io/api/v1/crates/mio-serial/5.0.7/download) | MIT | [14](#license-14) |
-| [napi 3.14.1](https://crates.io/api/v1/crates/napi/3.14.1/download) | MIT | [15](#license-15) |
+| [napi 3.14.2](https://crates.io/api/v1/crates/napi/3.14.2/download) | MIT | [15](#license-15) |
 | [napi-build 2.6.0](https://crates.io/api/v1/crates/napi-build/2.6.0/download) | MIT | [15](#license-15) |
-| [napi-derive 3.6.11](https://crates.io/api/v1/crates/napi-derive/3.6.11/download) | MIT | [15](#license-15) |
+| [napi-derive 3.6.12](https://crates.io/api/v1/crates/napi-derive/3.6.12/download) | MIT | [15](#license-15) |
 | [napi-derive-backend 6.1.5](https://crates.io/api/v1/crates/napi-derive-backend/6.1.5/download) | MIT | [15](#license-15) |
 | [napi-sys 3.4.0](https://crates.io/api/v1/crates/napi-sys/3.4.0/download) | MIT | [15](#license-15) |
 | [nix 0.26.4](https://crates.io/api/v1/crates/nix/0.26.4/download) | MIT | [16](#license-16) |

@@ -251,6 +251,96 @@ test('vectored writes snapshot repeated and overlapping buffers', { timeout: 500
   await written;
 });
 
+test('uncongested vectored writes snapshot then complete inline', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => port.isOpen && port.close());
+
+  const input = Buffer.from('vector-inline');
+  const parts = [input.subarray(0, 6), input.subarray(3), input.subarray(0, 3)];
+  const expected = Buffer.concat(parts);
+  let inline;
+  let completed;
+  const nativeWritev = port._native.writev;
+  port._native.writev = function (id, buffers, length, allowInline) {
+    inline = allowInline;
+    completed = nativeWritev.call(this, id, buffers, length, allowInline);
+    return completed;
+  };
+
+  const written = port.writev(parts);
+  input.fill(0);
+  assert.equal(await terminal.command(`read ${expected.length}`), expected.toString('hex'));
+  await written;
+  assert.equal(inline, true);
+  assert.equal(completed, true);
+  await port.close();
+});
+
+test('partial inline vectored writes queue only the snapshotted suffix', { timeout: 10000 }, async t => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => port.isOpen && port.close());
+
+  const first = Buffer.alloc(32 * 1024, 0x31);
+  const second = Buffer.alloc(32 * 1024, 0x72);
+  const expected = Buffer.concat([first, second]);
+  const nativeWritev = port._native.writev;
+  let allowInline;
+  let completed;
+  port._native.writev = function (id, buffers, length, inline) {
+    allowInline = inline;
+    completed = nativeWritev.call(this, id, buffers, length, inline);
+    return completed;
+  };
+
+  let settled = false;
+  let writeError;
+  const written = port.writev([first, second]).then(
+    () => {
+      settled = true;
+    },
+    error => {
+      settled = true;
+      writeError = error;
+    },
+  );
+  first.fill(0);
+  second.fill(0);
+
+  assert.equal(allowInline, true);
+  assert.equal(completed, false);
+  await delay(25);
+  assert.equal(settled, false, 'vectored write completed while the PTY peer was paused');
+
+  assert.equal(await terminal.command(`read ${expected.length}`), expected.toString('hex'));
+  await written;
+  assert.equal(writeError, undefined);
+  assert.equal(settled, true);
+  await port.close();
+});
+
+test('vectored write rejects when an array getter closes the port reentrantly', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => port.isOpen && port.close());
+
+  let closePromise;
+  const buffers = [];
+  Object.defineProperty(buffers, 0, {
+    get() {
+      closePromise = port.close();
+      return Buffer.from([0x5a]);
+    },
+  });
+  buffers.length = 1;
+
+  const nativeWritev = port._native.writev;
+  assert.throws(() => nativeWritev.call(port._native, 1, buffers, 1, true), /Port is closed/);
+  assert.ok(closePromise, 'array getter should have started port closure');
+  await closePromise;
+});
+
 test('vectored writes preserve immutable inputs across the native byte limit', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
@@ -279,12 +369,13 @@ test('small writes complete asynchronously and stay behind queued controls', { t
   t.after(() => {
     if (port.isOpen) return port.close();
   });
-  const byte = Buffer.from([0x5a]);
+  const byte = Buffer.from([0x5a, 0x5a]);
   for (let i = 0; i < 100; i++) {
     let returned = false;
     const order = [];
     const updated = port.update({ baudRate: i % 2 ? 115200 : 57600 }).then(() => order.push('update'));
-    const written = port.write(byte).then(() => {
+    const writing = i % 2 ? port.writev([byte.subarray(0, 1), byte.subarray(1)]) : port.write(byte);
+    const written = writing.then(() => {
       assert.equal(returned, true);
       order.push('write');
     });
@@ -292,7 +383,7 @@ test('small writes complete asynchronously and stay behind queued controls', { t
     await Promise.all([updated, written]);
     assert.deepEqual(order, ['update', 'write']);
   }
-  assert.equal(await terminal.command('read 100'), '5a'.repeat(100));
+  assert.equal(await terminal.command('read 200'), '5a'.repeat(200));
   await port.close();
 });
 

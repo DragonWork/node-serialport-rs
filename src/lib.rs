@@ -311,7 +311,13 @@ impl NativePort {
     }
 
     #[napi]
-    pub fn writev(&self, id: u32, buffers: Array<'_>, length_hint: Option<u32>) -> Result<()> {
+    pub fn writev(
+        &self,
+        id: u32,
+        buffers: Array<'_>,
+        length_hint: Option<u32>,
+        allow_inline: Option<bool>,
+    ) -> Result<bool> {
         (!self.control.stop.load(Ordering::Acquire)).ok_or_else(|| {
             cold_path();
             Error::from_reason("Port is closed")
@@ -335,10 +341,40 @@ impl NativePort {
             })?;
             data.extend_from_slice(&buffer);
         }
+
+        // Reading array elements may run JavaScript accessors, including close().
+        // Recheck after the snapshot before a syscall can write to the device.
+        (!self.control.stop.load(Ordering::Acquire)).ok_or_else(|| {
+            cold_path();
+            Error::from_reason("Port is closed")
+        })?;
+
+        let mut written = 0;
+        // As with scalar writes, attempt an immediate nonblocking write only
+        // when no earlier ordered operation can be bypassed. The segments have
+        // already been snapshotted, so no JS borrow crosses this syscall.
+        if allow_inline.unwrap_or(false)
+            && self.control.pending_ops.load(Ordering::Acquire) == 0
+            && let Ok(mut state) = self.control.session.try_lock()
+            && let Some(port) = state.as_mut()
+            && let Ok(count) = port.try_write(&data)
+        {
+            written = count;
+            if count == data.len() {
+                return Ok(true);
+            }
+        }
+
+        if written != 0 {
+            let remaining = data.len() - written;
+            data.copy_within(written.., 0);
+            data.truncate(remaining);
+        }
         self.enqueue(Command {
             id,
             operation: Operation::Write(data),
-        })
+        })?;
+        Ok(false)
     }
 
     #[napi]

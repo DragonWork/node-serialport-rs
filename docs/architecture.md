@@ -13,7 +13,7 @@ Idle serial I/O has no heartbeat interval. Readiness wakes pending reads and wri
 
 | Data path | Ownership and copies |
 | --- | --- |
-| Small immediate writes | Rust borrows the buffer only during the synchronous native call and never waits for the port mutex |
+| Immediate scalar writes | Rust borrows the buffer only during the synchronous native call and never waits for the port mutex |
 | Queued writes | Remaining bytes are copied into Rust-owned memory before the native call returns |
 | Vectored writes | Each segment is borrowed and copied in turn, supporting overlapping input without persistent N-API references per segment |
 | Incoming data | Rust owns the I/O buffers; small stream reads are copied into pooled Node buffers, while larger buffers can be transferred without copying their contents |
@@ -26,7 +26,7 @@ Native admission limits outstanding writes and controls to 64 across both the ch
 
 Individual stream reads travel inline in the native callback event up to 96 bytes on 64-bit targets and 64 bytes on 32-bit targets. On the current 64-bit layout, the larger inline payload fits within the existing control-event size. Rust retains initialized read storage so subsequent small reads can overwrite it without repeatedly zero-filling it. Only the completed byte range is copied into the event and then into an independent pooled JavaScript buffer. The retained Rust read allocation is bounded by 64 KiB per port. Batched followers and larger reads retain their owned buffers.
 
-Vectored writes reuse complete JavaScript buffer views. Only segments split at the native transfer boundary need an additional view; queued bytes still receive their own Rust-owned snapshot.
+Vectored writes reuse complete JavaScript buffer views. Only segments split at the native transfer boundary need an additional view. Rust snapshots each segment before fetching the next, since array accessors can run JavaScript and mutate earlier inputs. An uncontended batch can complete through the same nonblocking write path as a scalar write; a partial write queues only its remaining snapshot. Earlier ordered operations force the queued path, preserving both byte order and Promise completion order.
 
 Native completion events borrow fixed Rust string labels instead of allocating a `String` for each event. JavaScript still receives the same ordinary string fields; the event object is only marshalled from Rust to JavaScript.
 

@@ -246,7 +246,7 @@ class BindingPort {
         } else if (op === 'writev') {
           const buffers = data as Buffer[];
           for (let i = 0; i < buffers.length; i++) buffers[i] = localBuffer(buffers[i]);
-          this._native!.writev(id, buffers, value);
+          if (this._native!.writev(id, buffers, value, this._ordered === 1)) this._settle(id, null);
         } else this._native!.request(id, op, value);
       } catch (error) {
         this._settle(id, error);

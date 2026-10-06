@@ -1,5 +1,31 @@
 # Changelog
 
+## What's Changed in v0.6.0 (2026-10-06)
+
+* chore(deps): bump the actions group across 1 directory with 2 updates (#12) by @dependabot[bot] in [#12](https://github.com/DragonWork/node-serialport-rs/pull/12)
+* build(deps): bump napi-derive from 3.6.9 to 3.6.10 in the compatible-cargo-updates group (#11) by @dependabot[bot] in [#11](https://github.com/DragonWork/node-serialport-rs/pull/11)
+* build(deps): update dependencies by @DragonWork
+* refactor(rust): modernize APIs and require Rust 1.98 by @DragonWork
+* perf(rust): mark exceptional paths as cold by @DragonWork
+* refactor(serial): replace tokio-serial with native async adapters by @DragonWork
+* perf(read): reuse initialized buffers and inline small payloads by @DragonWork
+* perf(workers): reduce worker and session bookkeeping by @DragonWork
+* perf(windows): normalize USB identifiers once by @DragonWork
+* build(deps): update napi dependencies by @DragonWork
+* perf(rust): reserve cold hints for exceptional failures by @DragonWork
+* build(deps): update Node.js types to 26.6.4 by @DragonWork
+* ci(rust): track stable and test beta by @DragonWork
+* fix(serial): harden setup validation and transport lifecycle coverage by @DragonWork
+* fix(serial): keep read credits flowing under command backpressure by @DragonWork
+* perf(serial): reduce burst locking and error-path overhead by @DragonWork
+* fix(stream): preserve queued read order after listener exceptions by @DragonWork
+* perf(serial): complete uncontended vectored writes inline by @DragonWork
+* perf(rust): remove unhelpful validation and setup hints by @DragonWork
+* test(serial): cover flush and live configuration by @DragonWork
+* build(deps): update napi bindings by @DragonWork
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.5.0...v0.6.0
+
 ## What's Changed in v0.5.0 (2026-09-28)
 
 * feat: expand Windows port metadata by @DragonWork

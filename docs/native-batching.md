@@ -14,10 +14,10 @@ binding `read()` and `readChunk()` calls keep their single-request behavior.
 Using the original `@serialport/stream` with only the Rust binding does not use
 this streaming read-ahead path.
 
-The JS binding reuses its batch-delivery callback per connection. Delivery keeps
+The JS binding reuses its read-delivery callback per connection. Delivery keeps
 the same microtask boundary, allowing native callback cleanup to finish before
-data handlers and their Promise continuations run. Pending batches remain FIFO;
-the ordinary single-buffer path is unchanged.
+data handlers and their Promise continuations run. Single buffers and batches
+share FIFO ordering, including after a handled listener exception.
 
 The 64 KiB byte-credit and 32-chunk read-ahead limits still apply. Credits return
 per delivered chunk; close and queued control/write operations interrupt further
@@ -34,6 +34,12 @@ follower. A contending immediate write enters the ordered queue, which ends
 collection at the next iteration. The mutex is released before delivering the
 followers, and successfully collected bytes are delivered before a later read
 error closes the port.
+
+JavaScript dispatches single buffers and batches through one FIFO. If a listener
+throws and the application handles that exception, the unfinished batch stays
+ahead of later native reads. Dispatch still keeps a microtask boundary for each
+native callback, so a first reply can resume its Promise continuation before
+followers are delivered.
 
 A fatal JavaScript allocation failure rejects the affected native callback and
 closes the port. Buffers delivered by earlier callbacks remain valid.

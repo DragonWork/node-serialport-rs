@@ -316,6 +316,81 @@ test('queued native deliveries preserve mixed chunk order and stop on close', as
   assert.equal(received.join(''), 'abcdefgh');
 });
 
+test('handled listener exceptions keep queued native reads in byte order', { timeout: 5000 }, async t => {
+  const child = spawn(
+    process.execPath,
+    [
+      '-e',
+      `
+    const assert = require('node:assert/strict');
+    const {dirname, join} = require('node:path');
+    const entry = process.argv[1];
+    const addon = require(join(dirname(entry), 'lib', 'native')).loadNative();
+    const {RustBinding} = require(entry);
+    const NativePort = addon.NativePort;
+    let notify;
+    let handled = 0;
+    process.on('uncaughtException', error => {
+      assert.equal(error.message, 'listener failed');
+      handled++;
+    });
+    addon.NativePort = class {
+      constructor(_options, callback) {
+        notify = callback;
+        queueMicrotask(() => notify(null, {kind: 'open', id: 0}));
+      }
+      readCredit() {}
+      close() { queueMicrotask(() => notify(null, {kind: 'close', id: 0})); }
+    };
+    const nextTurn = () => new Promise(resolve => setImmediate(resolve));
+    (async () => {
+      const port = await RustBinding.open({path: '/fifo-regression', baudRate: 115200});
+      port.startReading(64);
+      const first = [];
+      port.onData = data => {
+        first.push(data.toString());
+        if (first.length === 1) throw new Error('listener failed');
+      };
+      notify(null, [Buffer.from('a'), Buffer.from('b')]);
+      notify(null, [Buffer.from('c'), Buffer.from('d')]);
+      await nextTurn();
+      assert.deepEqual(first, ['a', 'b', 'c', 'd']);
+
+      const second = [];
+      port.onData = data => {
+        second.push(data.toString());
+        if (second.length === 1) throw new Error('listener failed');
+      };
+      notify(null, [Buffer.from('e'), Buffer.from('f')]);
+      notify(null, Buffer.from('g'));
+      await nextTurn();
+      assert.deepEqual(second, ['e', 'f', 'g']);
+      assert.equal(handled, 2);
+      assert.equal(port._readBytes, 57);
+      assert.equal(port._readSlots, 25);
+      await port.close();
+      addon.NativePort = NativePort;
+      console.log('complete');
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `,
+      require.resolve('..'),
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', data => {
+    stdout += data;
+  });
+  child.stderr.on('data', data => {
+    stderr += data;
+  });
+  t.after(() => child.kill());
+  const [code] = await once(child, 'close');
+  assert.equal(code, 0, stderr);
+  assert.equal(stdout.trim(), 'complete');
+});
+
 test('a handled native batch listener exception retains followers and read credits', { timeout: 10000 }, async t => {
   const terminal = await pty(t);
   const child = spawn(

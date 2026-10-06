@@ -121,14 +121,31 @@ class BindingPort {
       this._rejectOpen = reject;
     });
     const { NativePort } = loadNative();
-    // Reuse the delivery closure while keeping each batch's microtask boundary.
-    // The FIFO fallback also handles callbacks queued during reentrant dispatch.
-    let pendingBatch: Buffer[] | undefined;
-    let queuedBatches: Buffer[][] | undefined;
-    const deliverBatch = () => {
-      const events = pendingBatch!;
-      pendingBatch = queuedBatches?.shift();
-      this._deliverBatch(events);
+    // Keep native read callbacks in one FIFO, including data retained after a
+    // listener throws. Reuse one microtask callback for singles and batches.
+    let pendingRead: Buffer | Buffer[] | undefined;
+    let queuedReads: (Buffer | Buffer[])[] | undefined;
+    const retainRead = (events: Buffer[], offset: number): void => {
+      if (pendingRead !== undefined) (queuedReads ??= []).unshift(pendingRead);
+      pendingRead = events.slice(offset);
+      // An already scheduled callback may now be responsible for this head
+      // item, so add one callback to keep every queued read covered.
+      queueMicrotask(deliverRead);
+    };
+    const deliverRead = (): void => {
+      const event = pendingRead;
+      pendingRead = queuedReads?.shift();
+      if (queuedReads?.length === 0) queuedReads = undefined;
+      if (event === undefined) return;
+      if (!Array.isArray(event)) {
+        if (this.isOpen) {
+          this._readBytes -= event.length;
+          this._readSlots--;
+          this.onData?.(event);
+        }
+      } else {
+        this._deliverBatch(event, 0, retainRead);
+      }
     };
     this._native = new NativePort(
       this.openOptions,
@@ -136,24 +153,19 @@ class BindingPort {
         if (error) {
           this._failure = error;
           this._native?.close();
-        } else if (Buffer.isBuffer(event)) {
-          queueMicrotask(() => {
-            if (!this.isOpen) return;
-            this._readBytes -= event.length;
-            this._readSlots--;
-            this.onData?.(event);
-          });
-        } else if (Array.isArray(event)) {
-          if (pendingBatch) (queuedBatches ??= []).push(event);
-          else pendingBatch = event;
-          queueMicrotask(deliverBatch);
+        } else if (Buffer.isBuffer(event) || Array.isArray(event)) {
+          if (pendingRead === undefined) pendingRead = event;
+          else (queuedReads ??= []).push(event);
+          // Retain one microtask per native callback, including the first-buffer
+          // continuation boundary, while reusing the dispatch callback.
+          queueMicrotask(deliverRead);
         } else this._event(event);
       },
       Buffer.allocUnsafe,
     );
   }
 
-  _deliverBatch(events: Buffer[], offset = 0) {
+  _deliverBatch(events: Buffer[], offset = 0, retain?: (events: Buffer[], offset: number) => void) {
     let index = offset;
     try {
       while (index < events.length && this.isOpen) {
@@ -164,8 +176,12 @@ class BindingPort {
       }
     } finally {
       // An application that handles an uncaught listener exception must not lose
-      // the remaining native buffers or their credits.
-      if (index < events.length && this.isOpen) queueMicrotask(() => this._deliverBatch(events, index));
+      // the remaining native buffers or their credits. The native callback uses
+      // retain to put them ahead of later reads; direct callers keep the fallback.
+      if (index < events.length && this.isOpen) {
+        if (retain) retain(events, index);
+        else queueMicrotask(() => this._deliverBatch(events, index));
+      }
     }
   }
 

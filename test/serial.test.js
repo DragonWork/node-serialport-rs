@@ -7,6 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { once } = require('node:events');
 const { AsyncLocalStorage } = require('node:async_hooks');
+const { setTimeout: delay } = require('node:timers/promises');
 const { SerialPort, RustBinding, BindingsError } = require('..');
 const { pty, call } = require('./helpers');
 
@@ -168,6 +169,51 @@ test('pending native read cancels on close and bindings can reopen', { timeout: 
     );
     await binding.close();
     await read;
+  }
+});
+
+test('flush discards queued input and preserves a pending read', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => binding.isOpen && binding.close());
+
+  await terminal.command('write 7374616c65');
+  await binding.flush();
+  const buffer = Buffer.alloc(1);
+  let settled = false;
+  const reading = binding.read(buffer, 0, 1);
+  reading.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  await delay(25);
+  assert.equal(settled, false, 'flush left stale input available');
+
+  await binding.flush();
+  await delay(25);
+  assert.equal(settled, false, 'flush settled the pending read');
+  await terminal.command('write a5');
+  assert.equal((await reading).bytesRead, 1);
+  assert.deepEqual(buffer, Buffer.from([0xa5]));
+});
+
+test('baud updates preserve an outstanding read', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => binding.isOpen && binding.close());
+
+  for (const baudRate of [57600, 115200]) {
+    const buffer = Buffer.alloc(1);
+    const reading = binding.read(buffer, 0, 1);
+    await binding.update({ baudRate });
+    assert.deepEqual(await binding.getBaudRate(), { baudRate });
+    await terminal.command('write 5a');
+    assert.equal((await reading).bytesRead, 1);
+    assert.deepEqual(buffer, Buffer.from([0x5a]));
   }
 });
 

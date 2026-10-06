@@ -86,6 +86,63 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn asynchronous_open_and_baud_updates_preserve_line_settings() {
+        use nix::{
+            fcntl::{FcntlArg, FdFlag, OFlag, fcntl},
+            sys::termios::{self, ControlFlags, InputFlags, LocalFlags, SpecialCharacterIndices},
+        };
+        use serialport::{SerialPort, TTYPort};
+
+        let (_master, mut slave) = TTYPort::pair().unwrap();
+        slave.set_exclusive(false).unwrap();
+        for (xon, xoff, xany, hupcl) in [
+            (false, false, false, false),
+            (true, false, true, true),
+            (false, true, false, true),
+            (true, true, true, false),
+        ] {
+            let options = NativeOptions {
+                path: slave.name().unwrap(),
+                lock: false,
+                xon,
+                xoff,
+                xany,
+                hupcl,
+                ..invalid_path()
+            };
+            let mut port = open(&options).unwrap();
+            let flags = OFlag::from_bits_retain(fcntl(&port, FcntlArg::F_GETFL).unwrap());
+            assert!(flags.contains(OFlag::O_NONBLOCK));
+            let flags = FdFlag::from_bits_retain(fcntl(&port, FcntlArg::F_GETFD).unwrap());
+            assert!(flags.contains(FdFlag::FD_CLOEXEC));
+
+            for baud_rate in [115200, 57600] {
+                crate::platform::set_baud_rate(&mut port, baud_rate).unwrap();
+                assert_eq!(crate::platform::baud_rate(&port).unwrap(), baud_rate);
+                let settings = termios::tcgetattr(&port).unwrap();
+                assert_eq!(settings.input_flags.contains(InputFlags::IXON), xon);
+                assert_eq!(settings.input_flags.contains(InputFlags::IXOFF), xoff);
+                assert_eq!(settings.input_flags.contains(InputFlags::IXANY), xany);
+                assert_eq!(settings.control_flags.contains(ControlFlags::HUPCL), hupcl);
+                assert!(
+                    !settings
+                        .local_flags
+                        .intersects(LocalFlags::ICANON | LocalFlags::ECHO)
+                );
+                assert_eq!(
+                    settings.control_chars[SpecialCharacterIndices::VMIN as usize],
+                    1
+                );
+                assert_eq!(
+                    settings.control_chars[SpecialCharacterIndices::VTIME as usize],
+                    0
+                );
+            }
+        }
+    }
+
+    #[cfg(unix)]
     #[test]
     fn unsupported_stop_bits_are_rejected_before_opening() {
         let options = NativeOptions {

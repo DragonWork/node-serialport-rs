@@ -145,58 +145,54 @@ async fn run_open(
             if control.stop.load(Ordering::Acquire) {
                 return Ok(());
             }
-            if let Operation::Write(data) = &command.operation {
-                if written < data.len() {
-                    break;
+            let event = match &command.operation {
+                Operation::Write(data) => {
+                    if written < data.len() {
+                        break;
+                    }
+                    written = 0;
+                    NativeEvent::new(command.id, "ok")
                 }
-                written = 0;
-                if !send(callback, NativeEvent::new(command.id, "ok")) {
-                    return Ok(());
-                }
-            } else if matches!(command.operation, Operation::Drain) {
-                if with_port(control, |port| {
-                    port.control().bytes_to_write().map_err(|error| {
+                Operation::Drain => {
+                    if with_port(control, |port| {
+                        port.control().bytes_to_write().map_err(|error| {
+                            cold_path();
+                            io::Error::from(error)
+                        })
+                    })? != 0
+                    {
+                        draining = true;
+                        break;
+                    }
+                    // Physical drain can block after the driver's queue becomes empty.
+                    let control = Arc::clone(control);
+                    let drained = tokio::task::spawn_blocking(move || {
+                        with_port(&control, |port| port.drain_output())
+                    })
+                    .await
+                    .map_err(|error| {
                         cold_path();
                         io::Error::other(error)
                     })
-                })? != 0
-                {
-                    draining = true;
-                    break;
+                    .flatten();
+                    match drained {
+                        Ok(()) => NativeEvent::new(command.id, "ok"),
+                        Err(error) => NativeEvent::error(command.id, error),
+                    }
                 }
-                // Physical drain can block even after the driver's queue becomes empty.
-                let control = Arc::clone(control);
-                let drained = tokio::task::spawn_blocking(move || {
-                    with_port(&control, |port| port.drain_output())
+                _ => with_port(control, |port| {
+                    operation(port, command).map_err(io::Error::other)
                 })
-                .await
-                .map_err(|error| {
-                    cold_path();
-                    io::Error::other(error)
-                })
-                .flatten();
-                let event = match drained {
-                    Ok(()) => NativeEvent::new(command.id, "ok"),
-                    Err(error) => NativeEvent::error(command.id, error),
-                };
-                if !send(callback, event) {
-                    return Ok(());
-                }
-            } else {
-                let event = with_port(control, |port| {
-                    operation(port, command).map_err(|error| {
-                        cold_path();
-                        io::Error::other(error)
-                    })
-                })
-                .unwrap_or_else(|error| NativeEvent::error(command.id, error));
-                if !send(callback, event) {
-                    return Ok(());
-                }
-            }
-            control.pending_ops.fetch_sub(1, Ordering::Release);
+                .unwrap_or_else(|error| NativeEvent::error(command.id, error)),
+            };
             commands.pop_front();
+            // Release the completed command before JS can submit its successor.
+            control.pending_ops.fetch_sub(1, Ordering::Release);
+            if !send(callback, event) {
+                return Ok(());
+            }
         }
+
         let write = commands
             .front()
             .and_then(|command| match &command.operation {
@@ -215,7 +211,8 @@ async fn run_open(
         tokio::select! {
             biased;
             _ = control.changed.notified() => {},
-            command = receiver.recv(), if commands.len() < 64 => {
+            // Admission bounds ordered commands; read credits must remain receivable.
+            command = receiver.recv() => {
                 match command {
                     Some(Command {id, operation: Operation::Read(length)}) => {
                         if read.is_some() || streaming { send(callback, NativeEvent::error(id, "Read already pending")); }

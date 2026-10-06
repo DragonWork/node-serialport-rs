@@ -30,6 +30,7 @@ use tokio::sync::{Notify, mpsc};
 
 pub(crate) const CHUNK_SIZE: usize = 64 * 1024;
 pub(crate) const READ_SLOTS: usize = 32;
+pub(crate) const MAX_PENDING_OPS: usize = 64;
 // On 64-bit targets, 96 inline bytes still fit inside the control-event layout.
 // Keep the existing size on 32-bit targets, where pointer-bearing events are smaller.
 const INLINE_READ_CAPACITY: usize = if usize::BITS == 64 { 96 } else { 64 };
@@ -216,7 +217,7 @@ impl NativePort {
             session: Mutex::new(None),
         });
         register_cleanup(env, &control)?;
-        let (sender, receiver) = mpsc::channel(64 + READ_SLOTS);
+        let (sender, receiver) = mpsc::channel(MAX_PENDING_OPS + READ_SLOTS);
         let worker_control = Arc::clone(&control);
         workers::spawn(reactor::run(options, receiver, worker_control, callback)).map_err(
             |error| {
@@ -354,7 +355,13 @@ impl NativePort {
         })?;
         let ordered = command.ordered();
         if ordered {
-            self.control.pending_ops.fetch_add(1, Ordering::AcqRel);
+            // Bound the total backlog, including commands already received by the
+            // reactor. Read credits must still be receivable when writes stall.
+            let pending = self.control.pending_ops.fetch_add(1, Ordering::AcqRel);
+            if pending >= MAX_PENDING_OPS {
+                self.control.pending_ops.fetch_sub(1, Ordering::Release);
+                return Err(Error::from_reason("Too many pending serial operations"));
+            }
         }
         if let Err(error) = self.sender.try_send(command) {
             // A bounded queue can fill under load or close during teardown.

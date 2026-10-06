@@ -84,6 +84,38 @@ test('eight concurrent ports make independent progress while one writer stalls',
   await stalled;
 });
 
+test('a full control backlog does not block incoming read credits', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  let settled;
+  t.after(async () => {
+    if (port.isOpen) await port.close();
+    await settled;
+  });
+
+  for (let round = 0; round < 2; round++) {
+    // The peer does not read this output, so the first write holds the command queue.
+    const payload = Buffer.alloc(64 * 1024, 0x33 + round);
+    const requests = [port.write(payload)];
+    for (let i = 1; i < 64; i++) requests.push(port.getBaudRate());
+    settled = Promise.allSettled(requests);
+    assert.equal(port._pending.size, 64);
+    // Bypass the JS limit to verify native admission and reservation rollback too.
+    for (let i = 0; i < 3; i++) {
+      assert.throws(() => port._native.request(0xffffffff, 'getBaudRate', 0), /Too many pending serial operations/);
+    }
+
+    const received = new Promise(resolve => {
+      port.onData = resolve;
+    });
+    port.startReading(1);
+    await terminal.command('write a5');
+    assert.deepEqual(await received, Buffer.from([0xa5]));
+    assert.equal(await terminal.command(`read ${payload.length}`), payload.toString('hex'));
+    assert((await settled).every(result => result.status === 'fulfilled'));
+  }
+});
+
 test('ready receive bursts preserve progress and order for small writes', { timeout: 10000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });

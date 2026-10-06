@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    hint::cold_path,
     io,
     os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd},
     pin::Pin,
@@ -29,17 +28,14 @@ impl SerialStream {
         // TTYPort opens in blocking mode. Keep its settings/ownership, but use
         // nonblocking descriptor I/O instead of its timeout-based Read/Write.
         let fd = super::descriptor(&port);
-        let flags = fcntl(fd, FcntlArg::F_GETFL)
-            .map_err(io::Error::from)
-            .inspect_err(|_| cold_path())?;
+        let flags = fcntl(fd, FcntlArg::F_GETFL).map_err(io::Error::from)?;
         fcntl(
             fd,
             FcntlArg::F_SETFL(OFlag::from_bits_retain(flags) | OFlag::O_NONBLOCK),
         )
-        .map_err(io::Error::from)
-        .inspect_err(|_| cold_path())?;
+        .map_err(io::Error::from)?;
         Ok(Self {
-            io: AsyncFd::new(port).inspect_err(|_| cold_path())?,
+            io: AsyncFd::new(port)?,
         })
     }
 

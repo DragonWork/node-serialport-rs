@@ -3,7 +3,6 @@
 
 use std::{
     future::Future,
-    hint::cold_path,
     io,
     sync::{
         Arc, LazyLock, Mutex, Weak,
@@ -65,10 +64,9 @@ fn acquire() -> io::Result<Lease> {
             .clamp(1, MAX_WORKERS)
     });
     let limit = *LIMIT;
-    let mut pool = WORKERS.lock().map_err(|_| {
-        cold_path();
-        io::Error::other("I/O worker pool poisoned")
-    })?;
+    let mut pool = WORKERS
+        .lock()
+        .map_err(|_| io::Error::other("I/O worker pool poisoned"))?;
     let mut active: [Option<Arc<Worker>>; MAX_WORKERS] = [const { None }; MAX_WORKERS];
     let mut active_count = 0;
     pool.retain(|weak| match weak.upgrade() {

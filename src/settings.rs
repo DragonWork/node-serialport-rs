@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use serialport::{DataBits, FlowControl, Parity, StopBits};
-use std::hint::cold_path;
 
 use crate::{NativeOptions, platform::SerialStream};
 
@@ -13,7 +12,6 @@ pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
         7 => DataBits::Seven,
         8 => DataBits::Eight,
         _ => {
-            cold_path();
             return Err("Invalid dataBits".into());
         }
     };
@@ -21,7 +19,6 @@ pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
         1.0 | 1.5 => StopBits::One,
         2.0 => StopBits::Two,
         _ => {
-            cold_path();
             return Err("Invalid stopBits".into());
         }
     };
@@ -30,24 +27,20 @@ pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
         "odd" => Parity::Odd,
         "even" => Parity::Even,
         _ => {
-            cold_path();
             return Err("Invalid parity".into());
         }
     };
     // Reject unsupported settings before opening a device can change its state.
     #[cfg(unix)]
     if options.stop_bits == 1.5 {
-        cold_path();
         return Err("1.5 stop bits requires Windows".into());
     }
     #[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
     if matches!(options.parity.as_str(), "mark" | "space") {
-        cold_path();
         return Err("Mark/space parity is not available on this platform".into());
     }
     #[cfg(windows)]
     if !options.lock {
-        cold_path();
         return Err("Windows requires exclusive serial access".into());
     }
     let flow = if options.rtscts {
@@ -64,19 +57,11 @@ pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
         .flow_control(flow);
     #[cfg(unix)]
     let builder = builder.exclusive(options.lock);
-    let mut port = crate::platform::open(&builder).map_err(|error| {
-        cold_path();
-        error.to_string()
-    })?;
-    crate::platform::configure(&port, options).map_err(|error| {
-        cold_path();
-        error.to_string()
-    })?;
+    let mut port = crate::platform::open(&builder).map_err(|error| error.to_string())?;
+    crate::platform::configure(&port, options).map_err(|error| error.to_string())?;
     // Reapply custom speeds after changing the platform termios/DCB flags.
-    crate::platform::set_baud_rate(&mut port, options.baud_rate).map_err(|error| {
-        cold_path();
-        error.to_string()
-    })?;
+    crate::platform::set_baud_rate(&mut port, options.baud_rate)
+        .map_err(|error| error.to_string())?;
     Ok(port)
 }
 

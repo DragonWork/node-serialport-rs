@@ -7,6 +7,8 @@ Rust runs event-driven I/O on lazily created, single-threaded Tokio runtimes. On
 
 Device discovery and configuration use `serialport`. Unix I/O uses Tokio's `AsyncFd` with nonblocking descriptor reads and writes. On Windows, Tokio owns the overlapped I/O handle and `serialport::COMPort` owns a duplicate for control operations. Each handle has a single owner.
 
+Platform restrictions that can be validated without a device are checked before opening it. A request for unsupported stop bits, parity or shared Windows access therefore cannot first alter a port's configuration or control lines.
+
 Idle serial I/O has no heartbeat interval. Readiness wakes pending reads and writes. Explicit physical-drain operations may poll the driver's output queue; the timeout parser also uses timers when it has buffered data.
 
 | Data path | Ownership and copies |

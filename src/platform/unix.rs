@@ -138,7 +138,11 @@ impl AsFd for SerialStream {
 mod tests {
     use super::*;
     use serialport::SerialPort;
-    use std::{future::poll_fn, io::Write, time::Duration};
+    use std::{
+        future::poll_fn,
+        io::{Read, Write},
+        time::Duration,
+    };
 
     fn pair() -> (TTYPort, SerialStream) {
         let (master, mut slave) = TTYPort::pair().unwrap();
@@ -208,5 +212,87 @@ mod tests {
             Err(error) => assert_ne!(error.kind(), io::ErrorKind::WouldBlock),
         }
         closer.await.unwrap();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancelled_read_does_not_retain_the_old_buffer() {
+        let (mut master, mut port) = pair();
+        let mut cancelled = [0xa5; 8];
+        let pending = poll_fn(|cx| {
+            let mut buffer = ReadBuf::new(&mut cancelled);
+            Poll::Ready(Pin::new(&mut port).poll_read(cx, &mut buffer))
+        })
+        .await;
+        assert!(pending.is_pending());
+
+        let expected = b"new read";
+        master.write_all(expected).unwrap();
+        let mut received = [0; 8];
+        let mut offset = 0;
+        while offset < received.len() {
+            let length = read(&mut port, &mut received[offset..]).await.unwrap();
+            assert_ne!(length, 0);
+            offset += length;
+        }
+        assert_eq!(&received, expected);
+        assert_eq!(cancelled, [0xa5; 8]);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn blocked_writer_wakes_and_preserves_partial_writes() {
+        let (mut master, mut port) = pair();
+        master.set_timeout(Duration::from_secs(5)).unwrap();
+        let expected: Vec<_> = (0..4 * crate::CHUNK_SIZE)
+            .map(|index| (index * 37 + 11) as u8)
+            .collect();
+        let mut offset = 0;
+        loop {
+            match port.try_write(&expected[offset..]) {
+                Ok(length) => {
+                    assert_ne!(length, 0);
+                    offset += length;
+                    assert!(offset < expected.len(), "PTY did not apply backpressure");
+                }
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => panic!("Failed to fill PTY: {error}"),
+            }
+        }
+
+        // Keep the peer idle until the async writer actually parks on readiness.
+        let (resume, waiting) = tokio::sync::oneshot::channel();
+        let length = expected.len();
+        let peer = tokio::spawn(async move {
+            waiting.await.unwrap();
+            tokio::task::spawn_blocking(move || {
+                let mut received = vec![0; length];
+                master.read_exact(&mut received).unwrap();
+                (master, received)
+            })
+            .await
+            .unwrap()
+        });
+        let mut resume = Some(resume);
+        tokio::time::timeout(Duration::from_secs(8), async {
+            while offset < expected.len() {
+                let length = poll_fn(|cx| {
+                    let result = Pin::new(&mut port).poll_write(cx, &expected[offset..]);
+                    if result.is_pending()
+                        && let Some(resume) = resume.take()
+                    {
+                        resume.send(()).unwrap();
+                    }
+                    result
+                })
+                .await
+                .unwrap();
+                assert_ne!(length, 0);
+                offset += length;
+            }
+            let (_master, received) = peer.await.unwrap();
+            assert_eq!(received, expected);
+        })
+        .await
+        .expect("serial writability did not wake the blocked writer");
     }
 }

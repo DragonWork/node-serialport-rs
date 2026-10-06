@@ -3,7 +3,9 @@
 
 use crate::NativeOptions;
 use serialport::{SerialPort, SerialPortBuilder};
-use std::{hint::cold_path, io};
+#[cfg(windows)]
+use std::hint::cold_path;
+use std::io;
 
 std::cfg_select! {
     unix => {
@@ -89,13 +91,6 @@ pub(crate) fn port_ids() -> std::collections::HashMap<std::path::PathBuf, String
 pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Result<()> {
     use nix::sys::termios::{self, ControlFlags, InputFlags, SetArg};
 
-    if options.stop_bits == 1.5 {
-        cold_path();
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "1.5 stop bits requires Windows",
-        ));
-    }
     let fd = descriptor(port);
     let mut settings = termios::tcgetattr(fd)?;
     settings.input_flags.set(InputFlags::IXON, options.xon);
@@ -114,14 +109,6 @@ pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Res
                 .control_flags
                 .set(ControlFlags::PARODD, options.parity == "mark");
         }
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
-    if matches!(options.parity.as_str(), "mark" | "space") {
-        cold_path();
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "Mark/space parity is not available on this platform",
-        ));
     }
     termios::tcsetattr(fd, SetArg::TCSANOW, &settings)?;
     Ok(())

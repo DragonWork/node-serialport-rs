@@ -84,6 +84,98 @@ test('eight concurrent ports make independent progress while one writer stalls',
   await stalled;
 });
 
+test('ready receive bursts preserve progress and order for small writes', { timeout: 10000 }, async t => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  const bounded = (promise, milliseconds, operation) =>
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`${operation} timed out`)), milliseconds);
+      promise.then(
+        value => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        error => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
+  t.after(async () => {
+    if (port.isOpen) await bounded(port.close(), 2000, 'Cleanup close');
+  });
+
+  let resolvePrimed;
+  const primed = new Promise(resolve => {
+    resolvePrimed = resolve;
+  });
+  let resolveReceived;
+  const received = new Promise(resolve => {
+    resolveReceived = resolve;
+  });
+  const input = Buffer.alloc(999);
+  for (let i = 0; i < input.length; i++) input[i] = i & 0xff;
+
+  const chunks = [];
+  const writes = [];
+  let writeChain = Promise.resolve();
+  const inlineAttempts = [];
+  const nativeWrite = port._native.write;
+  port._native.write = function (id, data, allowInline) {
+    const completed = nativeWrite.call(this, id, data, allowInline);
+    if (allowInline) inlineAttempts.push(completed);
+    return completed;
+  };
+  let receivedBytes = 0;
+  let nextMarker = 0x41;
+  let writeError;
+  port.onData = data => {
+    chunks.push(data);
+    if (chunks.length === 1 && receivedBytes === 0) {
+      // The first streaming byte primes the adaptive read size to 64 bytes.
+      receivedBytes += data.length;
+      resolvePrimed();
+      return;
+    }
+
+    receivedBytes += data.length;
+    // More input is already queued at the PTY. These writes may complete inline
+    // or queue behind the active read burst.
+    if (chunks.length > 1) {
+      const marker = Buffer.from([nextMarker++]);
+      writes.push(marker);
+      writeChain = writeChain
+        .then(() => port.write(marker))
+        .catch(error => {
+          writeError ??= error;
+        });
+    }
+    if (receivedBytes >= input.length + 1) resolveReceived();
+  };
+
+  port.startReading(4096);
+  await terminal.command('write 5a');
+  await bounded(primed, 2000, 'Read-size priming');
+
+  // Top up the byte window after the deliberately partial priming read.
+  port.startReading(8192);
+  await terminal.command(`write ${input.toString('hex')}`);
+  await bounded(received, 4000, 'Ready receive burst');
+  assert.deepEqual(Buffer.concat(chunks).subarray(1), input);
+  assert(chunks.length >= 4, `Expected several ready chunks, received ${chunks.length}`);
+  assert(inlineAttempts.length > 0, 'Expected at least one inline-write attempt');
+  assert(writes.length >= 2, `Expected follower writes, received ${writes.length}`);
+
+  await bounded(writeChain, 3000, 'Follower writes');
+  assert.equal(writeError, undefined);
+  const expectedWrites = Buffer.from(Array.from({ length: writes.length }, (_, index) => 0x41 + index));
+  assert.equal(
+    await bounded(terminal.command(`read ${expectedWrites.length}`), 3000, 'PTY write drain'),
+    expectedWrites.toString('hex'),
+  );
+  await bounded(port.close(), 2000, 'Port close');
+});
+
 test('corked writes preserve order across batched native transfers', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });

@@ -34,6 +34,17 @@ pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
             return Err("Invalid parity".into());
         }
     };
+    // Reject unsupported settings before opening a device can change its state.
+    #[cfg(unix)]
+    if options.stop_bits == 1.5 {
+        cold_path();
+        return Err("1.5 stop bits requires Windows".into());
+    }
+    #[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
+    if matches!(options.parity.as_str(), "mark" | "space") {
+        cold_path();
+        return Err("Mark/space parity is not available on this platform".into());
+    }
     #[cfg(windows)]
     if !options.lock {
         cold_path();
@@ -67,4 +78,66 @@ pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
         error.to_string()
     })?;
     Ok(port)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn invalid_path() -> NativeOptions {
+        NativeOptions {
+            path: "\0".into(),
+            baud_rate: 115200,
+            data_bits: 8,
+            stop_bits: 1.0,
+            parity: "none".into(),
+            lock: true,
+            rtscts: false,
+            xon: false,
+            xoff: false,
+            xany: false,
+            hupcl: true,
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unsupported_stop_bits_are_rejected_before_opening() {
+        let options = NativeOptions {
+            stop_bits: 1.5,
+            ..invalid_path()
+        };
+        assert_eq!(
+            open(&options).err().as_deref(),
+            Some("1.5 stop bits requires Windows")
+        );
+    }
+
+    #[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
+    #[test]
+    fn unsupported_parity_is_rejected_before_opening() {
+        for parity in ["mark", "space"] {
+            let options = NativeOptions {
+                parity: parity.into(),
+                ..invalid_path()
+            };
+            assert_eq!(
+                open(&options).err().as_deref(),
+                Some("Mark/space parity is not available on this platform")
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn shared_windows_access_is_rejected_before_opening() {
+        let options = NativeOptions {
+            lock: false,
+            ..invalid_path()
+        };
+        assert_eq!(
+            open(&options).err().as_deref(),
+            Some("Windows requires exclusive serial access")
+        );
+    }
 }

@@ -3,8 +3,8 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import test from 'node:test';
+import assert from 'node:assert/strict';
 const { publishRelease, jsonResponse, liveApi } = require('../scripts/publish-release');
 const { packInfo, checkFiles } = require('../scripts/package-release');
 
@@ -21,7 +21,7 @@ const meta = {
 };
 
 function provider(overrides = {}) {
-  const calls = [];
+  const calls: string[] = [];
   const draft = { id: 1, draft: true, target_commitish: meta.commit, assets: [], body: meta.notes };
   return {
     calls,
@@ -124,7 +124,7 @@ test('completed immutable releases are verified without rewriting assets or tags
 });
 
 test('authentication and server errors cannot be mistaken for absent releases', async t => {
-  t.mock.method(global, 'fetch', async () => ({ ok: false, status: 403 }));
+  t.mock.method(global, 'fetch', async () => new Response(null, { status: 403 }));
   await assert.rejects(jsonResponse('https://example.invalid/release', {}, true), /HTTP 403/);
 });
 
@@ -134,11 +134,12 @@ test('draft lookup and annotated tag resolution support publication retries', as
     ['git/tags/tag-object', { object: { type: 'commit', sha: meta.commit } }],
     ['releases?per_page=100&page=1', [{ id: 1, tag_name: meta.tag, draft: true }]],
   ]);
-  t.mock.method(global, 'fetch', async url => {
+  t.mock.method(global, 'fetch', async (url: Parameters<typeof fetch>[0]) => {
+    assert(typeof url === 'string');
     const path = url.replace('https://api.github.com/repos/DragonWork/node-serialport-rs/', '');
-    if (path === 'releases/tags/v1.2.3') return { ok: false, status: 404 };
+    if (path === 'releases/tags/v1.2.3') return new Response(null, { status: 404 });
     assert(responses.has(path), `Unexpected request: ${path}`);
-    return { ok: true, json: async () => responses.get(path) };
+    return new Response(JSON.stringify(responses.get(path)));
   });
   const api = liveApi(meta, '/unused', 'DragonWork/node-serialport-rs', 'test-token');
   assert.equal(await api.tagCommit(), meta.commit);
@@ -167,10 +168,12 @@ test('pack metadata accepts npm array and keyed formats while rejecting developm
 });
 
 test('draft creation and retries use archived notes without publishing early', async t => {
-  const requests = [];
-  t.mock.method(global, 'fetch', async (url, options) => {
+  const requests: { url: string; method?: string; body: Record<string, unknown> }[] = [];
+  t.mock.method(global, 'fetch', async (url: Parameters<typeof fetch>[0], options?: RequestInit) => {
+    assert(typeof url === 'string');
+    assert(typeof options?.body === 'string');
     requests.push({ url, method: options.method, body: JSON.parse(options.body) });
-    return { ok: true, json: async () => ({ id: 7, draft: true }) };
+    return new Response(JSON.stringify({ id: 7, draft: true }));
   });
   const api = liveApi(meta, '/unused', 'DragonWork/node-serialport-rs', 'test-token');
   await api.createDraft();

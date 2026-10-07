@@ -3,15 +3,15 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { readFileSync, mkdtempSync, writeFileSync, rmSync } = require('node:fs');
-const { tmpdir } = require('node:os');
-const { join } = require('node:path');
-const { runInNewContext } = require('node:vm');
-const { loadNative, selectTarget } = require('../lib/native');
-const { SerialPort, RustBinding, BindingsError } = require('..');
-const targets = require('../lib/targets.json');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
+const { loadNative, selectTarget } = require('../lib/native') as typeof import('../ts/lib/native');
+import { SerialPort, RustBinding, BindingsError } from '..';
+const targets = require('../lib/targets.json') as (Parameters<typeof selectTarget>[0] & { target: string })[];
 
 test('native open errors carry a portable code and device path', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'serialport-errors-'));
@@ -24,7 +24,7 @@ test('native open errors carry a portable code and device path', async t => {
     assert.equal(error.canceled, false);
     return true;
   });
-  const unsupported = process.platform === 'win32' ? { lock: false } : { stopBits: 1.5 };
+  const unsupported = process.platform === 'win32' ? { lock: false } : { stopBits: 1.5 as const };
   await assert.rejects(RustBinding.open({ path, baudRate: 9600, ...unsupported }), {
     code: 'ERR_SERIALPORT_UNSUPPORTED',
     path,
@@ -81,8 +81,13 @@ test('list keeps ports whose optional metadata is unavailable', async t => {
   ]);
 });
 
-function isolatedLoader({ platform = 'linux', arch = 'arm64', glibc = true, exists = () => true } = {}) {
-  const module = { exports: {} };
+function isolatedLoader({
+  platform = 'linux',
+  arch = 'arm64',
+  glibc = true,
+  exists = (_candidate: string): boolean => true,
+} = {}) {
+  const module = { exports: {} as typeof import('../ts/lib/native') };
   let loaded;
   runInNewContext(readFileSync(require.resolve('../lib/native'), 'utf8'), {
     module,
@@ -94,7 +99,7 @@ function isolatedLoader({ platform = 'linux', arch = 'arm64', glibc = true, exis
       config: { variables: {} },
       report: { getReport: () => ({ header: { glibcVersionRuntime: glibc && '2.31' } }) },
     },
-    require(name) {
+    require(name: string) {
       if (name === 'node:fs') return { existsSync: exists };
       if (name === './targets.json') return targets;
       if (name.endsWith('.node')) {
@@ -166,7 +171,7 @@ test('ELF validation checks new CPU IDs, word sizes and s390x byte order', t => 
     ['ppc64', 2, 1, 21],
     ['s390x', 2, 2, 22],
     ['riscv64', 2, 1, 243],
-  ]) {
+  ] as const) {
     const header = Buffer.alloc(64);
     header.write('7f454c46', 0, 'hex');
     header[4] = bits;

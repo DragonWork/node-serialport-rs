@@ -3,13 +3,13 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { once } = require('node:events');
-const { AsyncLocalStorage } = require('node:async_hooks');
-const { setTimeout: delay } = require('node:timers/promises');
-const { SerialPort, RustBinding, BindingsError } = require('..');
-const { pty, call } = require('./helpers');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { setTimeout as delay } from 'node:timers/promises';
+import { SerialPort, RustBinding, BindingsError } from '..';
+import { pty, call } from './helpers';
 
 test('discovery returns the complete metadata shape without opening ports', async () => {
   const ports = await RustBinding.list();
@@ -32,6 +32,7 @@ test('discovery returns the complete metadata shape without opening ports', asyn
 test('validates settings before opening', () => {
   assert.throws(() => new SerialPort({ path: '', baudRate: 9600 }), /path/);
   assert.throws(() => new SerialPort({ path: '/invalid', baudRate: NaN }), /baudRate/);
+  // @ts-expect-error Invalid widths must also be rejected at runtime.
   assert.throws(() => new SerialPort({ path: '/invalid', baudRate: 9600, dataBits: 9 }), /dataBits/);
 });
 
@@ -59,6 +60,7 @@ test('native options use the validated snapshot and reject malformed control fla
   });
   assert.deepEqual(await binding.getBaudRate(), { baudRate: 57600 });
   for (const flags of [null, [], 'invalid', false, { dtr: 1 }, { rts: 'true' }]) {
+    // @ts-expect-error Deliberately malformed options exercise the native boundary.
     await assert.rejects(binding.set(flags), TypeError);
   }
   assert.equal(binding.isOpen, true);
@@ -134,15 +136,19 @@ test('native operation callbacks retain their caller AsyncLocalStorage context',
     ['update', [{ baudRate: 9600 }]],
     ['drain', []],
     ['close', []],
-  ]) {
+  ] as const) {
     const store = { method };
     const result = await context.run(
       store,
       () =>
-        new Promise(resolve => {
-          port[method](...args, function (error) {
-            resolve({ error, store: context.getStore(), receiver: this });
-          });
+        new Promise<{ error?: Error | null; store: unknown; receiver: unknown }>(resolve => {
+          (port[method] as (...values: unknown[]) => unknown).call(
+            port,
+            ...args,
+            function (this: unknown, error?: Error | null) {
+              resolve({ error, store: context.getStore(), receiver: this });
+            },
+          );
         }),
     );
     assert.equal(result.error, null);
@@ -161,9 +167,9 @@ test(
     t.after(() => port.destroy());
     await call(port, 'open');
     const expected = Buffer.from(Array.from({ length: 32 * 1024 + 32 }, (_, i) => (i * 17) & 255));
-    const chunks = [];
+    const chunks: Buffer[] = [];
     let length = 0;
-    const received = new Promise(resolve => {
+    const received = new Promise<void>(resolve => {
       port.on('data', data => {
         assert(Buffer.isBuffer(data));
         chunks.push(data);
@@ -177,9 +183,9 @@ test(
     await terminal.command(`write ${expected.subarray(32).toString('hex')}`);
     await received;
     await call(port, 'close');
-    global.gc();
+    global.gc!();
     for (let i = 0; i < 256; i++) Buffer.allocUnsafe(1024).fill(0xa5);
-    global.gc();
+    global.gc!();
     assert.deepEqual(Buffer.concat(chunks), expected);
   },
 );
@@ -191,11 +197,11 @@ test(
     const terminal = await pty(t);
     const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
     t.after(() => port.destroy());
-    const chunks = [];
+    const chunks: Buffer[] = [];
     const payloads = [];
     let length = 0;
     let target = 0;
-    let complete;
+    let complete!: () => void;
     port.on('data', data => {
       assert(Buffer.isBuffer(data));
       chunks.push(data);
@@ -208,7 +214,7 @@ test(
         const payload = Buffer.from(Array.from({ length: size }, (_, index) => (index * 17 + size + round) & 255));
         payloads.push(payload);
         target += size;
-        const received = new Promise(resolve => {
+        const received = new Promise<void>(resolve => {
           complete = resolve;
         });
         await Promise.all([received, terminal.command(`write ${payload.toString('hex')}`)]);
@@ -341,7 +347,7 @@ test(
     }
     t.after(() => port.destroy());
     await once(port, 'open');
-    const binding = port.port;
+    const binding = port.port!;
     let closes = 0;
     port.on('close', () => closes++);
     const closed = once(port, 'close');

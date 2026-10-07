@@ -34,6 +34,8 @@ The exact 1.98.0 toolchain checks minimum compatibility; use the current stable 
 
 Runtime source lives in `ts/`. `npm run build:js` compiles it in strict mode to `index.js` and `lib/`, and copies `ts/public-api.d.ts` to `index.d.ts`. Edit the TypeScript sources; generated files are ignored by Git. `npm test` and `npm pack` compile the runtime first.
 
+Test sources and helpers live in `test/*.ts`. `npm run build:tests` first checks the complete test project in strict mode, including references to runtime types, then emits only the test files to ignored `test/*.js` and source maps. The separate emission pass avoids generating a second copy of imported runtime sources. `npm test` builds both the runtime and tests and enables source maps. To run selected tests, build once and pass the generated `.test.js` paths to Node's test runner.
+
 JavaScript, TypeScript and JSON use the pinned [Prettier](https://prettier.io/docs/install) version in `devDependencies`. Run `npm run format` to format maintained files, or `npm run format:check` to check them without writing. The shared `.prettierrc.json` uses spaces inside braces (`{ value }`), two-space indentation, single quotes in JS/TS, LF endings and a 120-column target. Prettier-enabled editors read the same configuration. Generated JavaScript/declarations, dependencies and build artifacts are excluded by `.prettierignore`. Formatting is checked by both `npm run check` and CI; Rust continues to use `cargo fmt`.
 
 Dev builds cache Cargo dependencies and share compiled addons and test helpers across Node versions. Release builds do not restore these caches.
@@ -46,11 +48,13 @@ Linux CI compares parser output and stream contracts against SerialPort 13.0.0, 
 
 ```sh
 npm install --no-save --ignore-scripts --package-lock=false serialport@13.0.0
-node scripts/compare-parsers.js node_modules/serialport
-SERIALPORT_REFERENCE_STREAM="$PWD/node_modules/@serialport/stream" node --expose-gc --test test/compatibility.test.js test/consumer.test.js
+npm run build:js
+npm run build:tests
+node test/compare-parsers.js node_modules/serialport
+SERIALPORT_REFERENCE_STREAM="$PWD/node_modules/@serialport/stream" node --enable-source-maps --expose-gc --test test/compatibility.test.js test/consumer.test.js
 ```
 
-Run `npm run check:types` to check the runtime and the public consumer fixture in `test/types.ts` against the pinned compiler and Node declarations. CI also checks both against Node 20 declarations in its Node 20 test job to preserve compatibility with the minimum supported runtime.
+Run `npm run check:types` to check the runtime, every test, and the public consumer fixture in `test/types.ts` against the pinned compiler and Node declarations. The consumer fixture is checked without execution. CI also checks these against Node 20 declarations in its Node 20 test job to preserve compatibility with the minimum supported runtime. Tests that exercise newer runtime features must retain their feature guards; the test compiler's library types do not polyfill those features.
 
 The [`bench/` directory](../bench/README.md) contains separate latency, throughput, and parser measurement tools. PTY results measure the host software path, not physical UART speed. Throughput records count echoed payload once, exclude echo-helper CPU, and include sampled memory usage.
 

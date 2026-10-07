@@ -3,16 +3,36 @@
 
 'use strict';
 
-const assert = require('node:assert/strict');
-const { once } = require('node:events');
-const { resolve } = require('node:path');
-const current = require('..');
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { resolve } from 'node:path';
+import type { Transform } from 'node:stream';
+import * as current from '..';
+type Parsers = Pick<
+  typeof current,
+  | 'ByteLengthParser'
+  | 'DelimiterParser'
+  | 'ReadlineParser'
+  | 'RegexParser'
+  | 'ReadyParser'
+  | 'SlipEncoder'
+  | 'SlipDecoder'
+  | 'InterByteTimeoutParser'
+  | 'CCTalkParser'
+  | 'PacketLengthParser'
+  | 'SpacePacketParser'
+>;
 if (!process.argv[2]) throw new Error('Pass the directory of a serialport package to compare');
-const reference = require(resolve(process.argv[2]));
+const reference = require(resolve(process.argv[2])) as Parsers;
 
-async function output(Parser, options, input, chunkSize) {
+async function output<O>(
+  Parser: new (options: O) => Transform,
+  options: O,
+  input: Buffer,
+  chunkSize: number,
+): Promise<unknown[]> {
   const parser = new Parser(options);
-  const result = [];
+  const result: unknown[] = [];
   parser.on('data', chunk => result.push(chunk));
   const end = once(parser, 'end');
   for (let i = 0; i < input.length; i += chunkSize) parser.write(input.subarray(i, i + chunkSize));
@@ -21,10 +41,11 @@ async function output(Parser, options, input, chunkSize) {
   return result;
 }
 
-async function compare(name, options, input) {
+async function compare<N extends keyof Parsers>(name: N, options: ConstructorParameters<Parsers[N]>[0], input: Buffer) {
+  type Parser = new (settings: typeof options) => Transform;
   for (const size of [1, 2, 3, 7, 64, input.length]) {
-    const expected = await output(reference[name], options, input, size);
-    const actual = await output(current[name], options, input, size);
+    const expected = await output(reference[name] as Parser, options, input, size);
+    const actual = await output(current[name] as Parser, options, input, size);
     assert.deepEqual(actual, expected, `${name}, chunk size ${size}, ${JSON.stringify(options)}`);
   }
 }
@@ -59,7 +80,12 @@ async function compare(name, options, input) {
     cases++;
     await compare('SlipEncoder', options, Buffer.alloc(4096, 0x31));
     cases++;
-    const encoded = Buffer.concat(await output(reference.SlipEncoder, options, binary, 128));
+    const encoded = Buffer.concat(
+      (await output(reference.SlipEncoder, options, binary, 128)).map(chunk => {
+        assert(Buffer.isBuffer(chunk));
+        return chunk;
+      }),
+    );
     await compare('SlipDecoder', options, encoded);
     cases++;
   }

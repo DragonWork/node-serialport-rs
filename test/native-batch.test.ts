@@ -3,26 +3,26 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { AsyncLocalStorage } = require('node:async_hooks');
-const { spawn } = require('node:child_process');
-const { once } = require('node:events');
-const { createInterface } = require('node:readline');
-const { Writable } = require('node:stream');
-const { setTimeout: delay } = require('node:timers/promises');
-const { RustBinding, SerialPort } = require('..');
-const { pty, call } = require('./helpers');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { createInterface } from 'node:readline';
+import { Writable } from 'node:stream';
+import { setTimeout as delay } from 'node:timers/promises';
+import { SerialPort } from '..';
+const { RustBinding } = require('../lib/binding') as typeof import('../ts/lib/binding');
+import { pty, call, deferred } from './helpers';
+import type { BindingPort } from '../ts/lib/binding';
+import type { NativeAddon, NativeHandle } from '../ts/lib/native';
+type NativeArguments = ConstructorParameters<NativeAddon['NativePort']>;
+type NativeCallback = NativeArguments[1];
 
-function waitForBytes(port, length) {
-  const chunks = [];
+function waitForBytes(port: BindingPort, length: number) {
+  const chunks: Buffer[] = [];
   let received = 0;
-  let resolve;
-  let reject;
-  const done = new Promise((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
+  const { promise: done, resolve, reject } = deferred<Buffer>();
   port.onData = data => {
     try {
       assert(Buffer.isBuffer(data));
@@ -65,11 +65,8 @@ test('a stalled pipe bounds read-ahead and resumes every byte in order', { timeo
   t.after(() => port.destroy());
   const expected = Buffer.from(Array.from({ length: 256 * 1024 }, (_, index) => index & 255));
   let received = 0;
-  let resume;
-  let completed;
-  const done = new Promise(resolve => {
-    completed = resolve;
-  });
+  let resume!: (error?: Error | null) => void;
+  const { promise: done, resolve: completed } = deferred();
   const sink = new Writable({
     highWaterMark: 1,
     write(data, encoding, callback) {
@@ -98,23 +95,14 @@ test('a stalled pipe bounds read-ahead and resumes every byte in order', { timeo
 });
 
 test('native batching delivers the first ready chunk before its followers', { timeout: 10000 }, async t => {
-  const { NativePort } = require('../lib/native').loadNative();
-  const { validateOptions } = require('../lib/options');
+  const { NativePort } = (require('../lib/native') as typeof import('../ts/lib/native')).loadNative();
+  const { validateOptions } = require('../lib/options') as typeof import('../ts/lib/options');
   const terminal = await pty(t);
-  let opened, closed, primed, received;
-  const open = new Promise(resolve => {
-    opened = resolve;
-  });
-  const close = new Promise(resolve => {
-    closed = resolve;
-  });
-  const prime = new Promise(resolve => {
-    primed = resolve;
-  });
-  const got = new Promise(resolve => {
-    received = resolve;
-  });
-  const callbacks = [];
+  const { promise: open, resolve: opened } = deferred();
+  const { promise: close, resolve: closed } = deferred();
+  const { promise: prime, resolve: primed } = deferred();
+  const { promise: got, resolve: received } = deferred();
+  const callbacks: (Buffer | Buffer[])[] = [];
   let bytes = 0;
   let allocations = 0;
   let firstAllocations;
@@ -123,9 +111,13 @@ test('native batching delivers the first ready chunk before its followers', { ti
     validateOptions({ path: terminal.path, baudRate: 115200 }),
     (error, event) => {
       assert.ifError(error);
-      if (event.kind === 'open') opened();
-      else if (event.kind === 'close') closed();
-      else if (!bytes) {
+      if ('kind' in event) {
+        if (event.kind === 'open') opened();
+        else if (event.kind === 'close') closed();
+        else assert.fail(`Unexpected native event: ${event.kind}`);
+        return;
+      }
+      if (!bytes) {
         bytes = 1;
         primed();
       } else {
@@ -172,16 +164,11 @@ test('the binding preserves the first reply continuation before batched follower
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
-  let primed, completed;
-  const prime = new Promise(resolve => {
-    primed = resolve;
-  });
-  const done = new Promise(resolve => {
-    completed = resolve;
-  });
+  const { promise: prime, resolve: primed } = deferred();
+  const { promise: done, resolve: completed } = deferred();
   const payload = Buffer.alloc(512, 0xa5);
-  const chunks = [];
-  let firstLength;
+  const chunks: Buffer[] = [];
+  let firstLength = 0;
   let continuedAt;
   let received = 0;
   port.onData = data => {
@@ -211,12 +198,12 @@ test('the binding preserves the first reply continuation before batched follower
 });
 
 test('native batches reuse their delivery callback for successive payloads', { timeout: 10000 }, async t => {
-  const addon = require('../lib/native').loadNative();
+  const addon = (require('../lib/native') as typeof import('../ts/lib/native')).loadNative();
   const NativePort = addon.NativePort;
   let inBatch = false;
   let batches = 0;
-  let firstBatch;
-  const callbacks = new Set();
+  let firstBatch: WeakRef<Buffer[]> | undefined;
+  const callbacks = new Set<() => void>();
   const schedule = global.queueMicrotask;
   global.queueMicrotask = callback => {
     if (inBatch) callbacks.add(callback);
@@ -226,13 +213,14 @@ test('native batches reuse their delivery callback for successive payloads', { t
     global.queueMicrotask = schedule;
     addon.NativePort = NativePort;
   });
-  addon.NativePort = class {
-    constructor(options, callback, allocator) {
-      return new NativePort(
+  addon.NativePort = new Proxy(NativePort, {
+    construct(Target, args) {
+      const [options, callback, allocator] = args as NativeArguments;
+      return new Target(
         options,
         (error, event) => {
           inBatch = Array.isArray(event);
-          if (inBatch) {
+          if (Array.isArray(event)) {
             batches++;
             firstBatch ??= new WeakRef(event);
           }
@@ -244,8 +232,8 @@ test('native batches reuse their delivery callback for successive payloads', { t
         },
         allocator,
       );
-    }
-  };
+    },
+  });
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
@@ -264,20 +252,33 @@ test('native batches reuse their delivery callback for successive payloads', { t
   if (global.gc) {
     await new Promise(setImmediate);
     global.gc();
+    assert(firstBatch);
     assert.equal(firstBatch.deref(), undefined, 'The cached callback must not retain an earlier batch');
   }
 });
 
 test('queued native deliveries preserve mixed chunk order and stop on close', async t => {
-  const addon = require('../lib/native').loadNative();
+  const addon = (require('../lib/native') as typeof import('../ts/lib/native')).loadNative();
   const NativePort = addon.NativePort;
-  let notify;
-  addon.NativePort = class {
-    constructor(options, callback) {
+  let notify!: NativeCallback;
+  addon.NativePort = class implements NativeHandle {
+    constructor(_options: NativeArguments[0], callback: NativeCallback) {
       notify = callback;
       queueMicrotask(() => notify(null, { kind: 'open', id: 0 }));
     }
     readCredit() {}
+    read(): never {
+      assert.fail('Unexpected explicit read');
+    }
+    write(): never {
+      assert.fail('Unexpected write');
+    }
+    writev(): never {
+      assert.fail('Unexpected vectored write');
+    }
+    request(): never {
+      assert.fail('Unexpected control request');
+    }
     close() {
       queueMicrotask(() => notify(null, { kind: 'close', id: 0 }));
     }
@@ -287,8 +288,8 @@ test('queued native deliveries preserve mixed chunk order and stop on close', as
   });
   const port = await RustBinding.open({ path: '/queued', baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
-  const received = [];
-  const contexts = [];
+  const received: string[] = [];
+  const contexts: unknown[] = [];
   const context = new AsyncLocalStorage();
   port.onData = data => {
     received.push(data.toString());
@@ -457,32 +458,20 @@ test(
   'a later batched buffer allocation error preserves prior data and releases the port',
   { timeout: 10000 },
   async t => {
-    const { NativePort } = require('../lib/native').loadNative();
-    const { validateOptions } = require('../lib/options');
+    const { NativePort } = (require('../lib/native') as typeof import('../ts/lib/native')).loadNative();
+    const { validateOptions } = require('../lib/options') as typeof import('../ts/lib/options');
     const terminal = await pty(t);
-    let opened;
-    let primed;
-    let firstPayload;
-    let failed;
-    let closed;
-    const openedPromise = new Promise(resolve => {
-      opened = resolve;
-    });
-    const primedPromise = new Promise(resolve => {
-      primed = resolve;
-    });
-    const failedPromise = new Promise(resolve => {
-      failed = resolve;
-    });
-    const closedPromise = new Promise(resolve => {
-      closed = resolve;
-    });
-    let native;
-    let prior;
+    const { promise: openedPromise, resolve: opened } = deferred();
+    const { promise: primedPromise, resolve: primed } = deferred();
+    const { promise: failedPromise, resolve: failed } = deferred<Error>();
+    const { promise: closedPromise, resolve: closed } = deferred();
+    let firstPayload: Buffer | undefined;
+    let native: NativeHandle;
+    let prior: Buffer | undefined;
     let errors = 0;
     let closes = 0;
     let allocations = 0;
-    const allocator = length => {
+    const allocator = (length: number) => {
       allocations++;
       return allocations === 4 ? Buffer.alloc(Math.max(0, length - 1)) : Buffer.alloc(length);
     };
@@ -495,9 +484,9 @@ test(
           native.close();
           return;
         }
-        if (event.kind === 'open') {
+        if ('kind' in event && event.kind === 'open') {
           opened();
-        } else if (event.kind === 'close') {
+        } else if ('kind' in event && event.kind === 'close') {
           closes++;
           closed();
         } else if (Buffer.isBuffer(event)) {
@@ -543,16 +532,16 @@ test(
 );
 
 test('batch delivery preserves remaining chunks and credits after a throwing listener', async () => {
-  const { BindingPort } = require('../lib/binding');
-  const port = Object.create(BindingPort.prototype);
+  const { BindingPort } = require('../lib/binding') as typeof import('../ts/lib/binding');
+  const port = Object.create(BindingPort.prototype) as BindingPort;
   Object.assign(port, { isOpen: true, _readBytes: 6, _readSlots: 3 });
-  const delivered = [];
+  const delivered: string[] = [];
   port.onData = data => {
     delivered.push(data.toString());
     if (delivered.length === 1) throw new Error('listener failed');
   };
   assert.throws(() => port._deliverBatch([Buffer.from('ab'), Buffer.from('cd'), Buffer.from('ef')]), /listener failed/);
-  await new Promise(resolve => queueMicrotask(resolve));
+  await new Promise<void>(resolve => queueMicrotask(resolve));
   assert.deepEqual(delivered, ['ab', 'cd', 'ef']);
   assert.equal(port._readBytes, 0);
   assert.equal(port._readSlots, 0);

@@ -3,10 +3,12 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { once } = require('node:events');
-const {
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import type { Transform } from 'node:stream';
+import type { SpacePacket } from '..';
+import {
   DelimiterParser,
   ReadlineParser,
   ByteLengthParser,
@@ -18,10 +20,10 @@ const {
   SpacePacketParser,
   RegexParser,
   InterByteTimeoutParser,
-} = require('..');
+} from '..';
 
-async function parse(parser, chunks) {
-  const output = [];
+async function parse<T = Buffer>(parser: Transform, chunks: readonly (Buffer | string)[]): Promise<T[]> {
+  const output: T[] = [];
   parser.on('data', chunk => output.push(chunk));
   const ended = once(parser, 'end');
   for (const chunk of chunks) parser.write(chunk);
@@ -39,7 +41,7 @@ test('delimiter spanning chunks preserves the incomplete tail', async () => {
 });
 
 test('readline returns decoded strings', async () => {
-  assert.deepEqual(await parse(new ReadlineParser(), ['hello\nwor', 'ld\n']), ['hello', 'world']);
+  assert.deepEqual(await parse<string>(new ReadlineParser(), ['hello\nwor', 'ld\n']), ['hello', 'world']);
 });
 
 test('byte-length handles chunk boundaries and trailing bytes', async () => {
@@ -121,7 +123,7 @@ test('large unescaped SLIP frames reuse input memory and retain split frames', a
   assert.equal(output[1].byteOffset, input.byteOffset + 256);
 });
 
-function fragments(buffer, size) {
+function fragments(buffer: Buffer, size: number) {
   return Array.from({ length: Math.ceil(buffer.length / size) }, (_, i) => buffer.subarray(i * size, (i + 1) * size));
 }
 
@@ -176,8 +178,8 @@ test('delimiter frame limits reject oversized complete, incomplete and trailing 
 });
 
 test('readline frame limits count bytes before decoding', async () => {
-  assert.deepEqual(await parse(new ReadlineParser({ maxFrameLength: 2 }), ['é\n']), ['é']);
-  await assert.rejects(parse(new ReadlineParser({ maxFrameLength: 1 }), ['é\n']), {
+  assert.deepEqual(await parse<string>(new ReadlineParser({ maxFrameLength: 2 }), ['é\n']), ['é']);
+  await assert.rejects(parse<string>(new ReadlineParser({ maxFrameLength: 1 }), ['é\n']), {
     code: 'ERR_SERIALPORT_FRAME_TOO_LARGE',
   });
 });
@@ -208,16 +210,15 @@ test('ready handles a prefix restarting inside another prefix', async () => {
 test('regex decoding keeps UTF-8 characters intact across every byte boundary', async () => {
   const bytes = Buffer.from('Grüße;🔌;完了');
   for (const regex of [';', /;/, Buffer.from(';')])
-    assert.deepEqual(await parse(new RegexParser({ regex }), fragments(bytes, 1)), ['Grüße', '🔌', '完了']);
+    assert.deepEqual(await parse<string>(new RegexParser({ regex }), fragments(bytes, 1)), ['Grüße', '🔌', '完了']);
 });
 
 test('readline supports UTF-16 delimiters and fragmented multibyte characters', async () => {
   const bytes = Buffer.from('α\r\nβ\r\nγ', 'utf16le');
-  assert.deepEqual(await parse(new ReadlineParser({ encoding: 'utf16le', delimiter: '\r\n' }), fragments(bytes, 1)), [
-    'α',
-    'β',
-    'γ',
-  ]);
+  assert.deepEqual(
+    await parse<string>(new ReadlineParser({ encoding: 'utf16le', delimiter: '\r\n' }), fragments(bytes, 1)),
+    ['α', 'β', 'γ'],
+  );
 });
 
 test('SLIP custom zero-valued start and escape codes round-trip fragmented data', async () => {
@@ -287,6 +288,7 @@ test('SLIP frame limits apply to both large slices and the byte decoder', async 
   parser.write(Buffer.from([1]));
   const [error] = await failed;
   assert(error instanceof RangeError);
+  assert('code' in error);
   assert.equal(error.code, 'ERR_SERIALPORT_FRAME_TOO_LARGE');
 });
 
@@ -307,6 +309,7 @@ test('SLIP limits preserve custom start markers, invalid escapes and incomplete 
 
 test('SLIP limits reject invalid settings and remain optional', async () => {
   for (const maxFrameLength of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '10']) {
+    // @ts-expect-error Deliberately include a nonnumeric limit.
     assert.throws(() => new SlipDecoder({ maxFrameLength }), TypeError);
   }
   const payload = Buffer.alloc(128 * 1024, 1);
@@ -360,7 +363,7 @@ test('space packets expose the header and secondary fields without recursive par
   };
   for (let size = 1; size <= frame.length; size++) {
     assert.deepEqual(
-      await parse(
+      await parse<SpacePacket | number[]>(
         new SpacePacketParser({ timeCodeFieldLength: 1, ancillaryDataFieldLength: 2 }),
         fragments(frame, size),
       ),
@@ -387,7 +390,7 @@ test('timeout parser emits bounded frames, flushes the tail, and has no timer af
     ['abc', 'def', 'g'],
   );
   const parser = new InterByteTimeoutParser({ interval: 10 });
-  const received = [];
+  const received: Buffer[] = [];
   parser.on('data', chunk => received.push(chunk));
   const data = once(parser, 'data');
   parser.write('first');
@@ -404,6 +407,7 @@ test('timeout parser emits bounded frames, flushes the tail, and has no timer af
 test('parser constructors reject invalid frame sizes instead of retaining bytes forever', () => {
   for (const length of [0, -1, 1.5, NaN, Infinity]) assert.throws(() => new ByteLengthParser({ length }), TypeError);
   for (const delimiter of [undefined, '', Buffer.alloc(0)])
+    // @ts-expect-error Missing delimiters must be rejected at runtime.
     assert.throws(() => new DelimiterParser({ delimiter }), TypeError);
   assert.throws(() => new InterByteTimeoutParser({ interval: 0 }), TypeError);
   assert.throws(() => new PacketLengthParser({ lengthBytes: 7 }), TypeError);

@@ -3,14 +3,14 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { once } = require('node:events');
-const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
-const { setImmediate: nextTurn } = require('node:timers/promises');
-const { SerialPortMock, SerialPortStream, MockBinding, MockPortBinding, CanceledError } = require('..');
-const { call } = require('./helpers');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { setImmediate as nextTurn } from 'node:timers/promises';
+import { SerialPortMock, SerialPortStream, MockBinding, MockPortBinding, CanceledError } from '..';
+import { call } from './helpers';
 
 test.beforeEach(() => SerialPortMock.binding.reset());
 
@@ -23,6 +23,7 @@ test('async client methods retain stream semantics and typed control results', a
   const received = once(port, 'data');
   await port.writeAsync([0, 255, 42]);
   assert.deepEqual((await received)[0], Buffer.from([0, 255, 42]));
+  // @ts-expect-error Exercise runtime validation for an invalid write.
   await assert.rejects(port.writeAsync(42), TypeError);
   await assert.rejects(port.updateAsync({ baudRate: 0 }), TypeError);
   assert.equal(port.baudRate, 9600);
@@ -78,6 +79,7 @@ test('a zero highWaterMark still reads bytes through a custom binding', async t 
   const port = new SerialPortMock({ path: '/mock/unbuffered', baudRate: 9600, highWaterMark: 0, autoOpen: false });
   t.after(() => port.destroy());
   await call(port, 'open');
+  assert(port.port);
   const received = once(port, 'data');
   port.port.emitData('a');
   assert.deepEqual((await received)[0], Buffer.from('a'));
@@ -91,6 +93,7 @@ test('SerialPortMock supports echo and recording without hardware', { timeout: 5
   const port = new SerialPortMock({ path: '/mock/echo', baudRate: 115200, autoOpen: false });
   t.after(() => port.destroy());
   await call(port, 'open');
+  assert(port.port);
   assert(port.port instanceof MockPortBinding);
   const data = once(port, 'data');
   const expected = Buffer.from([0, 0xff, 7]);
@@ -140,7 +143,7 @@ test('close cancels pending reads and writes and permits reopening', async () =>
   const options = { path: '/mock/cancel', baudRate: 9600 };
   const port = await MockBinding.open(options);
   assert(port instanceof MockPortBinding);
-  const isCanceled = error => error instanceof CanceledError && error.canceled === true;
+  const isCanceled = (error: unknown) => error instanceof CanceledError && error.canceled === true;
   const read = assert.rejects(port.read(Buffer.alloc(4), 0, 4), isCanceled);
   const write = assert.rejects(port.write(Buffer.from([1])), isCanceled);
   await port.close();
@@ -205,6 +208,7 @@ test('mock controls, flushing and read validation are asynchronous and isolated 
   assert.deepEqual(await a.get(), { cts: true, dsr: false, dcd: false });
   await assert.rejects(a.read(Buffer.alloc(1), -1, 1), RangeError);
   await assert.rejects(a.update({ baudRate: 0 }), TypeError);
+  // @ts-expect-error Exercise runtime validation for malformed flags.
   await assert.rejects(a.set({ rts: 'yes' }), TypeError);
   a.emitData('discard');
   await a.flush();
@@ -233,6 +237,7 @@ test('corked stream writes retain order and a closed session cannot echo into it
   const port = new SerialPortStream({ path: '/mock/stream', baudRate: 9600, autoOpen: false, binding: MockBinding });
   t.after(() => port.destroy());
   await call(port, 'open');
+  assert(port.port);
   port.cork();
   const a = call(port, 'write', [1, 2]);
   const b = call(port, 'write', [3, 4]);
@@ -241,7 +246,8 @@ test('corked stream writes retain order and a closed session cannot echo into it
   assert.deepEqual(port.port.recording, Buffer.from([1, 2, 3, 4]));
   await call(port, 'close');
   await call(port, 'open');
-  const output = [];
+  assert(port.port);
+  const output: Buffer[] = [];
   port.on('data', data => output.push(data));
   await nextTurn();
   assert.deepEqual(output, []);

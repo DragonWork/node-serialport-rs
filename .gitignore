@@ -8,3 +8,5 @@
 /index.d.ts
 /lib/*.js
 /lib/parsers/*.js
+/test/*.js
+/test/*.js.map

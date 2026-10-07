@@ -52,7 +52,11 @@ jobs:
       - name: Check release preparation
         env:
           GIT_CLIFF: git-cliff
-        run: node --test test/release-preparation.test.js
+        run: |
+          npm ci --ignore-scripts
+          npm run build:js
+          npm run build:tests
+          node --enable-source-maps --test test/release-preparation.test.js
       - name: Prepare version and changelog
         id: prepare
         env:

@@ -3,37 +3,31 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { once } = require('node:events');
-const { setImmediate: nextTurn } = require('node:timers/promises');
-const { call } = require('./helpers');
+import test, { type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { setImmediate as nextTurn } from 'node:timers/promises';
+import { call, device, binding, type TestPort } from './helpers';
+import { SerialPortStream as CurrentStream, type SetOptions } from '..';
 
-const implementations = [['serialport-rs', require('..').SerialPortStream]];
+const implementations: [string, typeof CurrentStream][] = [['serialport-rs', CurrentStream]];
 if (process.env.SERIALPORT_REFERENCE_STREAM) {
   implementations.push(['SerialPort 13', require(process.env.SERIALPORT_REFERENCE_STREAM).SerialPortStream]);
 }
 
 for (const [name, SerialPortStream] of implementations) {
-  function stream(t, overrides = {}) {
-    const binding = {
-      isOpen: true,
+  function stream(t: TestContext, overrides: Partial<TestPort> = {}) {
+    const connection = device({
       async close() {
         this.isOpen = false;
       },
-      async write() {},
-      async drain() {},
       ...overrides,
-    };
+    });
     const port = new SerialPortStream({
       path: 'test-device',
       baudRate: 115200,
       autoOpen: false,
-      binding: {
-        async open() {
-          return binding;
-        },
-      },
+      binding: binding(async () => connection),
     });
     port.on('error', () => {});
     t.after(() => port.isOpen && call(port, 'close'));
@@ -41,7 +35,7 @@ for (const [name, SerialPortStream] of implementations) {
   }
 
   test(`${name}: set supplies default flags without changing caller options`, async t => {
-    const requests = [];
+    const requests: SetOptions[] = [];
     const port = stream(t, {
       async set(options) {
         requests.push(options);
@@ -63,11 +57,11 @@ for (const [name, SerialPortStream] of implementations) {
       `${name}: drain ${afterFinish ? 'after finish' : 'during end'} waits for output`,
       { timeout: 3000 },
       async t => {
-        let releaseWrite;
-        const writing = new Promise(resolve => {
+        let releaseWrite!: () => void;
+        const writing = new Promise<void>(resolve => {
           releaseWrite = resolve;
         });
-        const order = [];
+        const order: string[] = [];
         const port = stream(t, {
           async write() {
             await writing;
@@ -134,7 +128,7 @@ for (const [name, SerialPortStream] of implementations) {
         return new Promise(() => {});
       },
     });
-    const received = [];
+    const received: Buffer[] = [];
     let ends = 0;
     port.on('end', () => {
       ends++;

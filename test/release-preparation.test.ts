@@ -3,18 +3,23 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { execFileSync } = require('node:child_process');
-const { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
-const { tmpdir } = require('node:os');
-const { join } = require('node:path');
+import test, { type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 const { prepareRelease, prependRelease, applyPrepared, recordPrepared } = require('../scripts/prepare-release');
 
-const cliff = process.env.GIT_CLIFF;
+const cliff = process.env.GIT_CLIFF || '';
+interface CommitInput {
+  expectedHeadOid: string;
+  message: { headline: string };
+  fileChanges: { additions: { path: string; contents: string }[] };
+}
 const oldNotes = "## What's Changed in v1.12.1 (2026-08-01)\n\n* fix: earlier release\n";
 
-function offline(t) {
+function offline(t: TestContext) {
   const previous = process.env.GIT_CLIFF_OFFLINE;
   process.env.GIT_CLIFF_OFFLINE = 'true';
   t.after(() => {
@@ -23,10 +28,10 @@ function offline(t) {
   });
 }
 
-function fixture(t, messages = []) {
+function fixture(t: TestContext, messages: string[] = []) {
   const root = mkdtempSync(join(tmpdir(), 'serialport-release-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const git = args =>
+  const git = (args: string[]) =>
     execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git(['init', '--quiet']);
   git(['config', 'user.name', 'DragonWork']);
@@ -83,8 +88,8 @@ test('Conventional Commits select patch, minor and major releases and exclude ch
       assert(!meta.notes.includes('chore'));
       assert(meta.notes.includes(`/compare/v1.12.1...v${version}`));
       applyPrepared(root, { ...meta, commit: meta.sourceCommit });
-      assert.equal(JSON.parse(readFileSync(join(root, 'package.json'))).version, version);
-      const lock = JSON.parse(readFileSync(join(root, 'package-lock.json')));
+      assert.equal(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version, version);
+      const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
       assert.equal(lock.version, version);
       assert.equal(lock.packages[''].version, version);
       for (const name of ['Cargo.toml', 'Cargo.lock'])
@@ -140,16 +145,16 @@ test('preparation records only release files and rejects concurrent branch updat
   offline(t);
   const { root } = fixture(t, ['fix: keep progress']);
   const meta = prepareRelease(root, 'auto', cliff);
-  let input;
-  t.mock.method(global, 'fetch', async (url, options) => {
+  let input!: CommitInput;
+  t.mock.method(global, 'fetch', async (url: Parameters<typeof fetch>[0], options?: RequestInit) => {
     assert.equal(url, 'https://api.github.com/graphql');
+    assert(typeof options?.body === 'string');
     input = JSON.parse(options.body).variables.input;
-    return {
-      ok: true,
-      json: async () => ({
+    return new Response(
+      JSON.stringify({
         data: { createCommitOnBranch: { commit: { oid: 'c'.repeat(40), signature: { isValid: true } } } },
       }),
-    };
+    );
   });
   assert.equal(await recordPrepared(root, meta, 'DragonWork/node-serialport-rs', 'main', 'test-token'), 'c'.repeat(40));
   assert.equal(input.expectedHeadOid, meta.sourceCommit);
@@ -157,23 +162,28 @@ test('preparation records only release files and rejects concurrent branch updat
   assert.deepEqual(input.fileChanges.additions.map(file => file.path).sort(), Object.keys(meta.files).sort());
   for (const file of input.fileChanges.additions)
     assert.equal(Buffer.from(file.contents, 'base64').toString(), meta.files[file.path]);
-  t.mock.method(global, 'fetch', async () => ({
-    ok: true,
-    json: async () => ({
-      data: { createCommitOnBranch: { commit: { oid: 'c'.repeat(40), signature: { isValid: false } } } },
-    }),
-  }));
+  t.mock.method(
+    global,
+    'fetch',
+    async () =>
+      new Response(
+        JSON.stringify({
+          data: { createCommitOnBranch: { commit: { oid: 'c'.repeat(40), signature: { isValid: false } } } },
+        }),
+      ),
+  );
   await assert.rejects(
     recordPrepared(root, meta, 'DragonWork/node-serialport-rs', 'main', 'test-token'),
     /valid GitHub signature/,
   );
-  t.mock.method(global, 'fetch', async () => ({
-    ok: true,
-    json: async () => ({ errors: [{ message: 'expectedHeadOid does not match' }] }),
-  }));
+  t.mock.method(
+    global,
+    'fetch',
+    async () => new Response(JSON.stringify({ errors: [{ message: 'expectedHeadOid does not match' }] })),
+  );
   await assert.rejects(
     recordPrepared(root, meta, 'DragonWork/node-serialport-rs', 'main', 'test-token'),
     /branch may have advanced/,
   );
-  assert.equal(JSON.parse(readFileSync(join(root, 'package.json'))).version, '1.12.1');
+  assert.equal(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version, '1.12.1');
 });

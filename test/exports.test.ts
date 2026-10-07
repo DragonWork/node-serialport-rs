@@ -3,15 +3,15 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { pathToFileURL } = require('node:url');
-const { endianness } = require('node:os');
-const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
-const library = require('..');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+import { endianness } from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import * as library from '..';
 
-const exports13 = [
+const exports13: (keyof typeof library)[] = [
   'SerialPort',
   'SerialPortMock',
   'ByteLengthParser',
@@ -46,7 +46,7 @@ test('static discovery functions can be passed around without a receiver', async
 });
 
 test('public exports stay within the serial stream, binding and compatible parser API', async () => {
-  const names = [
+  const names: (keyof typeof library)[] = [
     ...exports13,
     'SerialPortStream',
     'DisconnectedError',
@@ -57,7 +57,8 @@ test('public exports stay within the serial stream, binding and compatible parse
     'MockPortBinding',
     'CanceledError',
     'version',
-  ].sort();
+  ];
+  names.sort();
   assert.deepEqual(Object.keys(library).sort(), names);
   const esm = await import(pathToFileURL(require.resolve('..')).href);
   for (const name of names) assert.equal(esm[name], library[name], name);
@@ -77,9 +78,11 @@ test('version identifies the package and runtime through a frozen object', () =>
   assert.equal(version.target, require('../lib/native').runtimeTarget().target);
   assert.equal(JSON.parse(JSON.stringify(version)).version, manifest.version);
   assert.throws(() => {
+    // @ts-expect-error Verify the runtime freeze as well as the readonly declaration.
     version.arch = 'other';
   }, TypeError);
   assert.throws(() => {
+    // @ts-expect-error The lazy target property must also remain immutable.
     version.target = 'other';
   }, TypeError);
 });

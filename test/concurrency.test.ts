@@ -3,18 +3,18 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { execFile } = require('node:child_process');
-const { once } = require('node:events');
-const { Worker } = require('node:worker_threads');
-const {
-  promisify,
-  types: { isSharedArrayBuffer },
-} = require('node:util');
-const { setTimeout: delay } = require('node:timers/promises');
-const { SerialPort, RustBinding } = require('..');
-const { pty, call } = require('./helpers');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { once } from 'node:events';
+import { Worker } from 'node:worker_threads';
+import { promisify, types } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
+import { SerialPort } from '..';
+import type { NativeHandle } from '../ts/lib/native';
+const { RustBinding } = require('../lib/binding') as typeof import('../ts/lib/binding');
+import { pty, call } from './helpers';
+const { isSharedArrayBuffer } = types;
 
 test(
   'I/O workers start lazily, remain bounded and retire after close',
@@ -87,7 +87,7 @@ test('eight concurrent ports make independent progress while one writer stalls',
 test('a full control backlog does not block incoming read credits', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
-  let settled;
+  let settled: Promise<PromiseSettledResult<unknown>[]> | undefined;
   t.after(async () => {
     if (port.isOpen) await port.close();
     await settled;
@@ -96,13 +96,13 @@ test('a full control backlog does not block incoming read credits', { timeout: 5
   for (let round = 0; round < 2; round++) {
     // The peer does not read this output, so the first write holds the command queue.
     const payload = Buffer.alloc(64 * 1024, 0x33 + round);
-    const requests = [port.write(payload)];
+    const requests: Promise<unknown>[] = [port.write(payload)];
     for (let i = 1; i < 64; i++) requests.push(port.getBaudRate());
     settled = Promise.allSettled(requests);
     assert.equal(port._pending.size, 64);
     // Bypass the JS limit to verify native admission and reservation rollback too.
     for (let i = 0; i < 3; i++) {
-      assert.throws(() => port._native.request(0xffffffff, 'getBaudRate', 0), /Too many pending serial operations/);
+      assert.throws(() => port._native!.request(0xffffffff, 'getBaudRate', 0), /Too many pending serial operations/);
     }
 
     const received = new Promise(resolve => {
@@ -119,8 +119,8 @@ test('a full control backlog does not block incoming read credits', { timeout: 5
 test('ready receive bursts preserve progress and order for small writes', { timeout: 10000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
-  const bounded = (promise, milliseconds, operation) =>
-    new Promise((resolve, reject) => {
+  const bounded = <T>(promise: Promise<T>, milliseconds: number, operation: string) =>
+    new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`${operation} timed out`)), milliseconds);
       promise.then(
         value => {
@@ -137,23 +137,23 @@ test('ready receive bursts preserve progress and order for small writes', { time
     if (port.isOpen) await bounded(port.close(), 2000, 'Cleanup close');
   });
 
-  let resolvePrimed;
-  const primed = new Promise(resolve => {
+  let resolvePrimed!: () => void;
+  const primed = new Promise<void>(resolve => {
     resolvePrimed = resolve;
   });
-  let resolveReceived;
-  const received = new Promise(resolve => {
+  let resolveReceived!: () => void;
+  const received = new Promise<void>(resolve => {
     resolveReceived = resolve;
   });
   const input = Buffer.alloc(999);
   for (let i = 0; i < input.length; i++) input[i] = i & 0xff;
 
-  const chunks = [];
+  const chunks: Buffer[] = [];
   const writes = [];
   let writeChain = Promise.resolve();
   const inlineAttempts = [];
-  const nativeWrite = port._native.write;
-  port._native.write = function (id, data, allowInline) {
+  const nativeWrite = port._native!.write;
+  port._native!.write = function (id, data, allowInline) {
     const completed = nativeWrite.call(this, id, data, allowInline);
     if (allowInline) inlineAttempts.push(completed);
     return completed;
@@ -261,8 +261,8 @@ test('uncongested vectored writes snapshot then complete inline', { timeout: 500
   const expected = Buffer.concat(parts);
   let inline;
   let completed;
-  const nativeWritev = port._native.writev;
-  port._native.writev = function (id, buffers, length, allowInline) {
+  const nativeWritev = port._native!.writev;
+  port._native!.writev = function (id, buffers, length, allowInline) {
     inline = allowInline;
     completed = nativeWritev.call(this, id, buffers, length, allowInline);
     return completed;
@@ -282,9 +282,9 @@ test('a rejected vectored submission releases write state for the next operation
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
   const failure = new Error('submission rejected');
-  const original = port._native.writev;
+  const original = port._native!.writev;
   let attempts = 0;
-  t.mock.method(port._native, 'writev', function (...args) {
+  t.mock.method(port._native!, 'writev', function (this: NativeHandle, ...args: Parameters<NativeHandle['writev']>) {
     if (++attempts === 1) throw failure;
     assert.equal(args[3], true, 'failed submission must not retain an ordering reservation');
     return original.apply(this, args);
@@ -304,10 +304,10 @@ test('partial inline vectored writes queue only the snapshotted suffix', { timeo
   const first = Buffer.alloc(32 * 1024, 0x31);
   const second = Buffer.alloc(32 * 1024, 0x72);
   const expected = Buffer.concat([first, second]);
-  const nativeWritev = port._native.writev;
+  const nativeWritev = port._native!.writev;
   let allowInline;
   let completed;
-  port._native.writev = function (id, buffers, length, inline) {
+  port._native!.writev = function (id, buffers, length, inline) {
     allowInline = inline;
     completed = nativeWritev.call(this, id, buffers, length, inline);
     return completed;
@@ -345,7 +345,7 @@ test('vectored write rejects when an array getter closes the port reentrantly', 
   t.after(() => port.isOpen && port.close());
 
   let closePromise;
-  const buffers = [];
+  const buffers: Buffer[] = [];
   Object.defineProperty(buffers, 0, {
     get() {
       closePromise = port.close();
@@ -354,8 +354,8 @@ test('vectored write rejects when an array getter closes the port reentrantly', 
   });
   buffers.length = 1;
 
-  const nativeWritev = port._native.writev;
-  assert.throws(() => nativeWritev.call(port._native, 1, buffers, 1, true), /Port is closed/);
+  const nativeWritev = port._native!.writev;
+  assert.throws(() => nativeWritev.call(port._native!, 1, buffers, 1, true), /Port is closed/);
   assert.ok(closePromise, 'array getter should have started port closure');
   await closePromise;
 });
@@ -391,7 +391,7 @@ test('small writes complete asynchronously and stay behind queued controls', { t
   const byte = Buffer.from([0x5a, 0x5a]);
   for (let i = 0; i < 100; i++) {
     let returned = false;
-    const order = [];
+    const order: string[] = [];
     const updated = port.update({ baudRate: i % 2 ? 115200 : 57600 }).then(() => order.push('update'));
     const writing = i % 2 ? port.writev([byte.subarray(0, 1), byte.subarray(1)]) : port.write(byte);
     const written = writing.then(() => {
@@ -412,15 +412,15 @@ test('shared memory is snapshotted before native writes borrow it', { timeout: 5
   t.after(() => {
     if (port.isOpen) return port.close();
   });
-  const nativeWrite = port._native.write;
-  const nativeWritev = port._native.writev;
-  const check = buffer =>
+  const nativeWrite = port._native!.write;
+  const nativeWritev = port._native!.writev;
+  const check = (buffer: Buffer) =>
     assert.equal(isSharedArrayBuffer(buffer.buffer), false, 'Shared memory must not be borrowed by Rust');
-  port._native.write = function (id, buffer, inline) {
+  port._native!.write = function (id, buffer, inline) {
     check(buffer);
     return nativeWrite.call(this, id, buffer, inline);
   };
-  port._native.writev = function (id, buffers) {
+  port._native!.writev = function (id, buffers) {
     buffers.forEach(check);
     return nativeWritev.call(this, id, buffers);
   };
@@ -430,8 +430,8 @@ test('shared memory is snapshotted before native writes borrow it', { timeout: 5
   shared.fill(0xa5);
   await port.writev([shared.subarray(0, 128), shared.subarray(128)]);
   assert.equal(await terminal.command('read 256'), 'a5'.repeat(256));
-  const getStore = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'buffer').get;
-  port._native.write = function (id, buffer, inline) {
+  const getStore = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'buffer')!.get!;
+  port._native!.write = function (id, buffer, inline) {
     assert.equal(isSharedArrayBuffer(getStore.call(buffer)), false);
     return nativeWrite.call(this, id, buffer, inline);
   };
@@ -457,7 +457,7 @@ test('stream read-ahead is bounded while paused and resumes without losing bytes
   await delay(100);
   assert(port.readableLength > 0 && port.readableLength <= 8192, `Buffered ${port.readableLength} bytes`);
   const received = new Promise(resolve => {
-    const chunks = [];
+    const chunks: Buffer[] = [];
     let length = 0;
     port.on('data', data => {
       chunks.push(data);
@@ -497,6 +497,7 @@ test('terminated Node worker releases its pending read and port lock', { timeout
       await delay(10);
     }
   }
+  assert(binding);
   await binding.close();
 });
 
@@ -562,6 +563,7 @@ for (const mode of ['binding', 'stream']) {
     );
     t.after(() => child.child.kill());
     const exchange = (async () => {
+      assert(child.child.stdout);
       const [ready] = await once(child.child.stdout, 'data');
       assert.equal(ready.toString(), 'ready');
       for (let i = 1; i <= 8; i++) {

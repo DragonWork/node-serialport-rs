@@ -3,19 +3,19 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } = require('node:fs');
-const { tmpdir } = require('node:os');
-const { join } = require('node:path');
+import test, { type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 const { withBuildLock, cleanRelease } = require('../scripts/build-state');
 
-function fixture(t) {
+function fixture(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), 'serialport-build-'));
   t.after(() => rmSync(root, { recursive: true }));
-  function file(path, data = 'fixture') {
+  function file(path: string, data = 'fixture') {
     const parts = path.split('/');
-    const name = parts.pop();
+    const name = parts.pop()!;
     mkdirSync(join(root, ...parts), { recursive: true });
     writeFileSync(join(root, ...parts, name), data);
   }

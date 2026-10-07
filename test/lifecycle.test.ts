@@ -3,54 +3,26 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { once, getEventListeners } = require('node:events');
-const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
-const { setImmediate: nextTurn } = require('node:timers/promises');
-const { SerialPortStream, DisconnectedError, RustBinding } = require('..');
-const { call } = require('./helpers');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { once, getEventListeners } from 'node:events';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { setImmediate as nextTurn } from 'node:timers/promises';
+import { SerialPortStream, DisconnectedError, RustBinding, type BindingOpenOptions } from '..';
+import { call, device, deferred, binding as testBinding, portSequence, type TestPort } from './helpers';
 
-function device(overrides = {}) {
-  return {
-    isOpen: true,
-    async close() {
-      this.isOpen = false;
-      this.onClose?.(null);
-    },
-    read() {
-      return new Promise(() => {});
-    },
-    async write() {},
-    ...overrides,
-  };
-}
-
-function stream(...devices) {
+function stream(...devices: TestPort[]) {
   return new SerialPortStream({
     path: 'test-device',
     baudRate: 115200,
     autoOpen: false,
-    binding: {
-      async open() {
-        return devices.shift();
-      },
-    },
+    binding: portSequence(...devices),
   });
-}
-
-function deferred() {
-  let resolve, reject;
-  const promise = new Promise((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  return { promise, resolve, reject };
 }
 
 test('binding open reports validation failures through its Promise', async () => {
-  let opened;
+  let opened!: ReturnType<typeof RustBinding.open>;
   assert.doesNotThrow(() => {
     opened = RustBinding.open({ path: '', baudRate: 115200 });
   });
@@ -104,8 +76,11 @@ test('a failed vectored write closes its connection once', async t => {
   const port = stream(binding);
   t.after(() => port.destroy());
   port.on('error', () => {});
-  const closes = [];
-  port.on('close', error => closes.push(error));
+  const closes: Array<Error & { disconnected?: boolean }> = [];
+  port.on('close', (error: (Error & { disconnected?: boolean }) | null) => {
+    assert(error);
+    closes.push(error);
+  });
   await call(port, 'open');
   port.cork();
   const first = assert.rejects(call(port, 'write', Buffer.from([1])), failure);
@@ -128,6 +103,7 @@ test('late close notifications cannot close a replacement connection', async t =
   const lateClose = old.onClose;
   await call(port, 'close');
   await call(port, 'open');
+  assert(lateClose);
   lateClose(new Error('old connection failed'));
   assert.equal(port.port, replacement);
   assert.equal(port.isOpen, true);
@@ -197,7 +173,7 @@ test('update retains the requested baud rate when the caller mutates its options
 });
 
 test('a failed close while canceling open settles callbacks and allows a retry', async t => {
-  const opening = deferred();
+  const opening = deferred<TestPort>();
   const failure = new Error('driver refused close');
   let attempts = 0;
   let reads = 0;
@@ -215,20 +191,16 @@ test('a failed close while canceling open settles callbacks and allows a retry',
     path: 'test-device',
     baudRate: 115200,
     autoOpen: false,
-    binding: {
-      open() {
-        return opening.promise;
-      },
-    },
+    binding: testBinding(() => opening.promise),
   });
   t.after(() => port.destroy());
-  const errors = [];
+  const errors: NodeJS.ErrnoException[] = [];
   port.on('error', error => errors.push(error));
-  let openError;
+  let openError: (Error & { canceled?: boolean }) | null | undefined;
   let closeError;
   let closes = 0;
   let opens = 0;
-  const received = [];
+  const received: Buffer[] = [];
   port.on('data', data => received.push(data));
   port.on('open', () => opens++);
   port.on('close', () => closes++);
@@ -241,6 +213,7 @@ test('a failed close while canceling open settles callbacks and allows a retry',
   opening.resolve(binding);
   await nextTurn();
   assert.equal(closeError, failure);
+  assert(openError);
   assert.equal(openError.canceled, true);
   assert.equal(port.opening, false);
   assert.equal(port.closing, false);
@@ -249,6 +222,7 @@ test('a failed close while canceling open settles callbacks and allows a retry',
   assert.equal(closes, 0);
   assert.deepEqual(errors, []);
   assert.equal(reads, 1);
+  assert(binding.onData);
   binding.onData(Buffer.from('still connected'));
   assert.deepEqual(received, [Buffer.from('still connected')]);
   await call(port, 'close');
@@ -259,7 +233,7 @@ test('a failed close while canceling open settles callbacks and allows a retry',
 test('a failed close resumes writes and reads submitted while closing', async t => {
   const closing = deferred();
   const failure = new Error('driver refused close');
-  const writes = [];
+  const writes: Buffer[] = [];
   let reads = 0;
   const binding = device({
     close() {
@@ -301,7 +275,7 @@ test('synchronous control failures reach callbacks asynchronously and leave the 
     ['flush', []],
     ['drain', []],
     ['close', []],
-  ]) {
+  ] as const) {
     await t.test(method, async t => {
       const failure = new Error(`${method} failed`);
       const binding = device({
@@ -318,11 +292,15 @@ test('synchronous control failures reach callbacks asynchronously and leave the 
       let returned = false;
       const failed = new Promise(resolve => {
         assert.doesNotThrow(() =>
-          port[method](...args, function (error) {
-            assert.equal(returned, true);
-            assert.equal(this, port);
-            resolve(error);
-          }),
+          (port[method] as (...values: unknown[]) => unknown).call(
+            port,
+            ...args,
+            function (this: typeof port, error: Error | null) {
+              assert.equal(returned, true);
+              assert.equal(this, port);
+              resolve(error);
+            },
+          ),
         );
       });
       returned = true;
@@ -349,7 +327,7 @@ test('synchronous scalar and vectored write failures settle writes and preserve 
       await call(port, 'open');
       const closed = new Promise(resolve => port.once('close', resolve));
       if (method === 'writev') port.cork();
-      const failures = [];
+      const failures: Promise<Error | null | undefined>[] = [];
       assert.doesNotThrow(() => {
         failures.push(new Promise(resolve => port.write('first', resolve)));
         if (method === 'writev') {
@@ -395,7 +373,7 @@ test('falsy open rejections are reported as errors with their original cause', a
       path: 'test-device',
       baudRate: 9600,
       autoOpen: false,
-      binding: { open: () => Promise.reject(cause) },
+      binding: testBinding(() => Promise.reject(cause)),
     });
     await assert.rejects(call(port, 'open'), error => error instanceof Error && error.cause === cause);
     assert.equal(port.opening, false);
@@ -414,7 +392,7 @@ test('invalid binding read counts cannot expose uninitialized buffer contents', 
     );
     await call(port, 'open');
     const closed = once(port, 'close');
-    const received = [];
+    const received: Buffer[] = [];
     port.on('data', data => received.push(data));
     const [reason] = await closed;
     assert(reason.cause instanceof RangeError);
@@ -450,18 +428,16 @@ test('an already aborted signal prevents opening and reports one AbortError', as
       path: 'test-device',
       baudRate: 9600,
       signal: AbortSignal.abort(cause),
-      binding: {
-        async open() {
-          opened++;
-          return device();
-        },
-      },
+      binding: testBinding(async () => {
+        opened++;
+        return device();
+      }),
     },
     error => {
       callbackError = error;
     },
   );
-  const errors = [];
+  const errors: NodeJS.ErrnoException[] = [];
   port.on('error', error => errors.push(error));
   await nextTurn();
   assert.equal(opened, 0);
@@ -475,14 +451,14 @@ test('an already aborted signal prevents opening and reports one AbortError', as
 
 test('abort during an uncancelable open closes the late connection and settles queued writes', async () => {
   const controller = new AbortController();
-  const opening = deferred();
+  const opening = deferred<TestPort>();
   const binding = device();
   const port = new SerialPortStream({
     path: 'test-device',
     baudRate: 9600,
     autoOpen: false,
     signal: controller.signal,
-    binding: { open: () => opening.promise },
+    binding: testBinding(() => opening.promise),
   });
   const error = once(port, 'error');
   const closed = new Promise(resolve => port.once('close', resolve));
@@ -504,18 +480,16 @@ test('abort remains effective across close and reopen without reaching binding o
   if (typeof require('node:events').addAbortListener === 'function') {
     controller.signal.addEventListener('abort', event => event.stopImmediatePropagation());
   }
-  const requests = [];
+  const requests: BindingOpenOptions[] = [];
   const port = new SerialPortStream({
     path: 'test-device',
     baudRate: 9600,
     autoOpen: false,
     signal: controller.signal,
-    binding: {
-      async open(options) {
-        requests.push(options);
-        return device();
-      },
-    },
+    binding: testBinding(async options => {
+      requests.push(options);
+      return device();
+    }),
   });
   await call(port, 'open');
   await call(port, 'close');
@@ -537,11 +511,7 @@ test('destroy removes the abort listener from an unopened stream', async () => {
     baudRate: 9600,
     autoOpen: false,
     signal: controller.signal,
-    binding: {
-      async open() {
-        return device();
-      },
-    },
+    binding: testBinding(async () => device()),
   });
   assert.equal(getEventListeners(controller.signal, 'abort').length, 1);
   port.destroy();
@@ -562,6 +532,7 @@ test('invalid stream flags, signals and bindings fail before opening', () => {
     },
   };
   for (const invalid of [{ autoOpen: 'false' }, { endOnClose: 1 }, { signal: null }, { signal: {} }, { binding: {} }]) {
+    // @ts-expect-error Deliberately malformed constructor input.
     assert.throws(() => new SerialPortStream({ ...options, ...invalid }), TypeError);
   }
 });

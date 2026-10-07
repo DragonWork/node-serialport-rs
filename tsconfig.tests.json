@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "moduleDetection": "force",
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "inlineSources": true,
+    "lib": [
+      "ES2024"
+    ]
+  },
+  "include": [
+    "test/**/*.ts"
+  ],
+  "exclude": [
+    "test/types.ts"
+  ]
+}

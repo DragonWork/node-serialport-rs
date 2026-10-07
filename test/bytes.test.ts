@@ -3,9 +3,9 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { ByteQueue } = require('../lib/parsers/bytes');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+const { ByteQueue } = require('../lib/parsers/bytes') as typeof import('../ts/lib/parsers/bytes');
 
 test('byte queue preserves partial chunks through peeks, discards and compaction', () => {
   const input = Buffer.from(Array.from({ length: 4096 }, (_, i) => i & 255));

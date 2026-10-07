@@ -3,11 +3,11 @@
 
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { once } = require('node:events');
-const { pty, call } = require('./helpers');
-const { RustBinding } = require('..');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { pty, call } from './helpers';
+import { RustBinding } from '..';
 
 for (const operation of ['read', 'write']) {
   test(
@@ -17,7 +17,7 @@ for (const operation of ['read', 'write']) {
       timeout: 5000,
     },
     async t => {
-      const { SerialPortStream } = require(process.env.SERIALPORT_REFERENCE_STREAM);
+      const { SerialPortStream } = require(process.env.SERIALPORT_REFERENCE_STREAM!);
       const terminal = await pty(t);
       const port = new SerialPortStream({
         path: terminal.path,
@@ -30,7 +30,7 @@ for (const operation of ['read', 'write']) {
       let closes = 0;
       port.on('close', () => closes++);
       await call(port, 'open');
-      const closed = new Promise(resolve => port.once('close', resolve));
+      const closed = new Promise<Error & { disconnected: boolean }>(resolve => port.once('close', resolve));
       if (operation === 'read') {
         const data = once(port, 'data');
         await terminal.command('write 01');
@@ -67,7 +67,7 @@ test(
     timeout: 5000,
   },
   async t => {
-    const { SerialPort } = require(process.env.SERIALPORT_CONSUMER);
+    const { SerialPort } = require(process.env.SERIALPORT_CONSUMER!);
     const implementation = require(process.env.SERIALPORT_IMPLEMENTATION || '..');
     assert.equal(SerialPort.binding, implementation.RustBinding, 'Consumer must resolve the selected binding');
     assert(

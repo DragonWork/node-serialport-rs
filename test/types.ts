@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  version,
+  type VersionInfo,
   SerialPort,
   SerialPortMock,
   SerialPortStream,
@@ -31,6 +33,11 @@ import {
   type SlipEncoderOptions,
   type SlipDecoderOptions,
 } from '..';
+
+const identity: VersionInfo = version;
+const target: string | undefined = identity.target;
+// @ts-expect-error Runtime identification cannot be changed.
+version.arch = 'other';
 
 const serial = new SerialPort({ path: '/test', baudRate: 115200, autoOpen: false });
 serial.write([0, 255]);

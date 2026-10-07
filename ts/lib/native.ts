@@ -58,6 +58,7 @@ interface TargetSelection {
   endian?: string;
 }
 const targets = require('./targets.json') as (TargetSelection & { target: string })[];
+let detectedTarget: Readonly<TargetSelection & { target?: string }> | undefined;
 
 function selectTarget({ platform, arch, libc, arm = 7, endian = endianness() }: TargetSelection): string | undefined {
   return targets
@@ -72,9 +73,8 @@ function selectTarget({ platform, arch, libc, arm = 7, endian = endianness() }: 
     .sort((a, b) => (b.arm || 0) - (a.arm || 0))[0]?.target;
 }
 
-function loadNative(): NativeAddon {
-  const local = join(__dirname, '../native/serialport-rs.node');
-  if (existsSync(local)) return require(local);
+function runtimeTarget() {
+  if (detectedTarget) return detectedTarget;
   const { platform, arch } = process;
   const libc =
     platform === 'linux'
@@ -83,7 +83,21 @@ function loadNative(): NativeAddon {
         : 'musl'
       : undefined;
   const arm = Number((process.config.variables as Record<string, unknown>).arm_version || 7);
-  const target = selectTarget({ platform, arch, libc, arm });
+  const endian = endianness();
+  return (detectedTarget = Object.freeze({
+    platform,
+    arch,
+    libc,
+    arm,
+    endian,
+    target: selectTarget({ platform, arch, libc, arm, endian }),
+  }));
+}
+
+function loadNative(): NativeAddon {
+  const local = join(__dirname, '../native/serialport-rs.node');
+  if (existsSync(local)) return require(local);
+  const { platform, arch, target } = runtimeTarget();
   const binary = target && join(__dirname, '..', 'native', target, 'serialport-rs.node');
   if (!binary || !existsSync(binary)) {
     throw new Error(
@@ -93,4 +107,4 @@ function loadNative(): NativeAddon {
   return require(binary);
 }
 
-export { loadNative, selectTarget };
+export { loadNative, selectTarget, runtimeTarget };

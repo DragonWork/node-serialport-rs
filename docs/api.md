@@ -3,6 +3,20 @@
 
 # API
 
+## Runtime identification
+
+```js
+import { version } from 'serialport-rs';
+
+console.log(version.version); // Package version
+console.log(version.arch);    // Node architecture, such as 'x64' or 'arm64'
+console.log(version.target);  // Compatible prebuilt Rust target
+```
+
+`version` is a frozen object with `name`, `version`, `node`, `napi`, `platform`, `arch`, `endian`, `libc`, and `target` properties. `napi` is the addon's required Node-API level. `libc` is `'gnu'` or `'musl'` on Linux and `undefined` elsewhere. `target` is `undefined` for unsupported prebuilt platforms; it describes the compatible prebuilt target even when a local addon takes precedence.
+
+The metadata does not load the native addon. Target and libc detection run only when those properties are read, and the result is shared with the native loader. `JSON.stringify(version)` includes the detected values. CommonJS callers can use `require('serialport-rs').version`.
+
 ## Serial streams
 
 ES modules:

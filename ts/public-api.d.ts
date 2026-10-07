@@ -5,6 +5,22 @@
 
 import { Duplex, Transform, type TransformOptions } from 'node:stream';
 
+export interface VersionInfo {
+  readonly name: string;
+  readonly version: string;
+  readonly node: string;
+  /** Node-API level required by the addon. */
+  readonly napi: 8;
+  readonly platform: NodeJS.Platform;
+  readonly arch: string;
+  readonly endian: 'LE' | 'BE';
+  /** Linux libc family; undefined on other platforms. Computed on first access. */
+  readonly libc: string | undefined;
+  /** Compatible prebuilt target, even when using a local build; undefined if unsupported. */
+  readonly target: string | undefined;
+}
+export const version: Readonly<VersionInfo>;
+
 export interface BindingOpenOptions {
   path: string;
   baudRate: number;

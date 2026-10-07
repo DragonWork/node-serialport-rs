@@ -4,8 +4,8 @@
 'use strict';
 
 import { Transform, type TransformCallback } from 'node:stream';
-import type { SlipEncoderOptions } from '../../public-api';
-import { ByteQueue, integer } from './bytes';
+import type { SlipEncoderOptions, SlipDecoderOptions } from '../../public-api';
+import { ByteQueue, integer, frameTooLarge } from './bytes';
 
 type SlipSettings = SlipEncoderOptions & Required<Pick<SlipEncoderOptions, 'ESC' | 'END' | 'ESC_END' | 'ESC_ESC'>>;
 
@@ -64,10 +64,12 @@ class SlipDecoder extends Transform {
   #options: SlipSettings;
   #started = false;
   #escaped = false;
+  #maxFrameLength?: number;
 
-  constructor(options: SlipEncoderOptions = {}) {
+  constructor({ maxFrameLength, ...options }: SlipDecoderOptions = {}) {
     super(options);
     this.#options = settings(options);
+    this.#maxFrameLength = maxFrameLength === undefined ? undefined : integer(maxFrameLength, 'maxFrameLength', 0);
     const { START, END, ESC, ESC_START, ESC_END, ESC_ESC } = this.#options;
     this.#codes[ESC_END] = END;
     this.#codes[ESC_ESC] = ESC;
@@ -81,11 +83,11 @@ class SlipDecoder extends Transform {
     if (chunk.length >= 256 && START === undefined && !this.#escaped && chunk.indexOf(ESC) === -1) {
       let offset = 0;
       for (let end = chunk.indexOf(END); end !== -1; end = chunk.indexOf(END, offset)) {
-        this.#bytes.append(chunk.subarray(offset, end));
+        if (!this.#append(chunk.subarray(offset, end))) return callback(this.#overflow());
         this.push(this.#bytes.take());
         offset = end + 1;
       }
-      this.#bytes.append(offset ? chunk.subarray(offset) : chunk);
+      if (!this.#append(offset ? chunk.subarray(offset) : chunk)) return callback(this.#overflow());
       callback();
       return;
     }
@@ -93,9 +95,10 @@ class SlipDecoder extends Transform {
     let size = 0;
     let frameStart = 0;
     const emit = () => {
-      this.#bytes.append(decoded.subarray(frameStart, size));
+      if (!this.#append(decoded.subarray(frameStart, size))) return false;
       this.push(this.#bytes.take());
       frameStart = size;
+      return true;
     };
     for (let i = 0; i < chunk.length; i++) {
       const byte = chunk[i];
@@ -103,22 +106,40 @@ class SlipDecoder extends Transform {
       if (this.#escaped) {
         this.#escaped = false;
         const code = this.#codes[byte];
-        if (code === -1) emit();
+        if (code === -1 && !emit()) return callback(this.#overflow());
         if (this.#started) decoded[size++] = code === -1 ? byte : code;
       } else if (byte === START) this.#started = true;
       else if (byte === ESC) this.#escaped = true;
       else if (byte === END) {
-        emit();
+        if (!emit()) return callback(this.#overflow());
         this.#started = false;
       } else if (this.#started) decoded[size++] = byte;
     }
-    this.#bytes.append(decoded.subarray(frameStart, size));
+    if (!this.#append(decoded.subarray(frameStart, size))) return callback(this.#overflow());
     callback();
   }
 
   _flush(callback: TransformCallback) {
     this.push(this.#bytes.take());
     callback();
+  }
+
+  #append(buffer: Buffer) {
+    if (this.#maxFrameLength !== undefined && this.#bytes.length + buffer.length > this.#maxFrameLength) return false;
+    this.#bytes.append(buffer);
+    return true;
+  }
+
+  #overflow() {
+    this.#bytes.clear();
+    return frameTooLarge();
+  }
+
+  _destroy(error: Error | null, callback: (error?: Error | null) => void) {
+    this.#bytes.clear();
+    this.#started = false;
+    this.#escaped = false;
+    callback(error);
   }
 }
 

@@ -42,7 +42,11 @@ serial.pipe(new ReadlineParser({ maxFrameLength: 4096 }));
 serial.port?.writev([Buffer.from([1])]);
 const regexOptions: RegexParserOptions = { regex: Buffer.from('[\\r\\n]+'), encoding: 'utf8' };
 const slipEncoderOptions: SlipEncoderOptions = { highWaterMark: 1024, bluetoothQuirk: true };
-const slipDecoderOptions: SlipDecoderOptions = { readableHighWaterMark: 1024, writableHighWaterMark: 2048 };
+const slipDecoderOptions: SlipDecoderOptions = {
+  readableHighWaterMark: 1024,
+  writableHighWaterMark: 2048,
+  maxFrameLength: 4096,
+};
 serial.pipe(new RegexParser(regexOptions));
 serial.pipe(new SlipEncoder(slipEncoderOptions));
 serial.pipe(new SlipDecoder(slipDecoderOptions));
@@ -53,6 +57,8 @@ const signal: AbortSignal | undefined = abortable.settings.signal;
 new DisconnectedError('Disconnected', { cause: bindingError });
 // @ts-expect-error Cancellation requires an AbortSignal.
 new SerialPort({ path: '/test', baudRate: 9600, signal: true });
+// @ts-expect-error Frame limits apply to decoding, not encoding.
+new SlipEncoder({ maxFrameLength: 4096 });
 
 const mockOptions: SerialPortMockOpenOptions = { path: '/mock/test', baudRate: 9600, autoOpen: false };
 const mock = new SerialPortMock(mockOptions);

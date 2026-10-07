@@ -5,7 +5,7 @@
 
 import { Transform, type TransformCallback } from 'node:stream';
 import type { DelimiterOptions } from '../../public-api';
-import { ByteQueue, DelimiterMatcher, integer } from './bytes';
+import { ByteQueue, DelimiterMatcher, integer, frameTooLarge } from './bytes';
 
 class DelimiterParser extends Transform {
   #bytes = new ByteQueue();
@@ -58,7 +58,7 @@ class DelimiterParser extends Transform {
 
   #overflow() {
     this.#bytes.clear();
-    return Object.assign(new RangeError('Frame exceeds maxFrameLength'), { code: 'ERR_SERIALPORT_FRAME_TOO_LARGE' });
+    return frameTooLarge();
   }
 
   _destroy(error: Error | null, callback: (error?: Error | null) => void) {

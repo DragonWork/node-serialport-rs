@@ -117,4 +117,8 @@ function integer(value: unknown, name: string, min = 1, max = Number.MAX_SAFE_IN
   return value;
 }
 
-export { ByteQueue, DelimiterMatcher, integer };
+function frameTooLarge() {
+  return Object.assign(new RangeError('Frame exceeds maxFrameLength'), { code: 'ERR_SERIALPORT_FRAME_TOO_LARGE' });
+}
+
+export { ByteQueue, DelimiterMatcher, integer, frameTooLarge };

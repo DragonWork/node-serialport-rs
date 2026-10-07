@@ -216,6 +216,65 @@ test('SLIP retains the documented invalid-escape and trailing-frame behavior', a
   assert.deepEqual(await parse(new SlipEncoder({ bluetoothQuirk: true }), [Buffer.alloc(0)]), []);
 });
 
+test('SLIP frame limits count decoded payload bytes across escape and chunk boundaries', async () => {
+  const payload = Buffer.from([0xc0, 0xdb, 7]);
+  const encoded = Buffer.concat(await parse(new SlipEncoder(), [payload, payload]));
+  for (let size = 1; size <= encoded.length; size++) {
+    assert.deepEqual(await parse(new SlipDecoder({ maxFrameLength: 3 }), fragments(encoded, size)), [payload, payload]);
+    await assert.rejects(parse(new SlipDecoder({ maxFrameLength: 2 }), fragments(encoded, size)), {
+      code: 'ERR_SERIALPORT_FRAME_TOO_LARGE',
+    });
+  }
+  assert.deepEqual(await parse(new SlipDecoder({ maxFrameLength: 0 }), [Buffer.from([0xc0, 0xc0])]), []);
+  await assert.rejects(parse(new SlipDecoder({ maxFrameLength: 0 }), [Buffer.from([1])]), {
+    code: 'ERR_SERIALPORT_FRAME_TOO_LARGE',
+  });
+});
+
+test('SLIP frame limits apply to both large slices and the byte decoder', async () => {
+  const payload = Buffer.alloc(256, 1);
+  const input = Buffer.concat([payload, Buffer.from([0xc0]), payload, Buffer.from([0xc0])]);
+  for (const size of [1, 7, 255, 256, input.length]) {
+    assert.deepEqual(await parse(new SlipDecoder({ maxFrameLength: 256 }), fragments(input, size)), [payload, payload]);
+    for (const terminated of [false, true]) {
+      const oversized = Buffer.concat([payload, Buffer.from(terminated ? [1, 0xc0] : [1])]);
+      const parser = new SlipDecoder({ maxFrameLength: 256 });
+      await assert.rejects(parse(parser, fragments(oversized, size)), { code: 'ERR_SERIALPORT_FRAME_TOO_LARGE' });
+      assert.equal(parser.destroyed, true);
+    }
+  }
+  const parser = new SlipDecoder({ maxFrameLength: 256 });
+  const failed = once(parser, 'error');
+  parser.write(payload);
+  parser.write(Buffer.from([1]));
+  const [error] = await failed;
+  assert(error instanceof RangeError);
+  assert.equal(error.code, 'ERR_SERIALPORT_FRAME_TOO_LARGE');
+});
+
+test('SLIP limits preserve custom start markers, invalid escapes and incomplete tails', async () => {
+  const settings = { START: 0, END: 2, ESC: 1, ESC_START: 3, ESC_END: 4, ESC_ESC: 5, maxFrameLength: 1 };
+  assert.deepEqual(await parse(new SlipDecoder(settings), [Buffer.from([9, 9, 0, 1]), Buffer.from([3, 2])]), [
+    Buffer.from([0]),
+  ]);
+  assert.deepEqual(await parse(new SlipDecoder({ maxFrameLength: 1 }), [Buffer.from([7, 0xdb, 9, 0xc0, 10])]), [
+    Buffer.from([7]),
+    Buffer.from([9]),
+    Buffer.from([10]),
+  ]);
+  await assert.rejects(parse(new SlipDecoder(settings), [Buffer.from([0, 7, 8])]), {
+    code: 'ERR_SERIALPORT_FRAME_TOO_LARGE',
+  });
+});
+
+test('SLIP limits reject invalid settings and remain optional', async () => {
+  for (const maxFrameLength of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '10']) {
+    assert.throws(() => new SlipDecoder({ maxFrameLength }), TypeError);
+  }
+  const payload = Buffer.alloc(128 * 1024, 1);
+  assert.deepEqual(await parse(new SlipDecoder(), [payload]), [payload]);
+});
+
 test('CCTalk frames use the payload length and discard incomplete trailing frames', async () => {
   const frames = [Buffer.from([1, 0, 2, 3, 4]), Buffer.from([2, 3, 4, 5, 6, 7, 8, 9])];
   const input = Buffer.concat([...frames, Buffer.from([1, 20, 3])]);

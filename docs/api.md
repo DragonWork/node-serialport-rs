@@ -145,6 +145,17 @@ The limit is a nonnegative integer counting payload bytes before decoding, exclu
 
 Omitting the limit preserves SerialPort 13 framing behavior, including unlimited incomplete frames. `InterByteTimeoutParser` supports `maxBufferSize`; `PacketLengthParser` supports `maxLen` with its SerialPort-compatible behavior.
 
+`SlipDecoder` also accepts `maxFrameLength`. Its limit counts decoded payload bytes, excluding start/end markers and escape overhead. The limit applies to completed frames and incomplete input, including across chunk boundaries:
+
+```js
+import { SlipDecoder } from 'serialport-rs';
+
+const packets = port.pipe(new SlipDecoder({ maxFrameLength: 4096 }));
+packets.on('error', error => console.error('Invalid SLIP frame:', error));
+```
+
+Overflow uses the same `RangeError` and `ERR_SERIALPORT_FRAME_TOO_LARGE` code and releases buffered payload. A limit of zero permits only empty frames. Omitting the option retains unlimited frames, including the existing invalid-escape and trailing-frame behavior. It is a decoder option; `SlipEncoder` has no frame limit.
+
 ## Native receive batching
 
 The Rust stream automatically groups already-ready follow-up reads into fewer

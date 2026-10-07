@@ -265,8 +265,10 @@ export interface SlipDecoderOptions extends TransformOptions {
   ESC_START?: number;
   ESC_END?: number;
   ESC_ESC?: number;
+  /** Maximum decoded payload bytes per frame. Unlimited when omitted. */
+  maxFrameLength?: number;
 }
-export interface SlipEncoderOptions extends SlipDecoderOptions {
+export interface SlipEncoderOptions extends Omit<SlipDecoderOptions, 'maxFrameLength'> {
   bluetoothQuirk?: boolean;
 }
 export class SlipEncoder extends Transform {

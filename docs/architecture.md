@@ -30,7 +30,7 @@ Vectored writes reuse complete JavaScript buffer views. Only segments split at t
 
 Native completion events borrow fixed Rust string labels instead of allocating a `String` for each event. JavaScript still receives the same ordinary string fields; the event object is only marshalled from Rust to JavaScript.
 
-SLIP decoding reuses larger input chunks that need no escape processing and no explicit start marker. Small fragments keep the byte loop to avoid the cost of repeated native searches. Delimiter and readline parsers can bound incomplete payloads with the optional `maxFrameLength` setting; the default remains unlimited for compatibility.
+SLIP decoding reuses larger input chunks that need no escape processing and no explicit start marker. Small fragments keep the byte loop to avoid the cost of repeated native searches. Delimiter, readline and SLIP decoders can bound incomplete payloads with the optional `maxFrameLength` setting; the default remains unlimited for compatibility. SLIP counts decoded bytes, while delimiter and readline parsers count bytes before text decoding. Overflow and destruction release the buffered payload.
 
 ## Async context
 

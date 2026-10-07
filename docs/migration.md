@@ -16,6 +16,8 @@ Keep your port options, event handlers, and read/write code. Parsers come from t
 import { SerialPort, ReadlineParser } from 'serialport-rs';
 ```
 
+The optional stream `signal` adds cancellation without changing callback signatures. Aborting closes and destroys the stream; ordinary `close()` still permits reopening. Disconnect errors retain their original `cause`. See [cancellation and errors](api.md#cancellation-and-errors) for details.
+
 Streams, parsers, mocks, and binding types can all be imported from the package root:
 
 | Previous package | Imports from `serialport-rs` |

@@ -44,3 +44,5 @@ Stream event listeners run in the context that emits the event. Use Node's [`Asy
 - A failed write can leave a Node writable stream in an errored state. Create a new stream instance when recovering from such a failure.
 - Physical output drain waits for the driver to finish transmission. A blocked drain can also delay close; avoid waiting for drain when intentionally abandoning blocked output.
 - If a custom binding refuses to close and remains open, the close callback receives the failure and buffered I/O resumes. A close failure while canceling an open also leaves the connection available for cleanup: the open callback reports cancellation, the close callback reports the driver failure, and close can be retried.
+- Synchronous custom-binding failures use the same paths as rejected promises. Closing clears the binding's stream hooks and the completed open promise so a retained stream does not keep an old connection alive.
+- A stream's optional abort listener lasts until destruction, including across ordinary close/reopen cycles. Destruction removes the listener and cancels queued writes before closing the connection.

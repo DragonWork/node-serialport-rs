@@ -9,6 +9,7 @@ import {
   MockPortBinding,
   CanceledError,
   BindingsError,
+  DisconnectedError,
   RustBinding,
   ReadlineParser,
   RegexParser,
@@ -46,6 +47,12 @@ serial.pipe(new RegexParser(regexOptions));
 serial.pipe(new SlipEncoder(slipEncoderOptions));
 serial.pipe(new SlipDecoder(slipDecoderOptions));
 const bindingError: BindingsErrorInterface = new BindingsError('Read canceled', { canceled: true });
+const controller = new AbortController();
+const abortable = new SerialPortMock({ path: '/mock/abort', baudRate: 9600, signal: controller.signal });
+const signal: AbortSignal | undefined = abortable.settings.signal;
+new DisconnectedError('Disconnected', { cause: bindingError });
+// @ts-expect-error Cancellation requires an AbortSignal.
+new SerialPort({ path: '/test', baudRate: 9600, signal: true });
 
 const mockOptions: SerialPortMockOpenOptions = { path: '/mock/test', baudRate: 9600, autoOpen: false };
 const mock = new SerialPortMock(mockOptions);

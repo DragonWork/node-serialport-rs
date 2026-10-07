@@ -36,6 +36,31 @@ Opening is automatic unless `autoOpen: false` is passed. Use `open(callback)` an
 
 The stream's `drain` event is different from the serial `drain(callback)` method. The event concerns JavaScript write buffering; the method waits for queued writes and then asks the OS to drain device output. A successful write callback alone does not mean the bytes have physically left the UART.
 
+### Cancellation and errors
+
+Pass an `AbortSignal` to cancel a stream, including an in-progress open:
+
+```js
+const controller = new AbortController();
+const port = new SerialPort({
+  path: '/dev/ttyUSB0',
+  baudRate: 115200,
+  signal: controller.signal,
+});
+port.on('error', error => {
+  if (error.code !== 'ABORT_ERR') console.error(error);
+});
+
+// When the application no longer needs the connection:
+controller.abort('shutdown');
+```
+
+Aborting destroys the stream and closes its connection. The stream emits an `AbortError` with code `ABORT_ERR` and the signal's reason in `cause`. An already aborted signal prevents the device from opening. With automatic opening, the constructor callback also receives that error. A custom binding without open cancellation is closed as soon as its pending open resolves.
+
+The signal remains attached across ordinary `close()`/`open()` cycles and is removed on destruction. An aborted stream cannot reopen; create a new stream and signal for a new connection. The signal is a stream option and is not passed to the binding. Physical drain and a custom binding's close behavior can still delay resource release.
+
+Disconnect notifications carry `disconnected: true` and preserve the original error in `cause`. Custom binding methods may reject promises or throw synchronously; both reach the same error callbacks and connection cleanup paths. A rejection that is not an `Error` is wrapped in an `Error` with the original value in `cause`. Failed writes can leave the writable side errored, so use a new stream when recovering from a write failure.
+
 ### Discovery
 
 ```js
@@ -65,6 +90,7 @@ On macOS, USB `locationId` uses the eight-digit lowercase hexadecimal IOKit loca
 | `autoOpen` | `true` | Open during construction |
 | `highWaterMark` | `65536` | Node stream buffering threshold, in bytes |
 | `endOnClose` | `false` | Emit `end` when the port closes |
+| `signal` | Unset | `AbortSignal` that destroys the stream on cancellation |
 
 Available control methods are `update({ baudRate }, callback)`, `set({ dtr, rts, brk }, callback)`, `get(callback)`, `flush(callback)`, and `drain(callback)`. `get()` returns CTS, DSR, and DCD status. `flush()` discards unread input and output that the OS has not transmitted. Device drivers may reject unsupported control operations or serial settings.
 

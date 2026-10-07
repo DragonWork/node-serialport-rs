@@ -71,6 +71,26 @@ test('failed open settles asynchronously', async () => {
   assert.equal(port.isOpen, false);
 });
 
+test('aborting an open stream releases its native connection and exclusive lock', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const controller = new AbortController();
+  const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false, signal: controller.signal });
+  t.after(() => port.destroy());
+  await call(port, 'open');
+  port.resume();
+  const failed = once(port, 'error');
+  const closed = new Promise(resolve => port.once('close', resolve));
+  controller.abort('shutdown');
+  await closed;
+  const [error] = await failed;
+  assert.equal(error.code, 'ABORT_ERR');
+  assert.equal(error.cause, 'shutdown');
+  assert.equal(port.destroyed, true);
+  assert.equal(port.isOpen, false);
+  const replacement = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  await replacement.close();
+});
+
 test('binary duplex transfers and Promise continuations', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });

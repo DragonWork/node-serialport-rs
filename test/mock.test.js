@@ -49,6 +49,16 @@ test('mock options are validated from one snapshot of caller properties', async 
   assert.deepEqual(await port.getBaudRate(), { baudRate: 57600 });
 });
 
+test('a zero highWaterMark still reads bytes through a custom binding', async t => {
+  MockBinding.createPort('/mock/unbuffered');
+  const port = new SerialPortMock({ path: '/mock/unbuffered', baudRate: 9600, highWaterMark: 0, autoOpen: false });
+  t.after(() => port.destroy());
+  await call(port, 'open');
+  const received = once(port, 'data');
+  port.port.emitData('a');
+  assert.deepEqual((await received)[0], Buffer.from('a'));
+});
+
 test('SerialPortMock supports echo and recording without hardware', { timeout: 5000 }, async t => {
   assert.equal(typeof SerialPortMock, 'function');
   assert.equal(MockBinding, SerialPortMock.binding);

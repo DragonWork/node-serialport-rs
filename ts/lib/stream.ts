@@ -6,6 +6,7 @@
 import { Duplex } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import { AsyncResource } from 'node:async_hooks';
+import { addAbortListener } from 'node:events';
 import { RustBinding } from './binding';
 import { validateOptions } from './options';
 import type {
@@ -32,22 +33,45 @@ export type StreamSettings = BindingOpenOptions & {
   autoOpen?: boolean;
   endOnClose?: boolean;
   highWaterMark?: number;
+  signal?: AbortSignal;
 };
 export type PortSettings = Omit<StreamSettings, 'binding'> & { binding?: StreamSettings['binding'] };
 type WriteCallback = (error?: Error | null) => void;
 type OperationCallback = (error: Error | null, result?: PortStatus) => void;
 type SerialError = Error & { canceled?: boolean };
 
+function asError(error: unknown): SerialError {
+  return error instanceof Error ? error : new Error('Serial binding operation failed', { cause: error });
+}
+
+function bindingCall<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return operation();
+  } catch (error) {
+    return Promise.reject(error);
+  }
+}
+
+function watchAbort(signal: AbortSignal, listener: () => void): () => void {
+  if (typeof addAbortListener === 'function') {
+    const subscription = addAbortListener(signal, listener);
+    return () => subscription[Symbol.dispose]();
+  }
+  // addAbortListener was introduced in Node 20.5; retain support for earlier 20.x.
+  signal.addEventListener('abort', listener, { once: true });
+  return () => signal.removeEventListener('abort', listener);
+}
+
 class DisconnectedError extends Error {
   declare disconnected: true;
-  constructor(message: string) {
-    super(message);
+  constructor(message?: string, options?: ErrorOptions) {
+    super(message, options);
     this.disconnected = true;
   }
 }
 
 class SerialPortStream extends Duplex {
-  declare settings: Required<StreamSettings>;
+  declare settings: Required<Omit<StreamSettings, 'signal'>> & Pick<StreamSettings, 'signal'>;
   declare opening: boolean;
   declare closing: boolean;
   declare port?: RuntimePort;
@@ -57,11 +81,24 @@ class SerialPortStream extends Duplex {
   declare _closeCallbacks: ErrorCallback[];
   declare _closeError: Error | null;
   declare _opening?: Promise<RuntimePort> & { cancel?: () => void };
+  declare _removeAbortListener?: () => void;
 
   constructor(options: StreamSettings, callback?: ErrorCallback) {
     const settings = { autoOpen: true, endOnClose: false, highWaterMark: 64 * 1024, ...validateOptions(options) };
+    for (const key of ['autoOpen', 'endOnClose'] as const) {
+      if (typeof settings[key] !== 'boolean') throw new TypeError(`"${key}" must be a boolean`);
+    }
+    const { signal } = settings;
+    if (
+      signal !== undefined &&
+      (!signal ||
+        typeof signal.aborted !== 'boolean' ||
+        typeof signal.addEventListener !== 'function' ||
+        typeof signal.removeEventListener !== 'function')
+    )
+      throw new TypeError('"signal" must be an AbortSignal');
     super({ highWaterMark: settings.highWaterMark, autoDestroy: false, emitClose: false });
-    if (!settings.binding) throw new TypeError('Pass a binding in options.binding');
+    if (typeof settings.binding?.open !== 'function') throw new TypeError('Pass a binding in options.binding');
     this.settings = settings;
     this.opening = false;
     this.closing = false;
@@ -71,7 +108,21 @@ class SerialPortStream extends Duplex {
     this._waitingWrite = undefined;
     this._closeCallbacks = [];
     this._closeError = null;
-    if (settings.autoOpen) this.open(callback);
+    if (signal !== undefined) {
+      const abort = () =>
+        this.destroy(
+          Object.assign(new Error('The operation was aborted', { cause: signal.reason }), {
+            name: 'AbortError',
+            code: 'ABORT_ERR',
+          }),
+        );
+      if (signal.aborted) abort();
+      else this._removeAbortListener = watchAbort(signal, abort);
+    }
+    if (settings.autoOpen) {
+      if (!this.destroyed) this.open(callback);
+      else if (callback) process.nextTick(() => callback.call(this, this.errored));
+    }
   }
 
   get path() {
@@ -84,9 +135,10 @@ class SerialPortStream extends Duplex {
     return Boolean(this.port?.isOpen) && !this.closing;
   }
 
-  _report(error: Error, callback?: ErrorCallback) {
-    if (callback) callback.call(this, error);
-    else this.emit('error', error);
+  _report(error: unknown, callback?: ErrorCallback) {
+    const failure = asError(error);
+    if (callback) callback.call(this, failure);
+    else this.emit('error', failure);
   }
   _asyncError(message: string, callback?: ErrorCallback) {
     process.nextTick(() => this._report(new Error(message), callback));
@@ -97,20 +149,17 @@ class SerialPortStream extends Duplex {
     if (this.isOpen) return this._asyncError('Port is already open', callback);
     if (this.opening || this.closing) return this._asyncError('Port is opening or closing', callback);
     this.opening = true;
-    const { binding, autoOpen, endOnClose, highWaterMark, ...options } = this.settings;
-    try {
-      this._opening = binding.open(options);
-    } catch (error) {
-      this._opening = Promise.reject(error);
-    }
+    const { binding, autoOpen, endOnClose, highWaterMark, signal, ...options } = this.settings;
+    this._opening = bindingCall(() => binding.open(options));
     this._opening
       .then(
         async port => {
+          this._opening = undefined;
           this.opening = false;
           this.port = port;
           port.onClose = error => {
             if (this.port !== port) return;
-            const reason = error && new DisconnectedError(error.message);
+            const reason = error && new DisconnectedError(asError(error).message, { cause: error });
             if (port.isOpen) this.close(undefined, reason);
             else this._finishClose(reason);
           };
@@ -127,7 +176,7 @@ class SerialPortStream extends Duplex {
             try {
               await port.close();
             } catch (error) {
-              closeError = error as Error;
+              closeError = asError(error);
             }
             if (closeError) this._closeFailed(port, closeError);
             else if (this.port === port) this._finishClose(null);
@@ -139,7 +188,9 @@ class SerialPortStream extends Duplex {
           this._resumeIO();
         },
         error => {
+          this._opening = undefined;
           this.opening = false;
+          error = asError(error);
           this._failWaitingWrite(error);
           if (this.closing) {
             this._finishClose(null);
@@ -178,7 +229,7 @@ class SerialPortStream extends Duplex {
       return;
     }
     const port = this.port!;
-    port.close().then(
+    bindingCall(() => port.close()).then(
       () => {
         // Third-party bindings do not have an onClose hook.
         if (this.port === port) this._finishClose(disconnectError);
@@ -187,13 +238,15 @@ class SerialPortStream extends Duplex {
     );
   }
 
-  _closeFailed(port: RuntimePort, error: Error) {
+  _closeFailed(port: RuntimePort, error: unknown) {
     if (this.port !== port) return;
+    const failure = asError(error);
+    if (!port.isOpen) return this._finishClose(failure);
     this.closing = false;
     this._closeError = null;
     const callbacks = this._closeCallbacks.splice(0);
-    if (callbacks.length) for (const cb of callbacks) cb.call(this, error);
-    else this.emit('error', error);
+    if (callbacks.length) for (const cb of callbacks) cb.call(this, failure);
+    else this.emit('error', failure);
     this._resumeIO();
   }
 
@@ -201,6 +254,10 @@ class SerialPortStream extends Duplex {
     if (!this.port && !this.closing) return;
     error = this._closeError || error;
     this._closeError = null;
+    if (this.port) {
+      this.port.onClose = undefined;
+      this.port.onData = undefined;
+    }
     this.port = undefined;
     this.closing = false;
     this._readPort = undefined;
@@ -221,16 +278,17 @@ class SerialPortStream extends Duplex {
       return;
     }
     const port = this.port!;
-    port.write(data).then(
+    bindingCall(() => port.write(data)).then(
       () => callback(null),
       error => this._writeError(port, error, callback),
     );
   }
 
-  _writeError(port: RuntimePort, error: SerialError, callback: WriteCallback) {
-    if (!error.canceled && this.port === port && this.isOpen)
-      this.close(undefined, new DisconnectedError(error.message));
-    callback(error);
+  _writeError(port: RuntimePort, error: unknown, callback: WriteCallback) {
+    const failure = asError(error);
+    if (!failure.canceled && this.port === port && this.isOpen)
+      this.close(undefined, new DisconnectedError(failure.message, { cause: failure }));
+    callback(failure);
   }
 
   _writev(chunks: { chunk: Buffer; encoding: BufferEncoding }[], callback: WriteCallback) {
@@ -239,31 +297,35 @@ class SerialPortStream extends Duplex {
       return;
     }
     const port = this.port!;
-    port.writev!(chunks.map(({ chunk }) => chunk)).then(
+    bindingCall(() => port.writev!(chunks.map(({ chunk }) => chunk))).then(
       () => callback(null),
       error => this._writeError(port, error, callback),
     );
   }
 
   _read(length: number) {
+    length = Math.max(1, length);
     this._readRequested = true;
     if (!this.isOpen || this._readPort === this.port) return;
-    if (this.port!.startReading) {
+    const port = this.port!;
+    if (port.startReading) {
       try {
-        this.port!.startReading(length);
+        port.startReading(length);
       } catch (error) {
-        this.close(undefined, new DisconnectedError((error as Error).message));
+        this._readError(port, error, length);
       }
       return;
     }
-    const port = this.port!;
     this._readPort = port;
-    const request = port.readChunk
-      ? port.readChunk(length)
-      : (() => {
-          const buffer = Buffer.allocUnsafe(length);
-          return port.read(buffer, 0, length).then(({ bytesRead }) => buffer.subarray(0, bytesRead));
-        })();
+    const request = bindingCall(() => {
+      if (port.readChunk) return port.readChunk(length);
+      const buffer = Buffer.allocUnsafe(length);
+      return port.read(buffer, 0, length).then(({ bytesRead }) => {
+        if (!Number.isInteger(bytesRead) || bytesRead < 0 || bytesRead > buffer.length)
+          throw new RangeError('Invalid binding read length');
+        return buffer.subarray(0, bytesRead);
+      });
+    });
     request.then(
       data => {
         if (this._readPort === port) this._readPort = undefined;
@@ -272,13 +334,16 @@ class SerialPortStream extends Duplex {
           this.push(data.length ? data : null);
         } else if (this.isOpen) this._read(length);
       },
-      error => {
-        if (this._readPort === port) this._readPort = undefined;
-        if (!error.canceled && this.port === port && this.isOpen)
-          this.close(undefined, new DisconnectedError(error.message));
-        else if (this.isOpen && this.port !== port) this._read(length);
-      },
+      error => this._readError(port, error, length),
     );
+  }
+
+  _readError(port: RuntimePort, error: unknown, length: number) {
+    const failure = asError(error);
+    if (this._readPort === port) this._readPort = undefined;
+    if (!failure.canceled && this.port === port && this.isOpen)
+      this.close(undefined, new DisconnectedError(failure.message, { cause: failure }));
+    else if (this.isOpen && this.port !== port) this._read(length);
   }
 
   _operation(
@@ -289,7 +354,7 @@ class SerialPortStream extends Duplex {
   ) {
     if (!this.isOpen) return this._asyncError('Port is not open', callback);
     const port = this.port!;
-    (port[name] as (...args: unknown[]) => Promise<PortStatus | void>)(...args).then(
+    bindingCall(() => (port[name] as (...args: unknown[]) => Promise<PortStatus | void>)(...args)).then(
       result => {
         if (this.port === port) completed();
         if (callback) callback.call(this, null, result as PortStatus | undefined);
@@ -325,6 +390,8 @@ class SerialPortStream extends Duplex {
   }
 
   _destroy(error: Error | null, callback: WriteCallback) {
+    this._removeAbortListener?.();
+    this._removeAbortListener = undefined;
     this._failWaitingWrite(error || new Error('Port is destroyed'));
     if (this.closing)
       this._closeCallbacks.push(

@@ -97,6 +97,8 @@ export interface StreamOptions<B extends BindingInterface = AutoDetectTypes> {
   autoOpen?: boolean;
   highWaterMark?: number;
   endOnClose?: boolean;
+  /** Destroy the stream and close its connection when aborted, including during open. */
+  signal?: AbortSignal;
 }
 export type OpenOptions<B extends BindingInterface = AutoDetectTypes> = StreamOptions<B> & OpenOptionsFromBinding<B>;
 export type SerialPortOpenOptions<B extends BindingInterface = AutoDetectTypes> = Omit<OpenOptions<B>, 'binding'> & {
@@ -105,13 +107,16 @@ export type SerialPortOpenOptions<B extends BindingInterface = AutoDetectTypes> 
 
 export class DisconnectedError extends Error {
   disconnected: true;
+  constructor(message?: string, options?: ErrorOptions);
 }
 export class SerialPortStream<B extends BindingInterface = AutoDetectTypes> extends Duplex {
   constructor(options: OpenOptions<B>, callback?: ErrorCallback);
   readonly path: string;
   readonly baudRate: number;
   readonly isOpen: boolean;
-  readonly settings: Required<StreamOptions<B>> & OpenOptionsFromBinding<B>;
+  readonly settings: Required<Omit<StreamOptions<B>, 'signal'>> &
+    Pick<StreamOptions<B>, 'signal'> &
+    OpenOptionsFromBinding<B>;
   port?: PortInterfaceFromBinding<B>;
   opening: boolean;
   closing: boolean;

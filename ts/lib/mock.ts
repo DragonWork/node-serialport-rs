@@ -4,7 +4,7 @@
 'use strict';
 
 import { SerialPortStream, type PortSettings } from './stream';
-import { validateOptions } from './binding';
+import { validateOptions, validateBaudRate, validateSetOptions } from './options';
 import { ByteQueue, integer } from './parsers/bytes';
 import type {
   BindingOpenOptions,
@@ -224,7 +224,7 @@ class MockPortBinding {
   }
 
   async update(options: UpdateOptions) {
-    const { baudRate } = validateOptions({ ...this.openOptions, baudRate: options?.baudRate });
+    const baudRate = validateBaudRate(options?.baudRate);
     this.#check();
     await nextTick();
     this.#check();
@@ -232,11 +232,7 @@ class MockPortBinding {
   }
 
   async set(options: SetOptions) {
-    if (!options || typeof options !== 'object' || Array.isArray(options))
-      throw new TypeError('options must be an object');
-    for (const name of ['dtr', 'rts', 'brk', 'cts', 'dsr'] as const) {
-      if (options[name] !== undefined && typeof options[name] !== 'boolean') throw new TypeError(`Invalid ${name}`);
-    }
+    validateSetOptions(options);
     this.#check();
     await nextTick();
     this.#check();
@@ -283,7 +279,6 @@ const MockBinding = {
     return [...devices.values()].map(device => ({ ...device.info }));
   },
   async open(options: BindingOpenOptions) {
-    if (Array.isArray(options)) throw new TypeError('options must be an object');
     const settings = validateOptions(options);
     const device = devices.get(settings.path);
     await nextTick();

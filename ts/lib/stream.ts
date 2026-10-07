@@ -6,7 +6,8 @@
 import { Duplex } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import { AsyncResource } from 'node:async_hooks';
-import { RustBinding, validateOptions } from './binding';
+import { RustBinding } from './binding';
+import { validateOptions } from './options';
 import type {
   BindingInterface,
   BindingOpenOptions,

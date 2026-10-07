@@ -55,6 +55,7 @@ test('binding open reports validation failures through its Promise', async () =>
     opened = RustBinding.open({ path: '', baudRate: 115200 });
   });
   await assert.rejects(opened, TypeError);
+  await assert.rejects(RustBinding.open(Object.assign([], { path: '/invalid', baudRate: 9600 })), TypeError);
 });
 
 test('JavaScript parsers can load without a native binary', async () => {

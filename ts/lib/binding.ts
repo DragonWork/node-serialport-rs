@@ -4,6 +4,7 @@
 'use strict';
 
 import { types } from 'node:util';
+import { validateOptions, validateBaudRate, validateSetOptions } from './options';
 import type { BindingOpenOptions, SetOptions, UpdateOptions } from '../public-api';
 import type { NativeAddon, NativeHandle, NativeEvent, ControlOperation } from './native';
 const { isSharedArrayBuffer } = types;
@@ -16,17 +17,6 @@ const localStores = new WeakSet();
 const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
 const getBackingStore = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'buffer')!.get!;
 const getLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'length')!.get!;
-const defaults = {
-  dataBits: 8,
-  stopBits: 1,
-  parity: 'none',
-  lock: true,
-  rtscts: false,
-  xon: false,
-  xoff: false,
-  xany: false,
-  hupcl: true,
-};
 
 class BindingsError extends Error {
   canceled: boolean;
@@ -49,22 +39,6 @@ function localBuffer(buffer: Buffer): Buffer {
     localStores.add(store);
   }
   return buffer;
-}
-
-function validateOptions<O extends Partial<BindingOpenOptions>>(options: O): O & Required<BindingOpenOptions> {
-  if (!options || typeof options !== 'object') throw new TypeError('Options must be an object');
-  if (typeof options.path !== 'string' || !options.path || options.path.includes('\0'))
-    throw new TypeError('"path" must be a nonempty device path');
-  if (!Number.isInteger(options.baudRate) || options.baudRate! <= 0 || options.baudRate! > 0xffffffff)
-    throw new TypeError('"baudRate" must be a positive 32-bit integer');
-  const settings = { ...defaults, ...options };
-  if (![5, 6, 7, 8].includes(settings.dataBits)) throw new TypeError('Invalid dataBits');
-  if (![1, 1.5, 2].includes(settings.stopBits)) throw new TypeError('Invalid stopBits');
-  if (!['none', 'odd', 'even', 'mark', 'space'].includes(settings.parity)) throw new TypeError('Invalid parity');
-  for (const key of ['lock', 'rtscts', 'xon', 'xoff', 'xany', 'hupcl'] as const) {
-    if (typeof settings[key] !== 'boolean') throw new TypeError(`"${key}" must be a boolean`);
-  }
-  return settings as O & Required<BindingOpenOptions>;
 }
 
 interface Pending {
@@ -386,15 +360,12 @@ class BindingPort {
   }
 
   async update(options: UpdateOptions) {
-    validateOptions({ ...this.openOptions, baudRate: options?.baudRate });
-    await this._request('update', options.baudRate);
+    const baudRate = validateBaudRate(options?.baudRate);
+    await this._request('update', baudRate);
   }
 
   async set(options: SetOptions = {}) {
-    const flags = { dtr: true, rts: true, brk: false, ...options };
-    for (const key of ['dtr', 'rts', 'brk', 'cts', 'dsr'] as const) {
-      if (flags[key] !== undefined && typeof flags[key] !== 'boolean') throw new TypeError(`Invalid ${key}`);
-    }
+    const flags = { dtr: true, rts: true, brk: false, ...validateSetOptions(options) };
     await this._request('set', Number(flags.dtr) | (Number(flags.rts) << 1) | (Number(flags.brk) << 2));
   }
 
@@ -439,4 +410,4 @@ const RustBinding = {
 };
 
 export const autoDetect = () => RustBinding;
-export { RustBinding, BindingPort, BindingsError, validateOptions };
+export { RustBinding, BindingPort, BindingsError };

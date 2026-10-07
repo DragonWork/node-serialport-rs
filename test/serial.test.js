@@ -35,6 +35,35 @@ test('validates settings before opening', () => {
   assert.throws(() => new SerialPort({ path: '/invalid', baudRate: 9600, dataBits: 9 }), /dataBits/);
 });
 
+test('native options use the validated snapshot and reject malformed control flags', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  let paths = 0;
+  let rates = 0;
+  const binding = await RustBinding.open({
+    get path() {
+      assert.equal(++paths, 1);
+      return terminal.path;
+    },
+    get baudRate() {
+      assert.equal(++rates, 1);
+      return 115200;
+    },
+  });
+  t.after(() => binding.isOpen && binding.close());
+  let updates = 0;
+  await binding.update({
+    get baudRate() {
+      assert.equal(++updates, 1);
+      return 57600;
+    },
+  });
+  assert.deepEqual(await binding.getBaudRate(), { baudRate: 57600 });
+  for (const flags of [null, [], 'invalid', false, { dtr: 1 }, { rts: 'true' }]) {
+    await assert.rejects(binding.set(flags), TypeError);
+  }
+  assert.equal(binding.isOpen, true);
+});
+
 test('failed open settles asynchronously', async () => {
   const port = new SerialPort({ path: '/no-such-serial-device', baudRate: 115200, autoOpen: false });
   await assert.rejects(call(port, 'open'));

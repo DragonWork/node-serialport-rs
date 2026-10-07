@@ -14,6 +14,41 @@ const { call } = require('./helpers');
 
 test.beforeEach(() => SerialPortMock.binding.reset());
 
+test('mock options are validated from one snapshot of caller properties', async t => {
+  const path = '/mock/options';
+  MockBinding.createPort(path);
+  let paths = 0;
+  let rates = 0;
+  const port = await MockBinding.open({
+    get path() {
+      assert.equal(++paths, 1);
+      return path;
+    },
+    get baudRate() {
+      assert.equal(++rates, 1);
+      return 9600;
+    },
+  });
+  t.after(() => port.close());
+  assert.equal(port.openOptions.path, path);
+  assert.equal(port.openOptions.baudRate, 9600);
+  let flags = 0;
+  await port.set({
+    get dtr() {
+      assert.equal(++flags, 1);
+      return true;
+    },
+  });
+  let updates = 0;
+  await port.update({
+    get baudRate() {
+      assert.equal(++updates, 1);
+      return 57600;
+    },
+  });
+  assert.deepEqual(await port.getBaudRate(), { baudRate: 57600 });
+});
+
 test('SerialPortMock supports echo and recording without hardware', { timeout: 5000 }, async t => {
   assert.equal(typeof SerialPortMock, 'function');
   assert.equal(MockBinding, SerialPortMock.binding);

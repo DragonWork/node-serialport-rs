@@ -99,7 +99,7 @@ test('a stalled pipe bounds read-ahead and resumes every byte in order', { timeo
 
 test('native batching delivers the first ready chunk before its followers', { timeout: 10000 }, async t => {
   const { NativePort } = require('../lib/native').loadNative();
-  const { validateOptions } = require('../lib/binding');
+  const { validateOptions } = require('../lib/options');
   const terminal = await pty(t);
   let opened, closed, primed, received;
   const open = new Promise(resolve => {
@@ -458,7 +458,7 @@ test(
   { timeout: 10000 },
   async t => {
     const { NativePort } = require('../lib/native').loadNative();
-    const { validateOptions } = require('../lib/binding');
+    const { validateOptions } = require('../lib/options');
     const terminal = await pty(t);
     let opened;
     let primed;

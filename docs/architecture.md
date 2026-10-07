@@ -32,6 +32,8 @@ Inline native submissions reuse a settled Promise and skip pending-operation rec
 
 Native completion events borrow fixed Rust string labels instead of allocating a `String` for each event. JavaScript still receives the same ordinary string fields; the event object is only marshalled from Rust to JavaScript.
 
+SLIP encoding checks payloads of at least 256 bytes for escape markers with native Buffer searches. Payloads without markers are copied into one output buffer with the framing bytes. Small or escaped payloads use the byte loop, with the input length and escape table cached for each transform. Both paths return an independent snapshot of the input.
+
 SLIP decoding reuses larger input chunks that need no escape processing and no explicit start marker. Small fragments keep the byte loop to avoid the cost of repeated native searches. Delimiter, readline and SLIP decoders can bound incomplete payloads with the optional `maxFrameLength` setting; the default remains unlimited for compatibility. SLIP counts decoded bytes, while delimiter and readline parsers count bytes before text decoding. Overflow and destruction release the buffered payload.
 
 ## Async context

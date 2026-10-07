@@ -57,6 +57,8 @@ async function compare(name, options, input) {
   ]) {
     await compare('SlipEncoder', options, binary);
     cases++;
+    await compare('SlipEncoder', options, Buffer.alloc(4096, 0x31));
+    cases++;
     const encoded = Buffer.concat(await output(reference.SlipEncoder, options, binary, 128));
     await compare('SlipDecoder', options, encoded);
     cases++;

@@ -37,20 +37,31 @@ class SlipEncoder extends Transform {
   }
 
   _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
-    const { START, END, ESC, bluetoothQuirk } = this.#options;
-    if (bluetoothQuirk && !chunk.length) return callback();
-    let length = chunk.length + 1 + Number(START !== undefined) + Number(Boolean(bluetoothQuirk));
-    for (let i = 0; i < chunk.length; i++) length += Number(this.#codes[chunk[i]] !== -1);
+    const size = chunk.length;
+    const { START, END, ESC, ESC_START, bluetoothQuirk } = this.#options;
+    if (bluetoothQuirk && !size) return callback();
+    const codes = this.#codes;
+    const plain =
+      size >= 256 &&
+      codes[chunk[0]] === -1 &&
+      chunk.indexOf(ESC) === -1 &&
+      chunk.indexOf(END) === -1 &&
+      (START === undefined || ESC_START === undefined || chunk.indexOf(START) === -1);
+    let length = size + 1 + Number(START !== undefined) + Number(Boolean(bluetoothQuirk));
+    if (!plain) for (let i = 0; i < size; i++) length += Number(codes[chunk[i]] !== -1);
     const output = Buffer.allocUnsafe(length);
     let offset = 0;
     if (bluetoothQuirk) output[offset++] = END;
     if (START !== undefined) output[offset++] = START;
-    for (let i = 0; i < chunk.length; i++) {
-      const code = this.#codes[chunk[i]];
-      if (code === -1) output[offset++] = chunk[i];
-      else {
-        output[offset++] = ESC;
-        output[offset++] = code;
+    if (plain) offset += chunk.copy(output, offset);
+    else {
+      for (let i = 0; i < size; i++) {
+        const code = codes[chunk[i]];
+        if (code === -1) output[offset++] = chunk[i];
+        else {
+          output[offset++] = ESC;
+          output[offset++] = code;
+        }
       }
     }
     output[offset] = END;

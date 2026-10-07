@@ -72,6 +72,44 @@ test('SLIP encoder and decoder preserve every byte value', async () => {
   assert.deepEqual(Buffer.concat(decoded), expected);
 });
 
+test('SLIP encoding snapshots unescaped payloads around the bulk-copy boundary', async () => {
+  for (const size of [255, 256, 257, 4096]) {
+    for (const options of [{}, { bluetoothQuirk: true }, { START: 0, ESC_START: 3 }, { START: 0 }, { START: 0x31 }]) {
+      const payload = Buffer.alloc(size, 0x31);
+      const prefix = Buffer.from([
+        ...(options.bluetoothQuirk ? [0xc0] : []),
+        ...(options.START === undefined ? [] : [options.START]),
+      ]);
+      const expected = Buffer.concat([prefix, payload, Buffer.from([0xc0])]);
+      const output = await parse(new SlipEncoder(options), [payload]);
+      payload.fill(0xff);
+      assert.deepEqual(output, [expected]);
+    }
+  }
+});
+
+test('SLIP encoding escapes markers anywhere in a large payload', async () => {
+  const options = { START: 0, END: 2, ESC: 1, ESC_START: 3, ESC_END: 4, ESC_ESC: 5 };
+  for (const [byte, escape] of [
+    [0, 3],
+    [2, 4],
+    [1, 5],
+  ]) {
+    for (const position of [0, 255, 256, 4095]) {
+      const payload = Buffer.alloc(4096, 0x31);
+      payload[position] = byte;
+      const expected = Buffer.concat([
+        Buffer.from([0]),
+        payload.subarray(0, position),
+        Buffer.from([1, escape]),
+        payload.subarray(position + 1),
+        Buffer.from([2]),
+      ]);
+      assert.deepEqual(await parse(new SlipEncoder(options), [payload]), [expected]);
+    }
+  }
+});
+
 test('large unescaped SLIP frames reuse input memory and retain split frames', async () => {
   const input = Buffer.alloc(513, 1);
   input[255] = input[511] = 0xc0;

@@ -29,6 +29,8 @@ const cases = [
   ['SLIP aligned 4 KiB decode', 'SlipDecoder', {}, Buffer.concat(Array(64).fill(slip)), slip.length],
   ['SLIP escaped decode', 'SlipDecoder', {}, Buffer.concat(Array(64).fill(escapedSlip)), 64],
   ['SLIP 4 KiB encode', 'SlipEncoder', {}, Buffer.alloc(4 * 1024 * 1024, 0x31), 4096],
+  ['SLIP 32-byte encode', 'SlipEncoder', {}, Buffer.alloc(4 * 1024 * 1024, 0x31), 32],
+  ['SLIP escaped 4 KiB encode', 'SlipEncoder', {}, Buffer.alloc(4 * 1024 * 1024, 0xdb), 4096],
 ];
 
 async function run([name, Parser, options, input, chunkSize]) {

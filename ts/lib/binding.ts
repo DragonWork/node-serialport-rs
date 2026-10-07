@@ -209,22 +209,29 @@ class BindingPort {
     if (!this.isOpen || this._closing) return Promise.reject(canceled());
     if (this._pending.size >= 64) return Promise.reject(new Error('Too many pending serial operations'));
     const id = this._id();
-    return new Promise<NativeEvent | void>((resolve, reject) => {
-      const ordered = op !== 'read';
-      this._pending.set(id, { resolve, reject, ordered });
-      if (ordered) this._ordered++;
-      try {
-        if (op === 'read') this._native!.read(id, value);
-        else if (op === 'write') {
-          if (this._native!.write(id, localBuffer(data as Buffer), this._ordered === 1)) this._settle(id, null);
-        } else if (op === 'writev') {
-          const buffers = data as Buffer[];
-          for (let i = 0; i < buffers.length; i++) buffers[i] = localBuffer(buffers[i]);
-          if (this._native!.writev(id, buffers, value, this._ordered === 1)) this._settle(id, null);
-        } else this._native!.request(id, op, value);
-      } catch (error) {
-        this._settle(id, error);
+    const ordered = op !== 'read';
+    if (ordered) this._ordered++;
+    try {
+      let completed = false;
+      if (op === 'read') this._native!.read(id, value);
+      else if (op === 'write') completed = this._native!.write(id, localBuffer(data as Buffer), this._ordered === 1);
+      else if (op === 'writev') {
+        const buffers = data as Buffer[];
+        for (let i = 0; i < buffers.length; i++) buffers[i] = localBuffer(buffers[i]);
+        completed = this._native!.writev(id, buffers, value, this._ordered === 1);
+      } else this._native!.request(id, op, value);
+      if (completed) {
+        this._ordered--;
+        return RESOLVED;
       }
+    } catch (error) {
+      if (ordered) this._ordered--;
+      return Promise.reject(error);
+    }
+    // Native completions cannot run until this JS call yields. Only queued
+    // operations need a pending record and a separately allocated Promise.
+    return new Promise<NativeEvent | void>((resolve, reject) => {
+      this._pending.set(id, { resolve, reject, ordered });
     });
   }
 

@@ -277,6 +277,25 @@ test('uncongested vectored writes snapshot then complete inline', { timeout: 500
   await port.close();
 });
 
+test('a rejected vectored submission releases write state for the next operation', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => port.isOpen && port.close());
+  const failure = new Error('submission rejected');
+  const original = port._native.writev;
+  let attempts = 0;
+  t.mock.method(port._native, 'writev', function (...args) {
+    if (++attempts === 1) throw failure;
+    assert.equal(args[3], true, 'failed submission must not retain an ordering reservation');
+    return original.apply(this, args);
+  });
+  await assert.rejects(port.writev([Buffer.from('discard'), Buffer.from('this')]), failure);
+  await port.writev([Buffer.from('next'), Buffer.from(' packet')]);
+  assert.equal(await terminal.command('read 11'), Buffer.from('next packet').toString('hex'));
+  await port.drain();
+  await port.close();
+});
+
 test('partial inline vectored writes queue only the snapshotted suffix', { timeout: 10000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });

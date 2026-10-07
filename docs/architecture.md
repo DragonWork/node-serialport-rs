@@ -28,6 +28,8 @@ Individual stream reads travel inline in the native callback event up to 96 byte
 
 Vectored writes reuse complete JavaScript buffer views. Only segments split at the native transfer boundary need an additional view. Rust snapshots each segment before fetching the next, since array accessors can run JavaScript and mutate earlier inputs. An uncontended batch can complete through the same nonblocking write path as a scalar write; a partial write queues only its remaining snapshot. Earlier ordered operations force the queued path, preserving both byte order and Promise completion order.
 
+Inline native submissions reuse a settled Promise and skip pending-operation records. Caller-visible writes still settle asynchronously. Requests waiting for the worker retain their normal pending records, and rejected submissions release their ordering reservation before another operation can run.
+
 Native completion events borrow fixed Rust string labels instead of allocating a `String` for each event. JavaScript still receives the same ordinary string fields; the event object is only marshalled from Rust to JavaScript.
 
 SLIP decoding reuses larger input chunks that need no escape processing and no explicit start marker. Small fragments keep the byte loop to avoid the cost of repeated native searches. Delimiter, readline and SLIP decoders can bound incomplete payloads with the optional `maxFrameLength` setting; the default remains unlimited for compatibility. SLIP counts decoded bytes, while delimiter and readline parsers count bytes before text decoding. Overflow and destruction release the buffered payload.

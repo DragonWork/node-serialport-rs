@@ -13,6 +13,8 @@ import type {
   BindingInterface,
   BindingOpenOptions,
   BindingPortInterface,
+  BaudRateCallback,
+  BaudRateResult,
   ErrorCallback,
   ModemBitsCallback,
   PortStatus,
@@ -37,7 +39,7 @@ export type StreamSettings = BindingOpenOptions & {
 };
 export type PortSettings = Omit<StreamSettings, 'binding'> & { binding?: StreamSettings['binding'] };
 type WriteCallback = (error?: Error | null) => void;
-type OperationCallback = (error: Error | null, result?: PortStatus) => void;
+type OperationCallback<T> = (error: Error | null, result?: T) => void;
 type SerialError = Error & { canceled?: boolean };
 
 function asError(error: unknown): SerialError {
@@ -268,7 +270,11 @@ class SerialPortStream extends Duplex {
     for (const callback of callbacks) callback.call(this, error);
   }
 
-  write(chunk: string | Uint8Array | number[], encoding?: BufferEncoding | WriteCallback, callback?: WriteCallback) {
+  write(
+    chunk: string | Uint8Array | readonly number[],
+    encoding?: BufferEncoding | WriteCallback,
+    callback?: WriteCallback,
+  ) {
     return super.write(Array.isArray(chunk) ? Buffer.from(chunk) : chunk, encoding as BufferEncoding, callback);
   }
 
@@ -346,18 +352,13 @@ class SerialPortStream extends Duplex {
     else if (this.isOpen && this.port !== port) this._read(length);
   }
 
-  _operation(
-    name: 'update' | 'set' | 'get' | 'flush' | 'drain',
-    args: unknown[],
-    callback?: OperationCallback,
-    completed = () => {},
-  ) {
+  _operation<T>(operation: (port: RuntimePort) => Promise<T>, callback?: OperationCallback<T>, completed = () => {}) {
     if (!this.isOpen) return this._asyncError('Port is not open', callback);
     const port = this.port!;
-    bindingCall(() => (port[name] as (...args: unknown[]) => Promise<PortStatus | void>)(...args)).then(
+    bindingCall(() => operation(port)).then(
       result => {
         if (this.port === port) completed();
-        if (callback) callback.call(this, null, result as PortStatus | undefined);
+        if (callback) callback.call(this, null, result);
       },
       error => this._report(error, callback),
     );
@@ -365,28 +366,73 @@ class SerialPortStream extends Duplex {
 
   update(options: UpdateOptions, callback?: ErrorCallback) {
     const baudRate = options?.baudRate;
-    this._operation('update', [{ baudRate }], callback, () => {
-      this.settings.baudRate = baudRate;
-    });
+    this._operation(
+      port => port.update({ baudRate }),
+      callback,
+      () => {
+        this.settings.baudRate = baudRate;
+      },
+    );
   }
   set(options?: SetOptions, callback?: ErrorCallback) {
-    this._operation('set', [{ brk: false, cts: false, dtr: true, rts: true, ...options }], callback);
+    const flags = { brk: false, cts: false, dtr: true, rts: true, ...options };
+    this._operation(port => port.set(flags), callback);
   }
   get(callback?: ModemBitsCallback) {
-    this._operation('get', [], callback);
+    this._operation(port => port.get(), callback);
+  }
+  getBaudRate(callback: BaudRateCallback) {
+    this._operation(port => port.getBaudRate(), callback);
   }
   flush(callback?: ErrorCallback) {
-    this._operation('flush', [], callback);
+    this._operation(port => port.flush(), callback);
   }
   drain(callback?: ErrorCallback) {
     const drained = (error?: Error | null) => {
       if (error) this._report(error, callback);
-      else this._operation('drain', [], callback);
+      else this._operation(port => port.drain(), callback);
     };
     if (this.writableEnded) {
       // Wait for final writes without submitting a write after end().
       finished(this, { readable: false, cleanup: true }).then(() => drained(), drained);
     } else this.write(Buffer.alloc(0), drained);
+  }
+
+  _promise<T>(invoke: (callback: (error?: Error | null, value?: T) => void) => unknown): Promise<T> {
+    return new Promise((resolve, reject) =>
+      invoke((error, value) => {
+        if (error) reject(error);
+        else resolve(value as T);
+      }),
+    );
+  }
+
+  openAsync(): Promise<void> {
+    return this._promise(callback => this.open(callback));
+  }
+  closeAsync(): Promise<void> {
+    return this._promise(callback => this.close(callback));
+  }
+  writeAsync(data: string | Uint8Array | readonly number[], encoding?: BufferEncoding): Promise<void> {
+    return this._promise(callback => this.write(data, encoding, callback));
+  }
+  updateAsync(options: UpdateOptions): Promise<void> {
+    return this._promise(callback => this.update(options, callback));
+  }
+  setAsync(options?: SetOptions): Promise<void> {
+    return this._promise(callback => this.set(options, callback));
+  }
+  getAsync(): Promise<PortStatus> {
+    return this._promise<PortStatus>(callback => this.get(callback));
+  }
+  getBaudRateAsync(): Promise<BaudRateResult> {
+    return this._promise<BaudRateResult>(callback => this.getBaudRate(callback));
+  }
+  flushAsync(): Promise<void> {
+    return this._promise(callback => this.flush(callback));
+  }
+  drainAsync(): Promise<void> {
+    return this._promise(callback => this.drain(callback));
   }
 
   _destroy(error: Error | null, callback: WriteCallback) {

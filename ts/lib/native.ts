@@ -6,13 +6,15 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { endianness } from 'node:os';
-import type { BindingOpenOptions } from '../public-api';
+import type { BindingOpenOptions, SerialPortErrorCode } from '../public-api';
 
 export interface NativeEvent {
   kind: 'open' | 'close' | 'read' | 'ok' | 'error';
   id: number;
   data?: Buffer;
   message?: string;
+  code?: SerialPortErrorCode;
+  errno?: number;
   cts?: boolean;
   dsr?: boolean;
   dcd?: boolean;

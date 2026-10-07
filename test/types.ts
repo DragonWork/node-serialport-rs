@@ -27,6 +27,8 @@ import {
   type PortInterfaceFromBinding,
   type PortInfoFromBinding,
   type PortInfo,
+  type PortStatus,
+  type BaudRateResult,
   type SerialPortMockOpenOptions,
   type SpacePacket,
   type RegexParserOptions,
@@ -40,6 +42,18 @@ const target: string | undefined = identity.target;
 version.arch = 'other';
 
 const serial = new SerialPort({ path: '/test', baudRate: 115200, autoOpen: false });
+async function asyncClient(port: SerialPort) {
+  await port.openAsync();
+  await port.writeAsync(new Uint8Array([1, 2, 3]));
+  await port.writeAsync([1, 2, 3] as const);
+  const status: PortStatus = await port.getAsync();
+  const rate: BaudRateResult = await port.getBaudRateAsync();
+  await port.drainAsync();
+  await port.closeAsync();
+  // @ts-expect-error Writes require bytes or a string.
+  await port.writeAsync(42);
+  return { status, rate };
+}
 serial.write([0, 255]);
 serial.write('text', 'utf8', error => {
   if (error) throw error;
@@ -47,6 +61,11 @@ serial.write('text', 'utf8', error => {
 serial.pipe(new ReadlineParser());
 serial.pipe(new ReadlineParser({ maxFrameLength: 4096 }));
 serial.port?.writev([Buffer.from([1])]);
+serial.port?.writev(Object.freeze([Buffer.from([1])]));
+if (serial.port) {
+  // @ts-expect-error Binding option snapshots are frozen.
+  serial.port.openOptions.baudRate = 9600;
+}
 const regexOptions: RegexParserOptions = { regex: Buffer.from('[\\r\\n]+'), encoding: 'utf8' };
 const slipEncoderOptions: SlipEncoderOptions = { highWaterMark: 1024, bluetoothQuirk: true };
 const slipDecoderOptions: SlipDecoderOptions = {

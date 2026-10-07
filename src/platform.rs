@@ -37,6 +37,9 @@ pub(crate) fn open(builder: &SerialPortBuilder) -> io::Result<SerialStream> {
 }
 
 pub(crate) fn set_baud_rate(port: &mut SerialStream, baud_rate: u32) -> io::Result<()> {
+    if baud_rate == 0 {
+        return Err(crate::error::invalid("Baud rate must be positive"));
+    }
     #[cfg(target_os = "macos")]
     if port.control().baud_rate()? == 0 {
         use nix::sys::termios::{self, SetArg};

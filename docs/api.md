@@ -50,6 +50,26 @@ Opening is automatic unless `autoOpen: false` is passed. Use `open(callback)` an
 
 The stream's `drain` event is different from the serial `drain(callback)` method. The event concerns JavaScript write buffering; the method waits for queued writes and then asks the OS to drain device output. A successful write callback alone does not mean the bytes have physically left the UART.
 
+### Async client methods
+
+Streams also provide `openAsync()`, `closeAsync()`, `writeAsync(data, encoding?)`, `updateAsync(options)`, `setAsync(options?)`, `getAsync()`, `getBaudRateAsync()`, `flushAsync()`, and `drainAsync()`:
+
+```js
+const port = new SerialPort({ path: '/dev/ttyUSB0', baudRate: 115200, autoOpen: false });
+port.on('error', error => console.error('Serial error:', error));
+
+await port.openAsync();
+try {
+  await port.writeAsync('status\r\n');
+  await port.drainAsync();
+  console.log(await port.getBaudRateAsync()); // { baudRate: ... } queried from the driver
+} finally {
+  if (port.isOpen) await port.closeAsync();
+}
+```
+
+These methods share the callback methods' validation, write queue, cancellation and lifecycle behavior. Set `autoOpen: false` when opening explicitly; a second open still rejects. `getAsync()` returns modem status and `getBaudRateAsync()` returns the driver's current baud rate. Other async methods resolve without a value. Keep an `error` listener for unsolicited stream errors, aborts and writable failures even when using promises. Awaiting `writeAsync()` waits for that queued write, while `drainAsync()` waits for physical output drain.
+
 ### Cancellation and errors
 
 Pass an `AbortSignal` to cancel a stream, including an in-progress open:
@@ -106,7 +126,7 @@ On macOS, USB `locationId` uses the eight-digit lowercase hexadecimal IOKit loca
 | `endOnClose` | `false` | Emit `end` when the port closes |
 | `signal` | Unset | `AbortSignal` that destroys the stream on cancellation |
 
-Available control methods are `update({ baudRate }, callback)`, `set({ dtr, rts, brk }, callback)`, `get(callback)`, `flush(callback)`, and `drain(callback)`. `get()` returns CTS, DSR, and DCD status. `flush()` discards unread input and output that the OS has not transmitted. Device drivers may reject unsupported control operations or serial settings.
+Available control methods are `update({ baudRate }, callback)`, `set({ dtr, rts, brk }, callback)`, `get(callback)`, `getBaudRate(callback)`, `flush(callback)`, and `drain(callback)`. `get()` returns CTS, DSR, and DCD status. `getBaudRate()` queries the driver, while the `baudRate` property reflects the stream's requested setting. `flush()` discards unread input and output that the OS has not transmitted. Device drivers may reject unsupported control operations or serial settings.
 
 See [index.d.ts](../index.d.ts) for the exported types and method signatures.
 
@@ -131,6 +151,8 @@ try {
 Binding operations return promises. `read()` returns at least one byte or rejects; only one read and one write may be pending per connection. Extensions include `readChunk(length)`, which returns a buffer directly, and `writev(buffers)`, which batches buffers.
 
 After an unexpected I/O failure, a raw binding stays logically open until its consumer calls `close()`. This allows existing stream wrappers to perform their disconnect handling. Native resource cleanup does not depend on that acknowledgement. Intentional close cancels pending operations with the exported `BindingsError` class carrying `canceled: true`.
+
+Native open, control and I/O failures use `BindingsError` with the device `path` and a portable `code`: `ERR_SERIALPORT_NOT_FOUND`, `ERR_SERIALPORT_PERMISSION_DENIED`, `ERR_SERIALPORT_INVALID_ARGUMENT`, `ERR_SERIALPORT_BUSY`, `ERR_SERIALPORT_TIMED_OUT`, `ERR_SERIALPORT_UNSUPPORTED`, `ERR_SERIALPORT_DISCONNECTED`, or `ERR_SERIALPORT_IO`. An available OS error number is retained as `errno`; dependencies that only preserve the error category may leave it undefined. Stream disconnect notifications keep this error in `cause`. Validation errors and callback-allocation failures can still use ordinary Node errors.
 
 ## Parsers
 

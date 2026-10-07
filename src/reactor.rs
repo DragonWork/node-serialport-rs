@@ -43,7 +43,7 @@ fn send(callback: &Callback, event: NativeEvent) -> bool {
 struct Completion {
     control: Arc<Control>,
     callback: Callback,
-    result: Option<Result<(), String>>,
+    result: Option<io::Result<()>>,
 }
 
 impl Drop for Completion {
@@ -61,12 +61,13 @@ impl Drop for Completion {
             .take();
         // Closing a descriptor may enter the driver; do it after releasing the mutex.
         drop(port);
-        let mut closed = NativeEvent::new(0, "close");
-        closed.message = match self.result.take() {
-            Some(result) => result.err(),
+        let closed = NativeEvent::new(0, "close");
+        let closed = match self.result.take() {
+            Some(Ok(())) => closed,
+            Some(Err(error)) => closed.with_error(error),
             None => {
                 cold_path();
-                Some("Serial worker stopped unexpectedly".into())
+                closed.with_error(io::Error::other("Serial worker stopped unexpectedly"))
             }
         };
         send(&self.callback, closed);
@@ -97,12 +98,7 @@ pub(crate) async fn run(
             {
                 Ok(())
             } else {
-                run_open(receiver, control, callback)
-                    .await
-                    .map_err(|error| {
-                        cold_path();
-                        error.to_string()
-                    })
+                run_open(receiver, control, callback).await
             }
         }
         Ok(Err(error)) => {
@@ -111,7 +107,7 @@ pub(crate) async fn run(
         }
         Err(error) => {
             cold_path();
-            Err(error.to_string())
+            Err(io::Error::other(error))
         }
     };
     completion.result = Some(result);
@@ -212,7 +208,7 @@ async fn run_open(
                 match command {
                     Some(Command {id, operation: Operation::Read(length)}) => {
                         if read.is_some() || streaming {
-                            if !send(callback, NativeEvent::error(id, "Read already pending")) {
+                            if !send(callback, NativeEvent::error(id, io::Error::new(io::ErrorKind::ResourceBusy, "Read already pending"))) {
                                 return Ok(());
                             }
                         } else {

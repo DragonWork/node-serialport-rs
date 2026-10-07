@@ -2,24 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use serialport::{DataBits, FlowControl, Parity, StopBits};
+use std::io;
 
-use crate::{NativeOptions, platform::SerialStream};
+use crate::{NativeOptions, error::invalid, platform::SerialStream};
 
-pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
+pub(crate) fn open(options: &NativeOptions) -> io::Result<SerialStream> {
     let data_bits = match options.data_bits {
         5 => DataBits::Five,
         6 => DataBits::Six,
         7 => DataBits::Seven,
         8 => DataBits::Eight,
         _ => {
-            return Err("Invalid dataBits".into());
+            return Err(invalid("Invalid dataBits"));
         }
     };
     let stop_bits = match options.stop_bits {
         1.0 | 1.5 => StopBits::One,
         2.0 => StopBits::Two,
         _ => {
-            return Err("Invalid stopBits".into());
+            return Err(invalid("Invalid stopBits"));
         }
     };
     let parity = match options.parity.as_str() {
@@ -27,21 +28,36 @@ pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
         "odd" => Parity::Odd,
         "even" => Parity::Even,
         _ => {
-            return Err("Invalid parity".into());
+            return Err(invalid("Invalid parity"));
         }
     };
     // Reject unsupported settings before opening a device can change its state.
     #[cfg(unix)]
     if options.stop_bits == 1.5 {
-        return Err("1.5 stop bits requires Windows".into());
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "1.5 stop bits requires Windows",
+        ));
     }
     #[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
     if matches!(options.parity.as_str(), "mark" | "space") {
-        return Err("Mark/space parity is not available on this platform".into());
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Mark/space parity is not available on this platform",
+        ));
     }
     #[cfg(windows)]
     if !options.lock {
-        return Err("Windows requires exclusive serial access".into());
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Windows requires exclusive serial access",
+        ));
+    }
+    if options.path.is_empty() || options.path.contains('\0') {
+        return Err(invalid("Invalid device path"));
+    }
+    if options.baud_rate == 0 {
+        return Err(invalid("Baud rate must be positive"));
     }
     let flow = if options.rtscts {
         FlowControl::Hardware
@@ -57,11 +73,10 @@ pub(crate) fn open(options: &NativeOptions) -> Result<SerialStream, String> {
         .flow_control(flow);
     #[cfg(unix)]
     let builder = builder.exclusive(options.lock);
-    let mut port = crate::platform::open(&builder).map_err(|error| error.to_string())?;
-    crate::platform::configure(&port, options).map_err(|error| error.to_string())?;
+    let mut port = crate::platform::open(&builder)?;
+    crate::platform::configure(&port, options)?;
     // Reapply custom speeds after changing the platform termios/DCB flags.
-    crate::platform::set_baud_rate(&mut port, options.baud_rate)
-        .map_err(|error| error.to_string())?;
+    crate::platform::set_baud_rate(&mut port, options.baud_rate)?;
     Ok(port)
 }
 
@@ -83,6 +98,29 @@ mod tests {
             xany: false,
             hupcl: true,
         }
+    }
+
+    #[test]
+    fn invalid_paths_and_zero_baud_are_rejected_without_device_access() {
+        for path in ["", "\0"] {
+            let options = NativeOptions {
+                path: path.into(),
+                ..invalid_path()
+            };
+            assert_eq!(
+                open(&options).err().unwrap().kind(),
+                io::ErrorKind::InvalidInput
+            );
+        }
+        let options = NativeOptions {
+            path: "unused-device".into(),
+            baud_rate: 0,
+            ..invalid_path()
+        };
+        assert_eq!(
+            open(&options).err().unwrap().to_string(),
+            "Baud rate must be positive"
+        );
     }
 
     #[cfg(unix)]
@@ -112,6 +150,13 @@ mod tests {
                 ..invalid_path()
             };
             let mut port = open(&options).unwrap();
+            assert_eq!(
+                crate::platform::set_baud_rate(&mut port, 0)
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::InvalidInput
+            );
+            assert_eq!(crate::platform::baud_rate(&port).unwrap(), 115200);
             let flags = OFlag::from_bits_retain(fcntl(&port, FcntlArg::F_GETFL).unwrap());
             assert!(flags.contains(OFlag::O_NONBLOCK));
             let flags = FdFlag::from_bits_retain(fcntl(&port, FcntlArg::F_GETFD).unwrap());
@@ -150,7 +195,10 @@ mod tests {
             ..invalid_path()
         };
         assert_eq!(
-            open(&options).err().as_deref(),
+            open(&options)
+                .err()
+                .map(|error| error.to_string())
+                .as_deref(),
             Some("1.5 stop bits requires Windows")
         );
     }
@@ -164,7 +212,10 @@ mod tests {
                 ..invalid_path()
             };
             assert_eq!(
-                open(&options).err().as_deref(),
+                open(&options)
+                    .err()
+                    .map(|error| error.to_string())
+                    .as_deref(),
                 Some("Mark/space parity is not available on this platform")
             );
         }
@@ -178,7 +229,10 @@ mod tests {
             ..invalid_path()
         };
         assert_eq!(
-            open(&options).err().as_deref(),
+            open(&options)
+                .err()
+                .map(|error| error.to_string())
+                .as_deref(),
             Some("Windows requires exclusive serial access")
         );
     }

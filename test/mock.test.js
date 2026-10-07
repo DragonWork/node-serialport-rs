@@ -14,6 +14,30 @@ const { call } = require('./helpers');
 
 test.beforeEach(() => SerialPortMock.binding.reset());
 
+test('async client methods retain stream semantics and typed control results', async t => {
+  MockBinding.createPort('/mock/async', { echo: true, record: true });
+  const port = new SerialPortMock({ path: '/mock/async', baudRate: 9600, autoOpen: false });
+  port.on('error', () => {});
+  t.after(() => port.destroy());
+  await port.openAsync();
+  const received = once(port, 'data');
+  await port.writeAsync([0, 255, 42]);
+  assert.deepEqual((await received)[0], Buffer.from([0, 255, 42]));
+  await assert.rejects(port.writeAsync(42), TypeError);
+  await assert.rejects(port.updateAsync({ baudRate: 0 }), TypeError);
+  assert.equal(port.baudRate, 9600);
+  await port.updateAsync({ baudRate: 57600 });
+  assert.deepEqual(await port.getBaudRateAsync(), { baudRate: 57600 });
+  assert.deepEqual(await port.getAsync(), { cts: true, dsr: false, dcd: false });
+  await port.setAsync({ dtr: false });
+  await port.flushAsync();
+  await port.drainAsync();
+  await port.closeAsync();
+  await assert.rejects(port.getBaudRateAsync(), /not open/);
+  await port.openAsync();
+  await port.closeAsync();
+});
+
 test('mock options are validated from one snapshot of caller properties', async t => {
   const path = '/mock/options';
   MockBinding.createPort(path);

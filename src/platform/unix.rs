@@ -76,6 +76,9 @@ impl AsyncRead for SerialStream {
         cx: &mut Context<'_>,
         buffer: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        if buffer.remaining() == 0 {
+            return Poll::Ready(Ok(()));
+        }
         loop {
             let mut ready = ready!(self.io.poll_read_ready(cx))?;
             match ready.try_io(|io| {
@@ -99,6 +102,9 @@ impl AsyncWrite for SerialStream {
         cx: &mut Context<'_>,
         bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
+        if bytes.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
         loop {
             let mut ready = ready!(self.io.poll_write_ready(cx))?;
             match ready.try_io(|io| unistd::write(io, bytes).map_err(io::Error::from)) {
@@ -147,6 +153,21 @@ mod tests {
         let stream =
             crate::platform::open(&serialport::new(path, 115200).exclusive(false)).unwrap();
         (master, stream)
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn empty_transfers_complete_without_waiting_for_readiness() {
+        let (_master, mut port) = pair();
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        let mut buffer = ReadBuf::new(&mut []);
+        assert!(matches!(
+            Pin::new(&mut port).poll_read(&mut cx, &mut buffer),
+            Poll::Ready(Ok(()))
+        ));
+        assert!(matches!(
+            Pin::new(&mut port).poll_write(&mut cx, &[]),
+            Poll::Ready(Ok(0))
+        ));
     }
 
     async fn read(port: &mut SerialStream, bytes: &mut [u8]) -> io::Result<usize> {

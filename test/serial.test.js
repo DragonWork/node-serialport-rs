@@ -71,6 +71,21 @@ test('failed open settles asynchronously', async () => {
   assert.equal(port.isOpen, false);
 });
 
+test('the async client writes, queries live baud rate and closes a native connection', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
+  port.on('error', () => {});
+  t.after(() => port.destroy());
+  await port.openAsync();
+  await port.writeAsync('hello');
+  assert.equal(await terminal.command('read 5'), Buffer.from('hello').toString('hex'));
+  await port.updateAsync({ baudRate: 57600 });
+  assert.deepEqual(await port.getBaudRateAsync(), { baudRate: 57600 });
+  await port.drainAsync();
+  await port.closeAsync();
+  assert.equal(port.isOpen, false);
+});
+
 test('aborting an open stream releases its native connection and exclusive lock', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const controller = new AbortController();

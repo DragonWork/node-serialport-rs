@@ -52,12 +52,33 @@ export interface PortStatus {
   dsr: boolean;
   dcd: boolean;
 }
+export interface BaudRateResult {
+  baudRate: number;
+}
 export interface BindingsErrorInterface extends Error {
   canceled?: boolean;
 }
+export type SerialPortErrorCode =
+  | 'ERR_SERIALPORT_NOT_FOUND'
+  | 'ERR_SERIALPORT_PERMISSION_DENIED'
+  | 'ERR_SERIALPORT_INVALID_ARGUMENT'
+  | 'ERR_SERIALPORT_BUSY'
+  | 'ERR_SERIALPORT_TIMED_OUT'
+  | 'ERR_SERIALPORT_UNSUPPORTED'
+  | 'ERR_SERIALPORT_DISCONNECTED'
+  | 'ERR_SERIALPORT_IO';
+export interface BindingsErrorOptions extends ErrorOptions {
+  canceled?: boolean;
+  code?: SerialPortErrorCode;
+  errno?: number;
+  path?: string;
+}
 export class BindingsError extends Error implements BindingsErrorInterface {
   canceled: boolean;
-  constructor(message: string, options?: { canceled?: boolean });
+  code?: SerialPortErrorCode;
+  errno?: number;
+  path?: string;
+  constructor(message: string, options?: BindingsErrorOptions);
 }
 export interface SetOptions {
   dtr?: boolean;
@@ -71,9 +92,10 @@ export interface UpdateOptions {
 }
 export type ErrorCallback = (error: Error | null) => void;
 export type ModemBitsCallback = (error: Error | null, status?: PortStatus) => void;
+export type BaudRateCallback = (error: Error | null, result?: BaudRateResult) => void;
 
 export interface BindingPortInterface {
-  readonly openOptions: Required<BindingOpenOptions>;
+  readonly openOptions: Readonly<Required<BindingOpenOptions>>;
   isOpen: boolean;
   close(): Promise<void>;
   read(buffer: Buffer, offset: number, length: number): Promise<{ buffer: Buffer; bytesRead: number }>;
@@ -81,7 +103,7 @@ export interface BindingPortInterface {
   update(options: UpdateOptions): Promise<void>;
   set(options: SetOptions): Promise<void>;
   get(): Promise<PortStatus>;
-  getBaudRate(): Promise<{ baudRate: number }>;
+  getBaudRate(): Promise<BaudRateResult>;
   flush(): Promise<void>;
   drain(): Promise<void>;
 }
@@ -97,7 +119,7 @@ export interface BindingInterface<
 
 export interface RustPort extends BindingPortInterface {
   readChunk(length: number): Promise<Buffer>;
-  writev(buffers: Buffer[]): Promise<void>;
+  writev(buffers: readonly Buffer[]): Promise<void>;
   onClose?: (error: Error | null) => void;
 }
 
@@ -141,8 +163,18 @@ export class SerialPortStream<B extends BindingInterface = AutoDetectTypes> exte
   update(options: UpdateOptions, callback?: ErrorCallback): void;
   set(options: SetOptions, callback?: ErrorCallback): void;
   get(callback: ModemBitsCallback): void;
+  getBaudRate(callback: BaudRateCallback): void;
   flush(callback?: ErrorCallback): void;
   drain(callback?: ErrorCallback): void;
+  openAsync(): Promise<void>;
+  closeAsync(): Promise<void>;
+  writeAsync(data: string | Uint8Array | readonly number[], encoding?: BufferEncoding): Promise<void>;
+  updateAsync(options: UpdateOptions): Promise<void>;
+  setAsync(options?: SetOptions): Promise<void>;
+  getAsync(): Promise<PortStatus>;
+  getBaudRateAsync(): Promise<BaudRateResult>;
+  flushAsync(): Promise<void>;
+  drainAsync(): Promise<void>;
 }
 export class SerialPort<B extends BindingInterface = AutoDetectTypes> extends SerialPortStream<B> {
   constructor(options: SerialPortOpenOptions<B>, callback?: ErrorCallback);
@@ -178,7 +210,7 @@ export class CanceledError extends Error implements BindingsErrorInterface {
 export class MockPortBinding implements BindingPortInterface {
   /** Open instances with MockBinding.open() or a serial stream. */
   private constructor();
-  readonly openOptions: Required<BindingOpenOptions>;
+  readonly openOptions: Readonly<Required<BindingOpenOptions>>;
   isOpen: boolean;
   lastWrite: Buffer | null;
   recording: Buffer;
@@ -192,7 +224,7 @@ export class MockPortBinding implements BindingPortInterface {
   update(options: UpdateOptions): Promise<void>;
   set(options: SetOptions): Promise<void>;
   get(): Promise<PortStatus>;
-  getBaudRate(): Promise<{ baudRate: number }>;
+  getBaudRate(): Promise<BaudRateResult>;
   flush(): Promise<void>;
   drain(): Promise<void>;
 }

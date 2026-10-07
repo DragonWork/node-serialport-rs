@@ -5,7 +5,13 @@
 
 import { types } from 'node:util';
 import { validateOptions, validateBaudRate, validateSetOptions } from './options';
-import type { BindingOpenOptions, SetOptions, UpdateOptions } from '../public-api';
+import type {
+  BindingOpenOptions,
+  BindingsErrorOptions,
+  SerialPortErrorCode,
+  SetOptions,
+  UpdateOptions,
+} from '../public-api';
 import type { NativeAddon, NativeHandle, NativeEvent, ControlOperation } from './native';
 const { isSharedArrayBuffer } = types;
 let native: NativeAddon | undefined;
@@ -20,10 +26,16 @@ const getLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'length')
 
 class BindingsError extends Error {
   canceled: boolean;
+  code?: SerialPortErrorCode;
+  errno?: number;
+  path?: string;
 
-  constructor(message: string, { canceled = false }: { canceled?: boolean } = {}) {
-    super(message);
-    this.canceled = canceled;
+  constructor(message: string, options: BindingsErrorOptions = {}) {
+    super(message, options);
+    this.canceled = options.canceled ?? false;
+    this.code = options.code;
+    this.errno = options.errno;
+    this.path = options.path;
   }
 }
 
@@ -168,10 +180,18 @@ class BindingPort {
       return;
     }
     if (event.kind === 'close') {
-      this._finishClose(this._failure || (event.message ? new Error(event.message) : null));
+      this._finishClose(this._failure || (event.message ? this._nativeError(event) : null));
       return;
     }
-    this._settle(event.id, event.kind === 'error' ? new Error(event.message) : null, event);
+    this._settle(event.id, event.kind === 'error' ? this._nativeError(event) : null, event);
+  }
+
+  _nativeError(event: NativeEvent) {
+    return new BindingsError(event.message || 'Serial operation failed', {
+      code: event.code ?? undefined,
+      errno: event.errno ?? undefined,
+      path: this.openOptions.path,
+    });
   }
 
   _settle(id: number, error: unknown, result?: NativeEvent) {
@@ -332,7 +352,7 @@ class BindingPort {
     }
   }
 
-  async writev(buffers: Buffer[]): Promise<void> {
+  async writev(buffers: readonly Buffer[]): Promise<void> {
     if (!Array.isArray(buffers) || !buffers.every(Buffer.isBuffer)) throw new TypeError('Expected an array of Buffers');
     if (!this.isOpen || this._closing) throw canceled();
     if (this._writing) throw new Error('Write already pending');

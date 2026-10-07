@@ -4,6 +4,7 @@
 #![deny(unsafe_code)]
 
 mod command;
+mod error;
 #[allow(unsafe_code)]
 mod platform;
 mod reactor;
@@ -92,6 +93,8 @@ pub struct NativeEvent {
     pub kind: &'static str,
     pub data: Option<Buffer>,
     pub message: Option<String>,
+    pub code: Option<&'static str>,
+    pub errno: Option<i32>,
     pub cts: Option<bool>,
     pub dsr: Option<bool>,
     pub dcd: Option<bool>,
@@ -106,11 +109,16 @@ impl NativeEvent {
             ..Self::default()
         }
     }
-    pub(crate) fn error(id: u32, error: impl std::fmt::Display) -> Self {
-        Self {
-            message: Some(error.to_string()),
-            ..Self::new(id, "error")
-        }
+    pub(crate) fn error(id: u32, error: std::io::Error) -> Self {
+        Self::new(id, "error").with_error(error)
+    }
+
+    pub(crate) fn with_error(mut self, error: std::io::Error) -> Self {
+        let details = error::ErrorDetails::from(error);
+        self.code = Some(details.code);
+        self.errno = details.errno;
+        self.message = Some(details.message);
+        self
     }
 }
 

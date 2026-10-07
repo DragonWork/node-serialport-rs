@@ -10,8 +10,26 @@ const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { runInNewContext } = require('node:vm');
 const { loadNative, selectTarget } = require('../lib/native');
-const { SerialPort, RustBinding } = require('..');
+const { SerialPort, RustBinding, BindingsError } = require('..');
 const targets = require('../lib/targets.json');
+
+test('native open errors carry a portable code and device path', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'serialport-errors-'));
+  t.after(() => rmSync(directory, { recursive: true }));
+  const path = join(directory, 'missing-device');
+  await assert.rejects(RustBinding.open({ path, baudRate: 9600 }), error => {
+    assert(error instanceof BindingsError);
+    assert.equal(error.code, 'ERR_SERIALPORT_NOT_FOUND');
+    assert.equal(error.path, path);
+    assert.equal(error.canceled, false);
+    return true;
+  });
+  const unsupported = process.platform === 'win32' ? { lock: false } : { stopBits: 1.5 };
+  await assert.rejects(RustBinding.open({ path, baudRate: 9600, ...unsupported }), {
+    code: 'ERR_SERIALPORT_UNSUPPORTED',
+    path,
+  });
+});
 
 test('list preserves Windows metadata, including names and Bluetooth device IDs', async t => {
   const ports = [

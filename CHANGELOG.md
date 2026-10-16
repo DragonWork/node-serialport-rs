@@ -1,5 +1,30 @@
 # Changelog
 
+## What's Changed in v0.7.0 (2026-10-16)
+
+* fix(api): validate a single snapshot of binding options by @DragonWork
+* feat(stream): support cancellation and resilient binding errors by @DragonWork
+* feat(parsers): bound decoded SLIP frame lengths by @DragonWork
+* feat(api): expose frozen runtime version metadata by @DragonWork
+* perf(binding): skip pending records for inline writes by @DragonWork
+* perf(parsers): copy unescaped SLIP payloads in bulk by @DragonWork
+* feat(api): add async controls and structured transport errors by @DragonWork
+* test: migrate all suites and helpers to strict TypeScript by @DragonWork
+* chore(deps): bump the actions group across 1 directory with 5 updates (#18) by @dependabot[bot] in [#18](https://github.com/DragonWork/node-serialport-rs/pull/18)
+* chore(deps): bump the compatible-npm-updates group with 2 updates (#17) by @dependabot[bot] in [#17](https://github.com/DragonWork/node-serialport-rs/pull/17)
+* chore(deps): bump the actions group across 1 directory with 2 updates (#21) by @dependabot[bot] in [#21](https://github.com/DragonWork/node-serialport-rs/pull/21)
+* build(deps): bump tokio by @dependabot[bot]
+* fix: replace deprecated AsyncFd constructor by @DragonWork
+* build(deps): update Rust dependencies by @DragonWork
+* fix: update Rust dependencies and AsyncFd registration (#19) by @DragonWork in [#19](https://github.com/DragonWork/node-serialport-rs/pull/19)
+* fix: validate intrinsic read buffer lengths by @DragonWork
+* fix: preserve regex parser input order by @DragonWork
+* fix: prevent destroyed streams from resuming I/O by @DragonWork
+* fix(types): constrain supported parity values by @DragonWork
+* docs: clarify FTDI serial fallback by @DragonWork
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.6.0...v0.7.0
+
 ## What's Changed in v0.6.0 (2026-10-06)
 
 * chore(deps): bump the actions group across 1 directory with 2 updates (#12) by @dependabot[bot] in [#12](https://github.com/DragonWork/node-serialport-rs/pull/12)

@@ -26,7 +26,7 @@ export interface BindingOpenOptions {
   baudRate: number;
   dataBits?: 5 | 6 | 7 | 8;
   stopBits?: 1 | 1.5 | 2;
-  parity?: string;
+  parity?: 'none' | 'odd' | 'even' | 'mark' | 'space';
   lock?: boolean;
   rtscts?: boolean;
   xon?: boolean;

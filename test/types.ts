@@ -126,6 +126,8 @@ nativeStream.port?.readChunk(64);
 new SerialPort({ baudRate: 9600 });
 // @ts-expect-error Data bits must be a supported width.
 new SerialPortMock({ ...mockOptions, dataBits: 9 });
+// @ts-expect-error Parity must be a supported value.
+new SerialPortMock({ ...mockOptions, parity: 'NONE' });
 // @ts-expect-error Custom binding options must be preserved.
 new SerialPortStream({ path: '/custom', baudRate: 9600, binding: customBinding });
 // @ts-expect-error Mock bindings do not expose native vectored writes.

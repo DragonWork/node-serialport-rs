@@ -312,11 +312,11 @@ class BindingPort {
       !Number.isInteger(length) ||
       offset < 0 ||
       length < 1 ||
-      offset + length > buffer.length
+      offset + length > getLength.call(buffer)
     )
       throw new RangeError('Invalid read range');
     const data = await this.readChunk(length);
-    if (offset + length > buffer.length) throw new RangeError('Read buffer changed size');
+    if (offset + length > getLength.call(buffer)) throw new RangeError('Read buffer changed size');
     return { buffer, bytesRead: data.copy(buffer, offset) };
   }
 

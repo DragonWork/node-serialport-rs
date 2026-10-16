@@ -218,11 +218,12 @@ test('mock controls, flushing and read validation are asynchronous and isolated 
   assert.equal((await read).buffer.toString(), 'x');
 });
 
-test('detaching a pending read destination rejects without consuming queued input', async t => {
+test('detaching a pending read destination rejects without consuming queued input', { timeout: 5000 }, async t => {
   SerialPortMock.binding.createPort('/mock/detach');
   const port = await SerialPortMock.binding.open({ path: '/mock/detach', baudRate: 9600 });
   t.after(() => port.isOpen && port.close());
   const target = Buffer.from(new ArrayBuffer(4));
+  Object.defineProperty(target, 'length', { value: 4 });
   const rejected = assert.rejects(port.read(target, 0, 4), RangeError);
   structuredClone(target.buffer, { transfer: [target.buffer] });
   port.emitData(Buffer.from([1, 2]));
@@ -230,6 +231,19 @@ test('detaching a pending read destination rejects without consuming queued inpu
   const read = await port.read(Buffer.alloc(4), 0, 4);
   assert.equal(read.bytesRead, 2);
   assert.deepEqual(read.buffer.subarray(0, 2), Buffer.from([1, 2]));
+});
+
+test('mock reads reject a shadowed range without consuming queued input', async t => {
+  MockBinding.createPort('/mock/shadowed-length');
+  const port = await MockBinding.open({ path: '/mock/shadowed-length', baudRate: 9600 });
+  t.after(() => port.isOpen && port.close());
+  const undersized = Buffer.alloc(2);
+  Object.defineProperty(undersized, 'length', { value: 4 });
+  port.emitData(Buffer.from([1, 2, 3, 4]));
+  await assert.rejects(port.read(undersized, 0, 4), RangeError);
+  const target = Buffer.alloc(4);
+  assert.equal((await port.read(target, 0, 4)).bytesRead, 4);
+  assert.deepEqual(target, Buffer.from([1, 2, 3, 4]));
 });
 
 test('corked stream writes retain order and a closed session cannot echo into its replacement', async t => {

@@ -15,6 +15,8 @@ import type {
   UpdateOptions,
 } from '../public-api';
 
+const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+const getLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'length')!.get!;
 const devices = new Map<string, VirtualDevice>();
 let sequence = 0;
 const nextTick = () => new Promise<void>(resolve => process.nextTick(resolve));
@@ -155,7 +157,8 @@ class MockPortBinding {
       const request = this.#pending;
       if (!request) return;
       try {
-        if (request.offset + request.length > request.buffer.length) throw new RangeError('Read buffer changed size');
+        if (request.offset + request.length > getLength.call(request.buffer))
+          throw new RangeError('Read buffer changed size');
         const bytesRead = this.port.read(request.buffer, request.offset, request.length);
         if (!bytesRead) return;
         this.#pending = undefined;
@@ -174,7 +177,7 @@ class MockPortBinding {
       !Number.isSafeInteger(length) ||
       offset < 0 ||
       length < 1 ||
-      offset + length > buffer.length
+      offset + length > getLength.call(buffer)
     ) {
       throw new RangeError('Invalid read range');
     }

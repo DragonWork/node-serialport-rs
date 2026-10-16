@@ -391,6 +391,14 @@ test('binding read copies only the requested range', { timeout: 5000 }, async t 
   assert.equal(result.bytesRead, 3);
   assert.equal(buffer.toString('hex'), 'aaaa010203aaaaaa');
   await assert.rejects(binding.read(buffer, 9, 1), RangeError);
+
+  const undersized = Buffer.alloc(2);
+  Object.defineProperty(undersized, 'length', { value: 4 });
+  await terminal.command('write 04050607');
+  await assert.rejects(binding.read(undersized, 0, 4), RangeError);
+  const remaining = Buffer.alloc(4);
+  assert.equal((await binding.read(remaining, 0, 4)).bytesRead, 4);
+  assert.deepEqual(remaining, Buffer.from([4, 5, 6, 7]));
   await binding.close();
 });
 
@@ -411,6 +419,7 @@ test(
     const binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
     t.after(() => binding.isOpen && binding.close());
     const buffer = Buffer.from(new ArrayBuffer(4));
+    Object.defineProperty(buffer, 'length', { value: 4 });
     const rejected = assert.rejects(binding.read(buffer, 0, 4), RangeError);
     structuredClone(buffer.buffer, { transfer: [buffer.buffer] });
     await terminal.command('write 0102');
@@ -436,6 +445,7 @@ test(
     t.after(() => binding.isOpen && binding.close());
     const store = new ArrayBuffer(8, { maxByteLength: 16 });
     const buffer = Buffer.from(store).fill(0xaa);
+    Object.defineProperty(buffer, 'length', { value: 8 });
     const rejected = assert.rejects(binding.read(buffer, 2, 4), RangeError);
     store.resize(3);
     await terminal.command('write 01020304');

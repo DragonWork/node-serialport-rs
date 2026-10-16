@@ -267,6 +267,53 @@ test('a failed close resumes writes and reads submitted while closing', async t 
   await written;
 });
 
+test('destroying during a failed close does not resume pending I/O', async t => {
+  const closing = deferred();
+  const failure = new Error('driver refused close');
+  const writes: Buffer[] = [];
+  let reads = 0;
+  let writeError: Error | undefined;
+  const binding = device({
+    close() {
+      return closing.promise;
+    },
+    async write(data) {
+      writes.push(Buffer.from(data));
+    },
+    startReading() {
+      reads++;
+    },
+  });
+  const port = stream(binding);
+  port.on('error', () => {});
+  t.after(async () => {
+    closing.reject(failure);
+    binding.close = device().close;
+    if (binding.isOpen) await binding.close();
+  });
+  await call(port, 'open');
+  const closed = assert.rejects(call(port, 'close'), failure);
+  const written = call(port, 'write', Buffer.from('pending')).catch(error => {
+    writeError = error;
+  });
+  port.resume();
+  await nextTurn();
+  port.destroy();
+  closing.reject(failure);
+  await closed;
+  await written;
+  await nextTurn();
+  assert.equal(writeError?.message, 'Port is destroyed');
+  assert.deepEqual(writes, []);
+  assert.equal(reads, 0);
+  assert.equal(port.destroyed, true);
+  assert.equal(port.isOpen, true);
+  assert.equal(port.port, binding);
+  binding.close = device().close;
+  await call(port, 'close');
+  assert.equal(port.isOpen, false);
+});
+
 test('synchronous control failures reach callbacks asynchronously and leave the port usable', async t => {
   for (const [method, args] of [
     ['update', [{ baudRate: 9600 }]],

@@ -210,7 +210,7 @@ class SerialPortStream extends Duplex {
   }
 
   _resumeIO() {
-    if (!this.isOpen) return;
+    if (this.destroyed || !this.isOpen) return;
     if (this._waitingWrite) {
       const waiting = this._waitingWrite;
       this._waitingWrite = undefined;

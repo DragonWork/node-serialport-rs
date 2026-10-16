@@ -213,6 +213,11 @@ test('regex decoding keeps UTF-8 characters intact across every byte boundary', 
     assert.deepEqual(await parse<string>(new RegexParser({ regex }), fragments(bytes, 1)), ['Grüße', '🔌', '完了']);
 });
 
+test('regex decoding preserves order when a string follows an incomplete UTF-8 buffer', async () => {
+  const parser = new RegexParser({ regex: ';', decodeStrings: false });
+  assert.deepEqual(await parse<string>(parser, [Buffer.from([0xc3]), 'A;']), ['�A']);
+});
+
 test('readline supports UTF-16 delimiters and fragmented multibyte characters', async () => {
   const bytes = Buffer.from('α\r\nβ\r\nγ', 'utf16le');
   assert.deepEqual(

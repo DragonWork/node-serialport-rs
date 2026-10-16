@@ -20,7 +20,8 @@ class RegexParser extends Transform {
   }
 
   _transform(chunk: Buffer | string, encoding: BufferEncoding, callback: TransformCallback) {
-    const text = this.#tail + (typeof chunk === 'string' ? chunk : this.#decoder.write(chunk));
+    const decoded = typeof chunk === 'string' ? this.#decoder.end() + chunk : this.#decoder.write(chunk);
+    const text = this.#tail + decoded;
     const pieces = text.split(this.regex);
     this.#tail = pieces.pop() ?? '';
     for (const piece of pieces) this.push(piece);

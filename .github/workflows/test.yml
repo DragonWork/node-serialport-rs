@@ -44,7 +44,7 @@ jobs:
         with:
           ref: ${{ inputs.release-commit || github.sha }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ env.RUST_MSRV }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -84,7 +84,7 @@ jobs:
       - name: Apply prepared release files
         if: inputs.prebuilt
         run: node scripts/prepare-release.js --apply artifacts/prepared-release.json
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: beta
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -131,7 +131,7 @@ jobs:
         with:
           node-version: 26
           package-manager-cache: false
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ env.RUST_VERSION }}
       - run: npm ci --ignore-scripts
@@ -185,7 +185,7 @@ jobs:
       - name: Apply prepared release files
         if: inputs.prebuilt
         run: node scripts/prepare-release.js --apply artifacts/prepared-release.json
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         if: (inputs.prebuilt && runner.os != 'Windows') || (matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26)
         with:
           toolchain: ${{ env.RUST_VERSION }}

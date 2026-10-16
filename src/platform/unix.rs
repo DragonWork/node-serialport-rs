@@ -35,7 +35,9 @@ impl SerialStream {
         )
         .map_err(io::Error::from)?;
         Ok(Self {
-            io: AsyncFd::new(port)?,
+            // SAFETY: TTYPort owns a valid descriptor that remains open and unchanged
+            // while registered. Control operations never replace or close the port.
+            io: unsafe { AsyncFd::register(port) }.map_err(io::Error::from)?,
         })
     }
 

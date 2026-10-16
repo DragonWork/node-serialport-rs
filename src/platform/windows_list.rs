@@ -79,8 +79,8 @@ fn usb_identity(id: &str) -> Option<UsbIdentity<'_>> {
         cold_path();
         return None;
     }
-    // SerialPort's FTDI fallback removes the optional channel-A suffix. A
-    // matching parent USB instance supplies the authoritative serial instead.
+    // Prefer a matching USB parent's authoritative serial. For FTDI fallback
+    // metadata, treat a trailing A as the channel suffix.
     let serial = if ftdi {
         let value = fields.next()?;
         value

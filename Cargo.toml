@@ -5,7 +5,7 @@
 name = "node-serialport-rs"
 version = "0.7.0"
 edition = "2024"
-rust-version = "1.99.1"
+rust-version = "1.98.0"
 license = "Apache-2.0"
 authors = ["DragonWork"]
 description = "Node.js serial streams backed by Rust"

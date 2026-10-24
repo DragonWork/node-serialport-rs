@@ -24,13 +24,13 @@ permissions:
 env:
   RUST_VERSION: stable
   RUSTUP_TOOLCHAIN: stable
-  RUST_MSRV: 1.99.1
+  RUST_MSRV: 1.98.0
   CARGO_INCREMENTAL: '0'
 
 jobs:
   msrv:
     env:
-      RUSTUP_TOOLCHAIN: 1.99.1
+      RUSTUP_TOOLCHAIN: 1.98.0
     name: MSRV ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30

@@ -24,6 +24,7 @@ concurrency:
 
 env:
   RUST_VERSION: stable
+  RUSTUP_TOOLCHAIN: stable
   CARGO_INCREMENTAL: '0'
 
 jobs:
@@ -44,11 +45,10 @@ jobs:
         with:
           node-version: 26
           package-manager-cache: false
+      - name: Set up checksum-pinned tool installation
+        uses: DragonWork/install-action@c02040044a4995c2c4a855c48a9c3278d7d713ba # v1.0.3
       - name: Install git-cliff
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
-        with:
-          tool: git-cliff
-          fallback: none
+        uses: DragonWork/install-action/tools/git-cliff@7b03d4b6428472552f85b3df46fa8c175b8337fa # v2.14.2
       - name: Check release preparation
         env:
           GIT_CLIFF: git-cliff

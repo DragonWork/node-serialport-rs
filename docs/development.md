@@ -3,7 +3,7 @@
 
 # Development and verification
 
-Source builds require Rust/Cargo and a native linker or platform SDK. The crate uses edition 2024 and requires Rust 1.98 or newer; development and release CI follow the Rust `stable` channel. Release builds use fat LTO and stripped symbols, with an atomic replacement of `native/serialport-rs.node`. Cargo's `CARGO_PROFILE_RELEASE_LTO=thin` override remains available when comparing toolchains or diagnosing target-specific link failures.
+Source builds require Rust/Cargo and a native linker or platform SDK. The crate uses edition 2024 and requires Rust 1.99.1 or newer; development and release CI follow the Rust `stable` channel. Release builds use fat LTO and stripped symbols, with an atomic replacement of `native/serialport-rs.node`. Cargo's `CARGO_PROFILE_RELEASE_LTO=thin` override remains available when comparing toolchains or diagnosing target-specific link failures.
 
 Build the addon and the Unix pseudo-terminal test helper from the source checkout, then run the checks:
 
@@ -23,14 +23,14 @@ Stable CI covers Linux x64/ARM64, macOS ARM64 and Windows x64, including the exi
 CI checks every Cargo target (library, tests and examples) on the exact minimum compiler across Linux x64/ARM64, macOS ARM64 and Windows x64. The crate defines no optional Cargo features or `no_std` configuration. To verify the minimum locally without changing the lockfile:
 
 ```sh
-cargo +1.98.0 check --workspace --all-targets --locked
-cargo +1.98.0 test --workspace --locked
-cargo +1.98.0 test --workspace --release --locked
-cargo +1.98.0 clippy --workspace --all-targets --locked -- -D warnings
-cargo +1.98.0 fmt --all -- --check
+cargo +1.99.1 check --workspace --all-targets --locked
+cargo +1.99.1 test --workspace --locked
+cargo +1.99.1 test --workspace --release --locked
+cargo +1.99.1 clippy --workspace --all-targets --locked -- -D warnings
+cargo +1.99.1 fmt --all -- --check
 ```
 
-The exact 1.98.0 toolchain checks minimum compatibility; use the current stable toolchain for ordinary builds. Keep `Cargo.toml`, `RUST_MSRV` in `test.yml`, and these instructions in sync when the minimum changes. Cross-compilation checks types and platform gates; platform runtime CI and hardware testing remain necessary for driver behavior.
+The exact 1.99.1 toolchain checks minimum compatibility; use the current stable toolchain for ordinary builds. The local `rust-toolchain.toml` selects that exact compiler. CI explicitly selects its stable, beta, or MSRV channel so the local pin does not override channel coverage. Keep `Cargo.toml`, `rust-toolchain.toml`, `RUST_MSRV` and the MSRV job toolchain in `test.yml`, and these instructions in sync when the minimum changes. Cross-compilation checks types and platform gates; platform runtime CI and hardware testing remain necessary for driver behavior.
 
 Runtime source lives in `ts/`. `npm run build:js` compiles it in strict mode to `index.js` and `lib/`, and copies `ts/public-api.d.ts` to `index.d.ts`. Edit the TypeScript sources; generated files are ignored by Git. `npm test` and `npm pack` compile the runtime first.
 
@@ -62,7 +62,7 @@ The [`bench/` directory](../bench/README.md) contains separate latency, throughp
 
 Releases start only through the manual **Publish** workflow. Choose a branch and set `version` to `auto`, `patch`, `minor`, `major`, or an exact version such as `0.2.0` or `0.3.0-rc.1`. Automatic selection uses Conventional Commits since the latest reachable release tag: breaking changes select major, features select minor, and other changes select patch. Release notes exclude chores except for `chore(deps):` updates.
 
-The workflow installs git-cliff through `taiki-e/install-action`, pinned to a commit and tracked by the existing Dependabot GitHub Actions group. The action's manifest selects the git-cliff version and provides its checksum, so updating the action also updates the available tool version. git-cliff uses `cliff.toml` to generate release notes and prepend them to `CHANGELOG.md`. The workflow updates both npm and Cargo manifests and lockfiles together. With `publish` enabled, GitHub records these files in a signed preparation commit on the selected branch before the builds start. A concurrent branch update aborts preparation. With `publish` disabled, the prepared files are used only in the build artifacts.
+The workflow starts the project-owned checksum installer, then invokes its git-cliff action at an exact commit. The action manifest pins the downloaded binary checksum and version; Dependabot tracks both GitHub Actions references. git-cliff uses `cliff.toml` to generate release notes and prepend them to `CHANGELOG.md`. The workflow updates both npm and Cargo manifests and lockfiles together. With `publish` enabled, GitHub records these files in a signed preparation commit on the selected branch before the builds start. A concurrent branch update aborts preparation. With `publish` disabled, the prepared files are used only in the build artifacts.
 
 Every native build, test job and package step uses the same prepared version. A GitHub draft is created only after all builds, tests and package checks pass. The draft body comes from the notes saved with that archive, so a publication retry uses the same changelog.
 

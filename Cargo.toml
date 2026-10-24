@@ -5,7 +5,7 @@
 name = "node-serialport-rs"
 version = "0.7.0"
 edition = "2024"
-rust-version = "1.98"
+rust-version = "1.99.1"
 license = "Apache-2.0"
 authors = ["DragonWork"]
 description = "Node.js serial streams backed by Rust"
@@ -15,9 +15,9 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-napi = { version = "3.14.2", default-features = false, features = ["napi8"] }
-napi-derive = "3.6.12"
-tokio = { version = "1.53.3", default-features = false, features = ["rt", "net", "sync", "time", "macros"] }
+napi = { version = "3.15.0", default-features = false, features = ["napi8"] }
+napi-derive = "3.6.13"
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "net", "sync", "time", "macros"] }
 serialport = { version = "4.10.1", default-features = false }
 
 [target.'cfg(unix)'.dependencies]

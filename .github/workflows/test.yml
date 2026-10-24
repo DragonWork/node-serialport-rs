@@ -23,11 +23,14 @@ permissions:
 
 env:
   RUST_VERSION: stable
-  RUST_MSRV: 1.98.0
+  RUSTUP_TOOLCHAIN: stable
+  RUST_MSRV: 1.99.1
   CARGO_INCREMENTAL: '0'
 
 jobs:
   msrv:
+    env:
+      RUSTUP_TOOLCHAIN: 1.99.1
     name: MSRV ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -54,6 +57,8 @@ jobs:
       - run: cargo check --workspace --all-targets --locked
 
   beta:
+    env:
+      RUSTUP_TOOLCHAIN: beta
     name: Beta ${{ matrix.target }} / Node 26
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30

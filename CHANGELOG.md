@@ -1,5 +1,19 @@
 # Changelog
 
+## What's Changed in v0.7.1 (2026-11-02)
+
+* chore(deps): bump the actions group across 1 directory with 2 updates by @dependabot[bot]
+* chore(deps): bump the actions group across 1 directory with 2 updates (#24) by @DragonWork in [#24](https://github.com/DragonWork/node-serialport-rs/pull/24)
+* chore(deps): require Rust 1.99.1 and refresh Rust crates by @DragonWork
+* build: set verified Rust MSRV by @DragonWork
+* ci: fix installer pins by @DragonWork
+* chore(deps): bump @types/node by @dependabot[bot]
+* chore(deps): bump @types/node from 26.6.5 to 26.6.6 in the compatible-npm-updates group (#25) by @DragonWork in [#25](https://github.com/DragonWork/node-serialport-rs/pull/25)
+* build(deps): bump the compatible-cargo-updates group with 2 updates by @dependabot[bot]
+* build(deps): bump the compatible-cargo-updates group with 2 updates (#26) by @DragonWork in [#26](https://github.com/DragonWork/node-serialport-rs/pull/26)
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.7.0...v0.7.1
+
 ## What's Changed in v0.7.0 (2026-10-16)
 
 * fix(api): validate a single snapshot of binding options by @DragonWork

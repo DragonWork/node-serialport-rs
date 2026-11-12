@@ -9,7 +9,7 @@ Device discovery and configuration use `serialport`. Unix I/O uses Tokio's `Asyn
 
 Platform restrictions that can be validated without a device are checked before opening it. A request for unsupported stop bits, parity or shared Windows access therefore cannot first alter a port's configuration or control lines.
 
-Idle serial I/O has no heartbeat interval. Readiness wakes pending reads and writes. Explicit physical-drain operations may poll the driver's output queue; the timeout parser also uses timers when it has buffered data.
+Readiness wakes pending reads and writes without a JavaScript heartbeat. Windows reads return available bytes immediately and renew an empty first-byte wait every 60 seconds. Empty completions are retried after checking device status; only repeated immediate empty completions use a short backoff to avoid spinning. Explicit physical-drain operations may poll the driver's output queue; the timeout parser also uses timers when it has buffered data.
 
 | Data path | Ownership and copies |
 | --- | --- |

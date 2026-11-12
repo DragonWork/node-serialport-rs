@@ -19,15 +19,20 @@ use tokio::{
     net::windows::named_pipe::NamedPipeClient,
 };
 use windows_sys::Win32::{
-    Devices::Communication::{COMMTIMEOUTS, DCB, GetCommState, SetCommState, SetCommTimeouts},
+    Devices::Communication::{
+        COMMTIMEOUTS, ClearCommError, DCB, GetCommState, SetCommState, SetCommTimeouts,
+    },
     Storage::FileSystem::FILE_FLAG_OVERLAPPED,
 };
+
+use super::windows_read::{self, ReadState};
 
 pub(crate) struct SerialStream {
     // These own different handles to the same device. Tokio exclusively owns
     // the overlapped-I/O handle; COMPort owns a duplicate used only for control.
     io: NamedPipeClient,
     control: COMPort,
+    read: ReadState,
 }
 
 impl SerialStream {
@@ -68,12 +73,12 @@ impl SerialStream {
             cold_path();
             io::Error::last_os_error()
         })?;
-        // Return available bytes immediately, without an inter-byte timer.
-        // The first-byte wait must be finite; MAXDWORD - 1 is about 49.7 days.
+        // Return available bytes immediately; avoid extreme timeout values.
+        // Empty completions are retried after checking device status.
         let timeouts = COMMTIMEOUTS {
             ReadIntervalTimeout: u32::MAX,
             ReadTotalTimeoutMultiplier: u32::MAX,
-            ReadTotalTimeoutConstant: u32::MAX - 1,
+            ReadTotalTimeoutConstant: 60_000,
             ..Default::default()
         };
         // SAFETY: handle and timeouts are valid for this synchronous call.
@@ -94,11 +99,19 @@ impl SerialStream {
         // Tokio takes ownership and closes it if registration fails as well.
         let io =
             unsafe { NamedPipeClient::from_raw_handle(io_handle) }.inspect_err(|_| cold_path())?;
-        Ok(Self { io, control })
+        Ok(Self {
+            io,
+            control,
+            read: ReadState::default(),
+        })
     }
 
     pub fn try_read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        self.io.try_read(bytes)
+        windows_read::try_read(
+            bytes,
+            |bytes| self.io.try_read(bytes),
+            || check_status(&self.control),
+        )
     }
 
     pub fn try_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
@@ -124,7 +137,27 @@ impl AsyncRead for SerialStream {
         cx: &mut Context<'_>,
         buffer: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().io).poll_read(cx, buffer)
+        let this = self.get_mut();
+        this.read
+            .poll_read(&mut this.io, cx, buffer, || check_status(&this.control))
+    }
+}
+
+fn check_status(port: &COMPort) -> io::Result<()> {
+    // Mio also maps ERROR_BROKEN_PIPE to zero bytes. Do not hide a failed
+    // device-status query when deciding whether an empty read can be retried.
+    // SAFETY: port owns a live COM handle; both output pointers are optional.
+    if unsafe {
+        ClearCommError(
+            port.as_raw_handle(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    } == 0
+    {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
     }
 }
 

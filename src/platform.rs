@@ -22,6 +22,8 @@ std::cfg_select! {
 pub(crate) mod macos_list;
 #[cfg(any(windows, test))]
 pub(crate) mod windows_list;
+#[cfg(any(windows, test))]
+mod windows_read;
 
 pub(crate) fn open(builder: &SerialPortBuilder) -> io::Result<SerialStream> {
     let opened = SerialStream::open(builder);

@@ -68,10 +68,12 @@ impl SerialStream {
             cold_path();
             io::Error::last_os_error()
         })?;
-        // Match the async serial contract: wait for the first byte indefinitely,
-        // then finish after an inter-byte gap; never synthesize timeout EOFs.
+        // Return available bytes immediately, without an inter-byte timer.
+        // The first-byte wait must be finite; MAXDWORD - 1 is about 49.7 days.
         let timeouts = COMMTIMEOUTS {
-            ReadIntervalTimeout: 1,
+            ReadIntervalTimeout: u32::MAX,
+            ReadTotalTimeoutMultiplier: u32::MAX,
+            ReadTotalTimeoutConstant: u32::MAX - 1,
             ..Default::default()
         };
         // SAFETY: handle and timeouts are valid for this synchronous call.

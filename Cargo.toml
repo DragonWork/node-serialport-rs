@@ -3,7 +3,7 @@
 
 [package]
 name = "node-serialport-rs"
-version = "0.7.2"
+version = "0.7.3"
 edition = "2024"
 rust-version = "1.98.0"
 license = "Apache-2.0"

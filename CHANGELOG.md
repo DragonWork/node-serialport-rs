@@ -1,5 +1,13 @@
 # Changelog
 
+## What's Changed in v0.7.3 (2026-11-12)
+
+* fix(windows): retry empty serial reads (closes #31) by @DragonWork
+* test(windows): cover idle reads and device recovery by @DragonWork
+* build(deps): upgrade Cargo dependencies by @DragonWork
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.7.2...v0.7.3
+
 ## What's Changed in v0.7.2 (2026-11-12)
 
 * chore(deps): bump DragonWork/install-action from 1.2.1 to 1.2.2 in the actions group (#28) by @dependabot[bot] in [#28](https://github.com/DragonWork/node-serialport-rs/pull/28)

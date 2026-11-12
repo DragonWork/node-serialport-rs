@@ -1,5 +1,13 @@
 # Changelog
 
+## What's Changed in v0.7.2 (2026-11-12)
+
+* chore(deps): bump DragonWork/install-action from 1.2.1 to 1.2.2 in the actions group (#28) by @dependabot[bot] in [#28](https://github.com/DragonWork/node-serialport-rs/pull/28)
+* build(deps): bump the compatible-cargo-updates group across 1 directory with 2 updates (#29) by @dependabot[bot] in [#29](https://github.com/DragonWork/node-serialport-rs/pull/29)
+* fix(windows): remove read timer delay (closes #30) by @DragonWork
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.7.1...v0.7.2
+
 ## What's Changed in v0.7.1 (2026-11-02)
 
 * chore(deps): bump the actions group across 1 directory with 2 updates by @dependabot[bot]

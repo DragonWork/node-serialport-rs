@@ -41,6 +41,18 @@ Native builds use `target/.serialport-build.lock`. Successful releases remove re
 
 The JavaScript tests use Node's built-in test runner. Native integration tests require Unix pseudo-terminals; mock and parser tests do not require serial hardware. Tests cover byte integrity, buffer ownership, backpressure, concurrent ports, cancellation, reopening, and worker cleanup. Optional consumer tests accept `SERIALPORT_CONSUMER` and `SERIALPORT_REFERENCE_STREAM` module paths.
 
+Windows read-policy regressions run on every OS with `cargo test --locked --lib platform::windows_read`. They inject empty completions, pending reads, buffered data and device errors, including a driver that repeatedly completes empty reads.
+
+For Windows driver validation, connect two isolated COM ports (a com0com pair or two cross-wired UARTs), build the addon and tests, and run in PowerShell:
+
+```powershell
+$env:SERIALPORT_TEST_PORT = 'COM3'
+$env:SERIALPORT_TEST_PEER = 'COM4'
+node --enable-source-maps --test test/windows-serial.test.js
+```
+
+This opt-in test sends binary data, waits through two 65-second idle periods, checks pending-read cancellation and byte integrity, and reports round-trip latency and throughput. It skips without both port variables. Run it on each supported driver; simulated read completions and Windows compilation do not establish hardware behavior.
+
 Linux CI compares parser output and stream contracts against SerialPort 13.0.0, including the upstream stream using the Rust binding. Run these checks locally with:
 
 ```sh

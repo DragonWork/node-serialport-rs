@@ -113,7 +113,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           npm run build:tests
-          node --enable-source-maps --test test/build.test.js test/bytes.test.js test/compatibility.test.js test/exports.test.js test/lifecycle.test.js test/mock.test.js test/native.test.js test/parsers.test.js test/release.test.js
+          node --enable-source-maps --test test/build.test.js test/bytes.test.js test/compatibility.test.js test/exports.test.js test/lifecycle.test.js test/mock.test.js test/native.test.js test/parsers.test.js test/release.test.js test/windows-serial.test.js
 
   build:
     if: '!inputs.prebuilt'
@@ -191,12 +191,12 @@ jobs:
         if: inputs.prebuilt
         run: node scripts/prepare-release.js --apply artifacts/prepared-release.json
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
-        if: (inputs.prebuilt && runner.os != 'Windows') || (matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26)
+        if: (inputs.prebuilt && runner.os != 'Windows') || (matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26) || runner.os == 'Windows'
         with:
           toolchain: ${{ env.RUST_VERSION }}
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: ${{ !inputs.prebuilt && matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26 }}
+        if: ${{ !inputs.prebuilt && ((matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26) || runner.os == 'Windows') }}
         with:
           shared-key: dev-${{ matrix.target }}
           cache-bin: false
@@ -222,9 +222,9 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           npm run build:tests
-          node --enable-source-maps --test test/build.test.js test/bytes.test.js test/compatibility.test.js test/exports.test.js test/lifecycle.test.js test/mock.test.js test/native.test.js test/parsers.test.js test/release.test.js
+          node --enable-source-maps --test test/build.test.js test/bytes.test.js test/compatibility.test.js test/exports.test.js test/lifecycle.test.js test/mock.test.js test/native.test.js test/parsers.test.js test/release.test.js test/windows-serial.test.js
       - name: Check Rust
-        if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26
+        if: (matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26) || runner.os == 'Windows'
         run: |
           cargo fmt --check
           cargo clippy --all-targets --locked -- -D warnings

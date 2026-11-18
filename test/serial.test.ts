@@ -312,6 +312,29 @@ test('disconnect emits one close and releases resources', { timeout: 5000 }, asy
   assert.equal(port.isOpen, false);
 });
 
+for (const method of ['write', 'writev'] as const) {
+  test(
+    `an inline ${method} error survives an immediate close`,
+    { skip: process.platform !== 'linux', timeout: 5000 },
+    async t => {
+      const terminal = await pty(t);
+      const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+      t.after(() => port.isOpen && port.close());
+      await terminal.hangup();
+      const part = Buffer.from('x');
+      const write = method === 'write' ? port.write(part) : port.writev([part, part]);
+      const failed = assert.rejects(write, error => {
+        assert(error instanceof BindingsError);
+        assert.equal(error.path, terminal.path);
+        assert.equal(error.canceled, false);
+        assert(Number.isInteger(error.errno));
+        return true;
+      });
+      await Promise.all([failed, port.close()]);
+    },
+  );
+}
+
 test(
   'a disconnected binding remains closable until its consumer acknowledges the failure',
   { timeout: 5000 },

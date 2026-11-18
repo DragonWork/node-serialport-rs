@@ -15,6 +15,16 @@ pub(crate) enum Transfer {
     Write(usize),
 }
 
+pub(crate) fn inline_write_count(length: usize, result: io::Result<usize>) -> io::Result<usize> {
+    use io::ErrorKind::{Interrupted, WouldBlock, WriteZero};
+
+    match result {
+        Ok(0) if length != 0 => Err(WriteZero.into()),
+        Err(error) if matches!(error.kind(), Interrupted | WouldBlock) => Ok(0),
+        result => result,
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct TransferPoller {
     write_first: bool,
@@ -100,6 +110,21 @@ mod tests {
         },
         task::{Wake, Waker},
     };
+
+    #[test]
+    fn inline_writes_preserve_progress_and_terminal_errors() {
+        assert_eq!(inline_write_count(8, Ok(3)).unwrap(), 3);
+        for kind in [io::ErrorKind::Interrupted, io::ErrorKind::WouldBlock] {
+            assert_eq!(inline_write_count(8, Err(kind.into())).unwrap(), 0);
+        }
+        assert_eq!(inline_write_count(0, Ok(0)).unwrap(), 0);
+        assert_eq!(
+            inline_write_count(8, Ok(0)).unwrap_err().kind(),
+            io::ErrorKind::WriteZero
+        );
+        let failed = inline_write_count(8, Err(io::Error::from_raw_os_error(1167))).unwrap_err();
+        assert_eq!(failed.raw_os_error(), Some(1167));
+    }
 
     #[derive(Default)]
     struct ReadyPort {

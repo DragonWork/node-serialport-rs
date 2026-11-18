@@ -180,7 +180,10 @@ class BindingPort {
       return;
     }
     if (event.kind === 'close') {
-      this._finishClose(this._failure || (event.message ? this._nativeError(event) : null));
+      const error = event.message ? this._nativeError(event) : null;
+      // An inline write may already have failed before an explicit close cancels other requests.
+      if (event.id && error) this._settle(event.id, error);
+      this._finishClose(this._failure || error);
       return;
     }
     this._settle(event.id, event.kind === 'error' ? this._nativeError(event) : null, event);

@@ -50,19 +50,18 @@ impl Drop for Completion {
     fn drop(&mut self) {
         self.control.stop.store(true, Ordering::Release);
         // Release the descriptor even if the worker unwinds before normal completion.
-        let port = self
-            .control
-            .session
-            .lock()
-            .unwrap_or_else(|error| {
-                cold_path();
-                error.into_inner()
-            })
-            .take();
+        let session = std::mem::take(&mut *self.control.session.lock().unwrap_or_else(|error| {
+            cold_path();
+            error.into_inner()
+        }));
         // Closing a descriptor may enter the driver; do it after releasing the mutex.
-        drop(port);
-        let closed = NativeEvent::new(0, "close");
-        let closed = match self.result.take() {
+        drop(session.port);
+        let (id, result) = match session.failed_write {
+            Some((id, error)) => (id, Some(Err(error))),
+            None => (0, self.result.take()),
+        };
+        let closed = NativeEvent::new(id, "close");
+        let closed = match result {
             Some(Ok(())) => closed,
             Some(Err(error)) => closed.with_error(error),
             None => {
@@ -90,10 +89,14 @@ pub(crate) async fn run(
     let opened = tokio::task::spawn_blocking(move || settings::open(&options)).await;
     let result = match opened {
         Ok(Ok(port)) => {
-            *control.session.lock().unwrap_or_else(|error| {
-                cold_path();
-                error.into_inner()
-            }) = Some(port);
+            control
+                .session
+                .lock()
+                .unwrap_or_else(|error| {
+                    cold_path();
+                    error.into_inner()
+                })
+                .port = Some(port);
             if control.stop.load(Ordering::Acquire) || !send(callback, NativeEvent::new(0, "open"))
             {
                 Ok(())
@@ -397,7 +400,7 @@ fn with_port<T>(
         cold_path();
         io::Error::other("Serial state poisoned")
     })?;
-    let port = state.as_mut().ok_or_else(|| {
+    let port = state.port.as_mut().ok_or_else(|| {
         cold_path();
         io::Error::new(io::ErrorKind::BrokenPipe, "Port is closed")
     })?;

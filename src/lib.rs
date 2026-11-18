@@ -14,7 +14,11 @@ mod workers;
 
 use command::{Command, Operation};
 
-use std::collections::{HashMap, hash_map::Entry};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, hash_map::Entry},
+    io,
+};
 
 use std::sync::{
     Arc, LazyLock, Mutex, Weak,
@@ -122,11 +126,17 @@ impl NativeEvent {
     }
 }
 
+#[derive(Default)]
+struct Session {
+    port: Option<platform::SerialStream>,
+    failed_write: Option<(u32, io::Error)>,
+}
+
 pub(crate) struct Control {
     stop: AtomicBool,
     changed: Notify,
     pending_ops: AtomicUsize,
-    session: Mutex<Option<platform::SerialStream>>,
+    session: Mutex<Session>,
 }
 
 impl Control {
@@ -217,7 +227,7 @@ impl NativePort {
             stop: AtomicBool::new(false),
             changed: Notify::new(),
             pending_ops: AtomicUsize::new(0),
-            session: Mutex::new(None),
+            session: Mutex::default(),
         });
         register_cleanup(env, &control)?;
         let (sender, receiver) = mpsc::channel(MAX_PENDING_OPS + READ_SLOTS);
@@ -257,27 +267,7 @@ impl NativePort {
     pub fn write(&self, id: u32, data: BufferSlice<'_>, allow_inline: bool) -> Result<bool> {
         (data.len() <= CHUNK_SIZE)
             .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid transfer size"))?;
-        (!self.control.stop.load(Ordering::Acquire))
-            .ok_or_else(|| Error::from_reason("Port is closed"))?;
-        let mut written = 0;
-        // Never wait for the port lock or bypass an earlier write/control operation.
-        if allow_inline
-            && self.control.pending_ops.load(Ordering::Acquire) == 0
-            && let Ok(mut state) = self.control.session.try_lock()
-            && let Some(port) = state.as_mut()
-            && let Ok(count) = port.try_write(&data)
-        {
-            written = count;
-            if count == data.len() {
-                return Ok(true);
-            }
-        }
-        // Only queued bytes need an owned snapshot beyond this synchronous call.
-        self.enqueue(Command {
-            id,
-            operation: Operation::Write(data[written..].to_vec()),
-        })?;
-        Ok(false)
+        self.submit_write(id, Cow::Borrowed(&data), allow_inline)
     }
 
     #[napi]
@@ -324,37 +314,8 @@ impl NativePort {
             data.extend_from_slice(&buffer);
         }
 
-        // Reading array elements may run JavaScript accessors, including close().
-        // Recheck after the snapshot before a syscall can write to the device.
-        (!self.control.stop.load(Ordering::Acquire))
-            .ok_or_else(|| Error::from_reason("Port is closed"))?;
-
-        let mut written = 0;
-        // As with scalar writes, attempt an immediate nonblocking write only
-        // when no earlier ordered operation can be bypassed. The segments have
-        // already been snapshotted, so no JS borrow crosses this syscall.
-        if allow_inline.unwrap_or(false)
-            && self.control.pending_ops.load(Ordering::Acquire) == 0
-            && let Ok(mut state) = self.control.session.try_lock()
-            && let Some(port) = state.as_mut()
-            && let Ok(count) = port.try_write(&data)
-        {
-            written = count;
-            if count == data.len() {
-                return Ok(true);
-            }
-        }
-
-        if written != 0 {
-            let remaining = data.len() - written;
-            data.copy_within(written.., 0);
-            data.truncate(remaining);
-        }
-        self.enqueue(Command {
-            id,
-            operation: Operation::Write(data),
-        })?;
-        Ok(false)
+        // Array accessors may have closed the port. submit_write rechecks it.
+        self.submit_write(id, Cow::Owned(data), allow_inline.unwrap_or(false))
     }
 
     #[napi]
@@ -364,6 +325,43 @@ impl NativePort {
 }
 
 impl NativePort {
+    fn submit_write(&self, id: u32, data: Cow<'_, [u8]>, allow_inline: bool) -> Result<bool> {
+        (!self.control.stop.load(Ordering::Acquire))
+            .ok_or_else(|| Error::from_reason("Port is closed"))?;
+        let mut written = 0;
+        if allow_inline
+            && self.control.pending_ops.load(Ordering::Acquire) == 0
+            && let Ok(mut state) = self.control.session.try_lock()
+            && let Some(port) = state.port.as_mut()
+        {
+            match transfer::inline_write_count(data.len(), port.try_write(&data)) {
+                Ok(count) if count == data.len() => return Ok(true),
+                Ok(count) => written = count,
+                Err(error) => {
+                    // The driver may report an earlier write's failure only once.
+                    // Preserve it for this request before the worker closes the port.
+                    state.failed_write = Some((id, error));
+                    self.control.stop();
+                    return Ok(false);
+                }
+            }
+        }
+        let remaining = match data {
+            Cow::Borrowed(bytes) => bytes[written..].to_vec(),
+            Cow::Owned(mut bytes) => {
+                if written != 0 {
+                    bytes.drain(..written);
+                }
+                bytes
+            }
+        };
+        self.enqueue(Command {
+            id,
+            operation: Operation::Write(remaining),
+        })?;
+        Ok(false)
+    }
+
     fn enqueue(&self, command: Command) -> Result<()> {
         (!self.control.stop.load(Ordering::Acquire))
             .ok_or_else(|| Error::from_reason("Port is closed"))?;

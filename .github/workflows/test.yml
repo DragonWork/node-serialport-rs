@@ -22,15 +22,11 @@ permissions:
   contents: read
 
 env:
-  RUST_VERSION: stable
   RUSTUP_TOOLCHAIN: stable
-  RUST_MSRV: 1.98.0
   CARGO_INCREMENTAL: '0'
 
 jobs:
   msrv:
-    env:
-      RUSTUP_TOOLCHAIN: 1.98.0
     name: MSRV ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -47,9 +43,14 @@ jobs:
         with:
           ref: ${{ inputs.release-commit || github.sha }}
           persist-credentials: false
+      - name: Select the minimum Rust version from Cargo.toml
+        shell: bash
+        run: |
+          msrv=$(cargo metadata --format-version 1 --no-deps --locked | jq -er '.packages[0].rust_version')
+          echo "RUSTUP_TOOLCHAIN=$msrv" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: ${{ env.RUST_MSRV }}
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: msrv-${{ matrix.target }}
@@ -91,7 +92,7 @@ jobs:
         run: node scripts/prepare-release.js --apply artifacts/prepared-release.json
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: beta
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: beta-${{ matrix.target }}
@@ -138,7 +139,7 @@ jobs:
           package-manager-cache: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
       - run: npm ci --ignore-scripts
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -191,12 +192,12 @@ jobs:
         if: inputs.prebuilt
         run: node scripts/prepare-release.js --apply artifacts/prepared-release.json
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
-        if: (inputs.prebuilt && runner.os != 'Windows') || (matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26) || runner.os == 'Windows'
+        if: inputs.prebuilt || matrix.node == 26
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: ${{ !inputs.prebuilt && ((matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26) || runner.os == 'Windows') }}
+        if: ${{ !inputs.prebuilt && matrix.node == 26 }}
         with:
           shared-key: dev-${{ matrix.target }}
           cache-bin: false
@@ -223,12 +224,12 @@ jobs:
         run: |
           npm run build:tests
           node --enable-source-maps --test test/build.test.js test/bytes.test.js test/compatibility.test.js test/exports.test.js test/lifecycle.test.js test/mock.test.js test/native.test.js test/parsers.test.js test/release.test.js test/windows-serial.test.js
-      - name: Check Rust
-        if: (matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26) || runner.os == 'Windows'
+      - name: Check Rust on stable
+        if: matrix.node == 26
         run: |
           cargo fmt --check
           cargo clippy --all-targets --locked -- -D warnings
-          cargo test --locked --lib
+          cargo test --workspace --all-targets --locked
       - name: Check SerialPort 13 compatibility
         if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26
         run: |

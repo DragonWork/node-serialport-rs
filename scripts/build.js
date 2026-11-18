@@ -3,7 +3,7 @@
 
 'use strict';
 
-const { spawnSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const {
   chmodSync,
   copyFileSync,
@@ -22,12 +22,24 @@ if (process.argv.slice(2).some(option => option !== '--debug')) throw new Error(
 const debug = process.argv.includes('--debug');
 const buildProfile = debug ? 'debug' : 'release';
 const args = debug ? ['build', '--locked'] : ['build', '--release', '--locked'];
+const env = debug
+  ? process.env
+  : {
+      ...process.env,
+      RUSTUP_TOOLCHAIN: 'stable',
+      RUSTC: process.env.RUSTC || process.env.CARGO_BUILD_RUSTC || 'rustc',
+    };
 const targetDirectory = resolve(root, process.env.CARGO_TARGET_DIR || 'target');
 const target = process.env.CARGO_BUILD_TARGET || '';
 if (target && !/^[a-z0-9_]+(?:-[a-z0-9_]+)+$/.test(target))
   throw new Error('Pass a Rust target triple in CARGO_BUILD_TARGET');
 withBuildLock(root, () => {
-  const result = spawnSync('cargo', args, { cwd: root, stdio: 'inherit' });
+  if (!debug) {
+    const compiler = execFileSync(env.RUSTC, ['--version'], { cwd: root, env, encoding: 'utf8' }).trim();
+    if (!/^rustc \d+\.\d+\.\d+(?:\s|$)/.test(compiler))
+      throw new Error(`Release builds require stable Rust: ${compiler}`);
+  }
+  const result = spawnSync('cargo', args, { cwd: root, env, stdio: 'inherit' });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     process.exitCode = result.status || 1;

@@ -23,7 +23,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RUST_VERSION: stable
   RUSTUP_TOOLCHAIN: stable
   CARGO_INCREMENTAL: '0'
 
@@ -102,7 +101,7 @@ jobs:
         run: node scripts/prepare-release.js --apply artifacts/prepared-release.json
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
           targets: ${{ matrix.target }}
       - name: Install cross compiler
         if: matrix.cross

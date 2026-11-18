@@ -5,6 +5,7 @@ use super::{Metadata, registry_string, wide_string};
 use crate::PortInfo;
 use std::{
     hint::cold_path,
+    mem::DropGuard,
     ptr::{null, null_mut},
 };
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
@@ -15,7 +16,7 @@ use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
     SetupDiGetDeviceRegistryPropertyW, SetupDiOpenDevRegKey,
 };
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, INVALID_HANDLE_VALUE};
-use windows_sys::Win32::System::Registry::{HKEY, KEY_QUERY_VALUE, RegCloseKey, RegQueryValueExW};
+use windows_sys::Win32::System::Registry::{KEY_QUERY_VALUE, RegCloseKey, RegQueryValueExW};
 
 struct DeviceSet(HDEVINFO);
 
@@ -23,15 +24,6 @@ impl Drop for DeviceSet {
     fn drop(&mut self) {
         // SAFETY: this wrapper owns the valid set returned by SetupDiGetClassDevsW.
         unsafe { SetupDiDestroyDeviceInfoList(self.0) };
-    }
-}
-
-struct RegistryKey(HKEY);
-
-impl Drop for RegistryKey {
-    fn drop(&mut self) {
-        // SAFETY: this wrapper owns the valid key returned by SetupDiOpenDevRegKey.
-        unsafe { RegCloseKey(self.0) };
     }
 }
 
@@ -50,7 +42,10 @@ fn port_name(set: &DeviceSet, device: &SP_DEVINFO_DATA) -> Option<String> {
     if key == INVALID_HANDLE_VALUE {
         return None;
     }
-    let key = RegistryKey(key);
+    let key = DropGuard::new(key, |key| {
+        // SAFETY: SetupDiOpenDevRegKey returned this owned key.
+        unsafe { RegCloseKey(key) };
+    });
     registry_string(|buffer, kind, size| {
         *size = std::mem::size_of_val(buffer) as u32;
         let data = if buffer.is_empty() {
@@ -62,7 +57,7 @@ fn port_name(set: &DeviceSet, device: &SP_DEVINFO_DATA) -> Option<String> {
         // the writable buffer in bytes (or a null buffer for the size probe).
         (unsafe {
             RegQueryValueExW(
-                key.0,
+                *key,
                 windows_sys::core::w!("PortName"),
                 null(),
                 kind,

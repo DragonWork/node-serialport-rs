@@ -3,7 +3,7 @@
 
 use std::{
     io,
-    os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd},
+    os::fd::{AsFd, AsRawFd, BorrowedFd},
     pin::Pin,
     task::{Context, Poll, ready},
 };
@@ -27,7 +27,8 @@ impl SerialStream {
         let port = TTYPort::open(builder)?;
         // TTYPort opens in blocking mode. Keep its settings/ownership, but use
         // nonblocking descriptor I/O instead of its timeout-based Read/Write.
-        let fd = super::descriptor(&port);
+        // SAFETY: port owns the descriptor throughout both fcntl calls.
+        let fd = unsafe { BorrowedFd::borrow_raw(port.as_raw_fd()) };
         let flags = fcntl(fd, FcntlArg::F_GETFL).map_err(io::Error::from)?;
         fcntl(
             fd,
@@ -42,8 +43,8 @@ impl SerialStream {
     }
 
     pub fn try_read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        self.io.try_io(Interest::READABLE, |port| {
-            unistd::read(super::descriptor(port), bytes).map_err(Into::into)
+        self.io.try_io(Interest::READABLE, |_| {
+            unistd::read(&self.io, bytes).map_err(Into::into)
         })
     }
 
@@ -123,12 +124,6 @@ impl AsyncWrite for SerialStream {
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         self.poll_flush(cx)
-    }
-}
-
-impl AsRawFd for SerialStream {
-    fn as_raw_fd(&self) -> RawFd {
-        self.io.as_raw_fd()
     }
 }
 
@@ -261,9 +256,7 @@ mod tests {
     async fn blocked_writer_wakes_and_preserves_partial_writes() {
         let (mut master, mut port) = pair();
         master.set_timeout(Duration::from_secs(5)).unwrap();
-        let expected: Vec<_> = (0..4 * crate::CHUNK_SIZE)
-            .map(|index| (index * 37 + 11) as u8)
-            .collect();
+        let expected = Vec::from_fn(4 * crate::CHUNK_SIZE, |i| (i * 37 + 11) as u8);
         let mut offset = 0;
         loop {
             match port.try_write(&expected[offset..]) {

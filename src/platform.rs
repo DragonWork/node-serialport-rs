@@ -45,10 +45,11 @@ pub(crate) fn set_baud_rate(port: &mut SerialStream, baud_rate: u32) -> io::Resu
     #[cfg(target_os = "macos")]
     if port.control().baud_rate()? == 0 {
         use nix::sys::termios::{self, SetArg};
-        let mut settings = termios::tcgetattr(descriptor(port))?;
+        use std::os::fd::AsFd;
+        let fd = port.as_fd();
+        let mut settings = termios::tcgetattr(fd)?;
         termios::cfsetspeed(&mut settings, baud_rate)?;
-        return termios::tcsetattr(descriptor(port), SetArg::TCSANOW, &settings)
-            .map_err(Into::into);
+        return termios::tcsetattr(fd, SetArg::TCSANOW, &settings).map_err(Into::into);
     }
     port.control_mut()
         .set_baud_rate(baud_rate)
@@ -59,17 +60,10 @@ pub(crate) fn baud_rate(port: &SerialStream) -> io::Result<u32> {
     let baud_rate = port.control().baud_rate()?;
     #[cfg(target_os = "macos")]
     if baud_rate == 0 {
-        let settings = nix::sys::termios::tcgetattr(descriptor(port))?;
+        let settings = nix::sys::termios::tcgetattr(port)?;
         return Ok(nix::sys::termios::cfgetospeed(&settings));
     }
     Ok(baud_rate)
-}
-
-#[cfg(unix)]
-fn descriptor(port: &impl std::os::fd::AsRawFd) -> std::os::fd::BorrowedFd<'_> {
-    use std::os::fd::BorrowedFd;
-    // SAFETY: the borrowed descriptor cannot outlive the port that owns it.
-    unsafe { BorrowedFd::borrow_raw(port.as_raw_fd()) }
 }
 
 pub(crate) fn port_ids() -> std::collections::HashMap<std::path::PathBuf, String> {
@@ -96,8 +90,7 @@ pub(crate) fn port_ids() -> std::collections::HashMap<std::path::PathBuf, String
 pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Result<()> {
     use nix::sys::termios::{self, ControlFlags, InputFlags, SetArg};
 
-    let fd = descriptor(port);
-    let mut settings = termios::tcgetattr(fd)?;
+    let mut settings = termios::tcgetattr(port)?;
     settings.input_flags.set(InputFlags::IXON, options.xon);
     settings.input_flags.set(InputFlags::IXOFF, options.xoff);
     settings.input_flags.set(InputFlags::IXANY, options.xany);
@@ -115,7 +108,7 @@ pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Res
                 .set(ControlFlags::PARODD, options.parity == "mark");
         }
     }
-    termios::tcsetattr(fd, SetArg::TCSANOW, &settings)?;
+    termios::tcsetattr(port, SetArg::TCSANOW, &settings)?;
     Ok(())
 }
 

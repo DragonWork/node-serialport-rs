@@ -4,6 +4,7 @@
 use std::{
     future::Future,
     io,
+    mem::DropGuard,
     sync::{
         Arc, LazyLock, Mutex, Weak,
         atomic::{AtomicUsize, Ordering},
@@ -47,16 +48,7 @@ impl Drop for Worker {
     }
 }
 
-struct Lease(Arc<Worker>);
-
-impl Drop for Lease {
-    fn drop(&mut self) {
-        // This count only guides worker selection; it does not publish port state.
-        self.0.ports.fetch_sub(1, Ordering::Relaxed);
-    }
-}
-
-fn acquire() -> io::Result<Lease> {
+fn acquire() -> io::Result<Arc<Worker>> {
     static WORKERS: Mutex<Vec<Weak<Worker>>> = Mutex::new(Vec::new());
     static LIMIT: LazyLock<usize> = LazyLock::new(|| {
         std::thread::available_parallelism()
@@ -96,16 +88,18 @@ fn acquire() -> io::Result<Lease> {
         }
     };
     worker.ports.fetch_add(1, Ordering::Relaxed);
-    Ok(Lease(worker))
+    Ok(worker)
 }
 
 pub(crate) fn spawn(task: impl Future<Output = ()> + Send + 'static) -> io::Result<()> {
-    let lease = acquire()?;
-    let handle = lease.0.handle.clone();
+    let lease = DropGuard::new(acquire()?, |worker| {
+        // This count only guides worker selection.
+        worker.ports.fetch_sub(1, Ordering::Relaxed);
+    });
+    let handle = lease.handle.clone();
     handle.spawn(async move {
-        // Keep the worker alive through descriptor cleanup and the final callback.
-        let _lease = lease;
         task.await;
+        drop(lease);
     });
     Ok(())
 }

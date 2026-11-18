@@ -28,7 +28,7 @@ and [DragonWork's follow-up callback-scope fix](https://github.com/serialport/bi
 
 ## Install
 
-Requires Node.js 20 or newer. Get the [latest npm release](https://www.npmjs.com/package/serialport-rs):
+Supported Node.js versions are 22 through 26. [View on npm](https://www.npmjs.com/package/serialport-rs).
 
 ```sh
 npm install serialport-rs

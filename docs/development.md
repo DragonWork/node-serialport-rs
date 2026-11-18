@@ -18,7 +18,7 @@ cargo test --locked --lib
 
 Use `npm run build` for an optimized release build with the stable compiler. Debug builds use the active toolchain. Pull requests test dev builds, and publication tests the release artifacts.
 
-CI runs the Rust tests on stable and beta across Linux x64/ARM64, macOS ARM64 and Windows x64. Stable also covers the Node version matrix. The beta job builds the addon from source and runs the Node 26 tests, including during release verification. Only stable builds supply release artifacts. Beta failures are advisory.
+CI runs the Rust tests on stable and beta across Linux x64/ARM64, macOS ARM64 and Windows x64. Stable tests Node.js 22, 24 and 26. The beta job builds the addon from source and runs the Node 26 tests, including during release verification. Only stable builds supply release artifacts. Beta failures are advisory.
 
 The MSRV check reads `package.rust-version` from [Cargo.toml](../Cargo.toml) and checks the library, tests and examples on each native platform. Stable and MSRV failures block release verification.
 
@@ -56,7 +56,7 @@ node test/compare-parsers.js node_modules/serialport
 SERIALPORT_REFERENCE_STREAM="$PWD/node_modules/@serialport/stream" node --enable-source-maps --expose-gc --test test/compatibility.test.js test/consumer.test.js
 ```
 
-Run `npm run check:types` to check the runtime, every test, and the public consumer fixture in `test/types.ts` against the pinned compiler and Node declarations. The consumer fixture is checked without execution. CI also checks these against Node 20 declarations in its Node 20 test job to preserve compatibility with the minimum supported runtime. Tests that exercise newer runtime features must retain their feature guards; the test compiler's library types do not polyfill those features.
+Run `npm run check:types` to check the runtime, every test, and the public consumer fixture in `test/types.ts` against the pinned compiler and Node declarations. The consumer fixture is checked without execution. The Node 22 job also runs this check with `@types/node@22`. Tests that exercise newer runtime features must retain their feature guards; the test compiler's library types do not polyfill those features.
 
 The [`bench/` directory](../bench/README.md) contains separate latency, throughput, and parser measurement tools. PTY results measure the host software path, not physical UART speed. Throughput records count echoed payload once, exclude echo-helper CPU, and include sampled memory usage.
 

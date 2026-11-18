@@ -40,7 +40,7 @@
   "main": "index.js",
   "types": "index.d.ts",
   "engines": {
-    "node": ">=20"
+    "node": ">=22 <27"
   },
   "files": [
     "index.js",

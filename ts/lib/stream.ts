@@ -59,7 +59,7 @@ function watchAbort(signal: AbortSignal, listener: () => void): () => void {
     const subscription = addAbortListener(signal, listener);
     return () => subscription[Symbol.dispose]();
   }
-  // addAbortListener was introduced in Node 20.5; retain support for earlier 20.x.
+  // Early Node.js 20 releases only have the EventTarget methods.
   signal.addEventListener('abort', listener, { once: true });
   return () => signal.removeEventListener('abort', listener);
 }

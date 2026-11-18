@@ -52,6 +52,6 @@ node --expose-gc bench/parsers.js
 
 The latency and throughput scripts accept `--binding` and `--stream` package paths for comparing compatible implementations.
 
-`latency.js` also accepts `--segments` (1-1024, default 1) for corked writes; the payload size must divide evenly.
+Both scripts accept `--segments` (1–1024, default 1) to split each payload into equal corked writes. For example, `node --expose-gc bench/throughput.js --bytes=256 --segments=32 --mib=8` measures verified echoes for 32 eight-byte writes per frame.
 
 `parsers.js` includes bulk, small-frame and fully escaped SLIP encoding cases. Pass a compiled package directory as its positional argument to compare another checkout, for example `node --expose-gc bench/parsers.js /path/to/baseline`. Alternate baseline and candidate runs on the same runtime and compare both elapsed and CPU time; parser or submission improvements do not imply the same improvement in physical serial throughput.

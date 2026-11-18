@@ -325,6 +325,7 @@ impl NativePort {
 }
 
 impl NativePort {
+    #[inline]
     fn submit_write(&self, id: u32, data: Cow<'_, [u8]>, allow_inline: bool) -> Result<bool> {
         (!self.control.stop.load(Ordering::Acquire))
             .ok_or_else(|| Error::from_reason("Port is closed"))?;
@@ -334,8 +335,11 @@ impl NativePort {
             && let Ok(mut state) = self.control.session.try_lock()
             && let Some(port) = state.port.as_mut()
         {
-            match transfer::inline_write_count(data.len(), port.try_write(&data)) {
-                Ok(count) if count == data.len() => return Ok(true),
+            let attempt = port.try_write(&data);
+            if matches!(attempt, Ok(n) if n == data.len()) {
+                return Ok(true);
+            }
+            match transfer::inline_write_count(data.len(), attempt) {
                 Ok(count) => written = count,
                 Err(error) => {
                     // The driver may report an earlier write's failure only once.

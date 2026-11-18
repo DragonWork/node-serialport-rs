@@ -17,6 +17,7 @@ const { isSharedArrayBuffer } = types;
 let native: NativeAddon | undefined;
 const loadNative = (): NativeAddon => (native ??= (require('./native') as typeof import('./native')).loadNative());
 const CHUNK_SIZE = 64 * 1024;
+const PACKED_WRITE_SIZE = 1024;
 const READ_SLOTS = 32;
 const RESOLVED = Promise.resolve();
 const localStores = new WeakSet();
@@ -60,6 +61,7 @@ interface Pending {
 }
 
 class BindingPort {
+  #writeScratch?: Buffer;
   declare openOptions: Readonly<Required<BindingOpenOptions>>;
   declare isOpen: boolean;
   declare onClose?: (error: Error | null) => void;
@@ -209,6 +211,7 @@ class BindingPort {
   _finishClose(error: Error | null) {
     if (this._finished) return;
     this._finished = true;
+    this.#writeScratch = undefined;
     const wasOpen = this.isOpen;
     const intentional = this._closing;
     // Streams acknowledge I/O failures through close(); isOpen must allow that call.
@@ -241,7 +244,10 @@ class BindingPort {
       else if (op === 'writev') {
         const buffers = data as Buffer[];
         for (let i = 0; i < buffers.length; i++) buffers[i] = localBuffer(buffers[i]);
-        completed = this._native!.writev(id, buffers, value, this._ordered === 1);
+        const packed = buffers.length >= 8 && value <= PACKED_WRITE_SIZE ? this.#packWrite(buffers, value) : undefined;
+        completed = packed
+          ? this._native!.write(id, packed, this._ordered === 1)
+          : this._native!.writev(id, buffers, value, this._ordered === 1);
       } else this._native!.request(id, op, value);
       if (completed) {
         this._ordered--;
@@ -256,6 +262,21 @@ class BindingPort {
     return new Promise<NativeEvent | void>((resolve, reject) => {
       this._pending.set(id, { resolve, reject, ordered });
     });
+  }
+
+  #packWrite(buffers: Buffer[], hint: number): Buffer | undefined {
+    // Native writes snapshot any queued suffix before returning, so this storage can be reused.
+    if (!this.#writeScratch || this.#writeScratch.length < hint) this.#writeScratch = Buffer.alloc(hint);
+    const scratch = this.#writeScratch;
+    let offset = 0;
+    for (const buffer of buffers) {
+      const length = getLength.call(buffer);
+      // An earlier view may have grown while the caller's array was traversed.
+      if (length > scratch.length - offset) return undefined;
+      if (length) scratch.set(buffer, offset);
+      offset += length;
+    }
+    return offset === scratch.length ? scratch : scratch.subarray(0, offset);
   }
 
   _id() {

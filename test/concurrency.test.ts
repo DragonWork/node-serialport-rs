@@ -382,6 +382,65 @@ test('vectored writes retain slicing semantics for a shadowed Buffer length', { 
   assert.equal(await terminal.command('read 7'), Buffer.from('prefix!').toString('hex'));
 });
 
+test(
+  'fragmented writes snapshot shared and overlapping views behind an ordered control',
+  { timeout: 5000 },
+  async t => {
+    const terminal = await pty(t);
+    const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+    t.after(() => port.isOpen && port.close());
+    const source = Buffer.from('abcd');
+    const shared = Buffer.from(new SharedArrayBuffer(2));
+    shared.write('XY');
+    const short = Buffer.from('z-unused');
+    Object.defineProperty(short, 'length', { value: 1 });
+    const parts = Object.freeze([source, shared, source.subarray(1, 3), short, shared, short, source, shared]);
+    const control = port.getBaudRate();
+    const first = port.writev(parts);
+    source.fill(0);
+    shared.fill(0);
+    short.fill(0);
+    await Promise.all([control, first]);
+    await port.writev(Array(8).fill(Buffer.from('!')));
+    const expected = Buffer.from('abcdXYbczXYzabcdXY!!!!!!!!');
+    assert.equal(await terminal.command(`read ${expected.length}`), expected.toString('hex'));
+  },
+);
+
+test(
+  'fragmented writes use the actual lengths of views resized during submission',
+  {
+    skip: typeof ArrayBuffer.prototype.resize !== 'function',
+    timeout: 5000,
+  },
+  async t => {
+    const terminal = await pty(t);
+    const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+    t.after(() => port.isOpen && port.close());
+    for (const size of [1, 1100]) {
+      const store = new ArrayBuffer(4, { maxByteLength: 2048 });
+      const parts: Buffer[] = Array(8).fill(Buffer.from('x'));
+      const view = Buffer.from(store);
+      parts[0] = view;
+      let reads = 0;
+      Object.defineProperty(parts, 7, {
+        get() {
+          if (++reads === 2) {
+            store.resize(size);
+            new Uint8Array(store).fill(0x41);
+          }
+          return Buffer.from('!');
+        },
+      });
+      await port.writev(parts);
+      await port.write(Buffer.from('.'));
+      // Buffer.from(store) can produce a fixed-length or a length-tracking view.
+      const expected = Buffer.from('A'.repeat(view.length) + 'xxxxxx!.');
+      assert.equal(await terminal.command(`read ${expected.length}`), expected.toString('hex'));
+    }
+  },
+);
+
 test('small writes complete asynchronously and stay behind queued controls', { timeout: 10000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });

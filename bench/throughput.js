@@ -19,6 +19,7 @@ const { values } = parseArgs({
     label: { type: 'string', default: 'rust' },
     ports: { type: 'string', default: '1' },
     bytes: { type: 'string', default: '65536' },
+    segments: { type: 'string', default: '1' },
     mib: { type: 'string', default: '64' },
     'warmup-mib': { type: 'string', default: '4' },
   },
@@ -30,6 +31,8 @@ function integer(name, min, max) {
 }
 const ports = integer('ports', 1, 32);
 const bytes = integer('bytes', 8, 65536);
+const segments = integer('segments', 1, 1024);
+assert(bytes % segments === 0, 'Bytes must divide into whole segments');
 const measured = integer('mib', 1, 4096) * 1048576;
 const warmup = integer('warmup-mib', 0, 64) * 1048576;
 assert(measured % bytes === 0 && warmup % bytes === 0, 'Transfer sizes must contain whole frames');
@@ -64,6 +67,9 @@ class Echo {
     this.received = 0;
     this.target = 0;
     this.payload = Buffer.alloc(bytes);
+    this.parts = Array.from({ length: segments }, (_, i) =>
+      this.payload.subarray((i * bytes) / segments, ((i + 1) * bytes) / segments),
+    );
     for (let i = 0; i < bytes; i++) this.payload[i] = (i * 13 + index * 29) & 255;
     this.expected = Buffer.from(this.payload);
     this.child = spawn(join(__dirname, '../target/release/examples/echo'), { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -121,6 +127,17 @@ class Echo {
     assert.equal((await this.lines.next()).value, 'ready');
   }
 
+  writeFrame() {
+    if (segments === 1) return call(this.port, 'write', this.payload);
+    this.port.cork();
+    try {
+      for (let i = 0; i < segments - 1; i++) this.port.write(this.parts[i]);
+      return call(this.port, 'write', this.parts[segments - 1]);
+    } finally {
+      this.port.uncork();
+    }
+  }
+
   async transfer(length) {
     if (!length) return;
     this.target += length;
@@ -133,7 +150,7 @@ class Echo {
         this.payload.writeUInt32LE(Math.floor(this.sent / bytes), 0);
         this.sent += bytes;
         // One outstanding write per port bounds sender memory independently of transfer size.
-        await call(this.port, 'write', this.payload);
+        await this.writeFrame();
       }
     })();
     await Promise.all([sending, received]);
@@ -197,6 +214,7 @@ async function main() {
         arch: process.arch,
         ports,
         bytes,
+        segments,
         measuredMiBPerPort: measured / 1048576,
         warmupMiBPerPort: warmup / 1048576,
         elapsedMs: +elapsedMs.toFixed(2),

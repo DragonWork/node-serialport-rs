@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs');
 const { join, resolve } = require('node:path');
+const { getNodeLts } = require('./node-lts');
 const { jsonResponse } = require('./publish-release');
 
 const releaseFiles = ['package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', 'CHANGELOG.md'];
@@ -29,7 +30,7 @@ function prependRelease(changelog, notes, tag) {
   return header + [notes.trim(), ...previous.map(section => section.trim())].join('\n\n') + '\n';
 }
 
-function prepareRelease(root, request = 'auto', cliff = process.env.GIT_CLIFF || 'git-cliff') {
+function prepareRelease(root, request, cliff, engines) {
   const flags = ['--config', join(root, 'cliff.toml'), '--unreleased', '--use-branch-tags', '--no-exec'];
   const run = args =>
     execFileSync(cliff, [...flags, ...args], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trim();
@@ -50,12 +51,12 @@ function prepareRelease(root, request = 'auto', cliff = process.env.GIT_CLIFF ||
   const lock = JSON.parse(files['package-lock.json']);
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[''].version, pkg.version);
-  files['package.json'] = files['package.json'].replace(
-    /^(  "version": ")[^"]+("[,]?)$/m,
-    (_, before, after) => before + version + after,
-  );
+  assert(engines, 'Missing Node.js engine range for release');
+  pkg.engines = { ...pkg.engines, node: engines };
+  files['package.json'] = JSON.stringify({ ...pkg, version }, null, 2) + '\n';
   lock.version = version;
   lock.packages[''].version = version;
+  lock.packages[''].engines = pkg.engines;
   files['package-lock.json'] = JSON.stringify(lock, null, 2) + '\n';
   for (const [name, pattern] of [
     ['Cargo.toml', /(\[package\][\s\S]*?\nversion = ")([^"]+)(")/],
@@ -118,7 +119,8 @@ async function main() {
     applyPrepared(root, JSON.parse(readFileSync(process.argv[3], 'utf8')));
     return;
   }
-  const meta = prepareRelease(root, process.argv[2] || 'auto');
+  const node = await getNodeLts();
+  const meta = prepareRelease(root, process.argv[2] || 'auto', process.env.GIT_CLIFF || 'git-cliff', node.engines);
   if (process.env.GITHUB_SHA) assert.equal(meta.sourceCommit, process.env.GITHUB_SHA);
   meta.commit =
     process.env.RELEASE_PUBLISH === 'true'
@@ -135,7 +137,11 @@ async function main() {
   mkdirSync(output, { recursive: true });
   writeFileSync(join(output, 'prepared-release.json'), JSON.stringify(meta, null, 2) + '\n');
   if (process.env.GITHUB_OUTPUT)
-    writeFileSync(process.env.GITHUB_OUTPUT, `commit=${meta.commit}\nversion=${meta.version}\n`, { flag: 'a' });
+    writeFileSync(
+      process.env.GITHUB_OUTPUT,
+      `commit=${meta.commit}\nversion=${meta.version}\nnode-lts=${JSON.stringify(node.majors)}\nnode-latest=${node.latest}\n`,
+      { flag: 'a' },
+    );
   console.log(`Prepared ${meta.tag}`);
 }
 

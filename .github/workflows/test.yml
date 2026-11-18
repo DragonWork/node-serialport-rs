@@ -17,6 +17,9 @@ on:
         description: Prepared release commit to test
         type: string
         default: ''
+      node-lts:
+        description: LTS majors selected during release preparation (JSON array)
+        type: string
 
 permissions:
   contents: read
@@ -26,6 +29,23 @@ env:
   CARGO_INCREMENTAL: '0'
 
 jobs:
+  node:
+    name: Resolve Node.js LTS versions
+    runs-on: ubuntu-26.04
+    outputs:
+      majors: ${{ steps.lts.outputs.majors }}
+      min: ${{ steps.lts.outputs.min }}
+      latest: ${{ steps.lts.outputs.latest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release-commit || github.sha }}
+          persist-credentials: false
+      - id: lts
+        env:
+          RELEASE_NODE_LTS: ${{ inputs.node-lts }}
+        run: node scripts/node-lts.js
+
   msrv:
     name: MSRV ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
@@ -58,9 +78,10 @@ jobs:
       - run: cargo check --workspace --all-targets --locked
 
   beta:
+    needs: node
     env:
       RUSTUP_TOOLCHAIN: beta
-    name: Beta ${{ matrix.target }} / Node 26
+    name: Beta ${{ matrix.target }} / Node ${{ needs.node.outputs.latest }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     # Surface upcoming compiler regressions without blocking stable releases.
@@ -80,7 +101,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26
+          node-version: ${{ needs.node.outputs.latest }}
           package-manager-cache: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: inputs.prebuilt
@@ -117,6 +138,7 @@ jobs:
           node --enable-source-maps --test test/build.test.js test/bytes.test.js test/compatibility.test.js test/exports.test.js test/lifecycle.test.js test/mock.test.js test/native.test.js test/parsers.test.js test/release.test.js test/windows-serial.test.js
 
   build:
+    needs: node
     if: '!inputs.prebuilt'
     name: Dev build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
@@ -135,7 +157,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26
+          node-version: ${{ needs.node.outputs.latest }}
           package-manager-cache: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
@@ -158,21 +180,21 @@ jobs:
           if-no-files-found: error
 
   test:
-    needs: build
-    if: ${{ !cancelled() && (inputs.prebuilt || needs.build.result == 'success') }}
+    needs: [node, build]
+    if: ${{ !cancelled() && needs.node.result == 'success' && (inputs.prebuilt || needs.build.result == 'success') }}
     name: Test ${{ matrix.target }} / Node ${{ matrix.node }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        runner: [ubuntu-26.04]
+        target: [x86_64-unknown-linux-gnu]
+        node: ${{ fromJSON(needs.node.outputs.majors) }}
         include:
-          - {runner: ubuntu-26.04, target: x86_64-unknown-linux-gnu, node: 22}
-          - {runner: ubuntu-26.04, target: x86_64-unknown-linux-gnu, node: 24}
-          - {runner: ubuntu-26.04, target: x86_64-unknown-linux-gnu, node: 26}
-          - {runner: ubuntu-26.04-arm, target: aarch64-unknown-linux-gnu, node: 26}
-          - {runner: macos-latest, target: aarch64-apple-darwin, node: 26}
-          - {runner: windows-latest, target: x86_64-pc-windows-msvc, node: 26}
+          - {runner: ubuntu-26.04-arm, target: aarch64-unknown-linux-gnu, node: '${{ needs.node.outputs.latest }}'}
+          - {runner: macos-latest, target: aarch64-apple-darwin, node: '${{ needs.node.outputs.latest }}'}
+          - {runner: windows-latest, target: x86_64-pc-windows-msvc, node: '${{ needs.node.outputs.latest }}'}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -191,12 +213,12 @@ jobs:
         if: inputs.prebuilt
         run: node scripts/prepare-release.js --apply artifacts/prepared-release.json
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
-        if: inputs.prebuilt || matrix.node == 26
+        if: inputs.prebuilt || matrix.node == needs.node.outputs.latest
         with:
           toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: ${{ !inputs.prebuilt && matrix.node == 26 }}
+        if: ${{ !inputs.prebuilt && matrix.node == needs.node.outputs.latest }}
         with:
           shared-key: dev-${{ matrix.target }}
           cache-bin: false
@@ -224,24 +246,24 @@ jobs:
           npm run build:tests
           node --enable-source-maps --test test/build.test.js test/bytes.test.js test/compatibility.test.js test/exports.test.js test/lifecycle.test.js test/mock.test.js test/native.test.js test/parsers.test.js test/release.test.js test/windows-serial.test.js
       - name: Check Rust on stable
-        if: matrix.node == 26
+        if: matrix.node == needs.node.outputs.latest
         run: |
           cargo fmt --check
           cargo clippy --all-targets --locked -- -D warnings
           cargo test --workspace --all-targets --locked
       - name: Check SerialPort 13 compatibility
-        if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26
+        if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == needs.node.outputs.latest
         run: |
           npm install --no-save --ignore-scripts --package-lock=false serialport@13.0.0
           node test/compare-parsers.js node_modules/serialport
           SERIALPORT_REFERENCE_STREAM="$PWD/node_modules/@serialport/stream" node --enable-source-maps --expose-gc --test test/compatibility.test.js test/consumer.test.js
-      - name: Check formatting and TypeScript API
-        if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == 26
-        run: |
-          npm run format:check
-          npm run check:types
+      - name: Check formatting
+        if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == needs.node.outputs.latest
+        run: npm run format:check
       - name: Check types against Node ${{ matrix.node }}
-        if: matrix.node == 22
+        if: matrix.target == 'x86_64-unknown-linux-gnu' && (matrix.node == needs.node.outputs.min || matrix.node == needs.node.outputs.latest)
+        env:
+          NODE_MAJOR: ${{ matrix.node }}
         run: |
-          npm install --no-save --ignore-scripts --package-lock=false @types/node@${{ matrix.node }}
+          npm install --no-save --ignore-scripts --package-lock=false "@types/node@$NODE_MAJOR"
           npm run check:types

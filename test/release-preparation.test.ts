@@ -10,8 +10,10 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const { prepareRelease, prependRelease, applyPrepared, recordPrepared } = require('../scripts/prepare-release');
+const { getNodeLts, supportedLts } = require('../scripts/node-lts');
 
 const cliff = process.env.GIT_CLIFF || '';
+const engines = '>=10 <12';
 interface CommitInput {
   expectedHeadOid: string;
   message: { headline: string };
@@ -37,7 +39,10 @@ function fixture(t: TestContext, messages: string[] = []) {
   git(['config', 'user.name', 'DragonWork']);
   git(['config', 'user.email', '97512+DragonWork@users.noreply.github.com']);
   const version = '1.12.1';
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'serialport-rs', version }, null, 2) + '\n');
+  writeFileSync(
+    join(root, 'package.json'),
+    JSON.stringify({ name: 'serialport-rs', version, engines: { node: '>=8', npm: '*' } }, null, 2) + '\n',
+  );
   writeFileSync(
     join(root, 'package-lock.json'),
     JSON.stringify(
@@ -58,6 +63,32 @@ function fixture(t: TestContext, messages: string[] = []) {
   return { root, git };
 }
 
+test('Node support tracks published LTS builds until their scheduled end date', () => {
+  const releases = [
+    { version: 'v11.1.0', lts: 'Eleven', date: '2030-01-02' },
+    { version: 'v10.2.0', lts: 'Ten', date: '2029-05-01' },
+    { version: 'v10.1.0', lts: 'Ten', date: '2029-04-01' },
+    { version: 'v8.1.0', lts: 'Eight', date: '2028-04-01' },
+    { version: 'v12.0.0', lts: false, date: '2029-10-01' },
+    { version: 'v12.1.0-rc.1', lts: 'Twelve', date: '2029-12-01' },
+  ];
+  const schedule = {
+    v8: { lts: '2028-04-01', end: '2030-01-02' },
+    v10: { lts: '2029-04-01', end: '2031-01-01' },
+    v11: { lts: '2030-01-01', end: '2032-01-01' },
+    v12: { lts: '2030-01-01', end: '2033-01-01' },
+  };
+  assert.deepEqual(supportedLts(releases, schedule, '2030-01-01').majors, [8, 10]);
+  assert.deepEqual(supportedLts(releases, schedule, '2030-01-02'), { majors: [10, 11], min: 10, latest: 11, engines });
+  assert.throws(() => supportedLts(releases, schedule, '2033-01-01'), /supported Node.js LTS/);
+});
+
+test('release verification reuses the selected Node majors offline', async t => {
+  t.mock.method(global, 'fetch', () => assert.fail('Release verification must reuse the prepared LTS selection'));
+  assert.equal((await getNodeLts('[10,11]')).engines, engines);
+  for (const snapshot of ['[]', '[11,10]', '[10,10]', '["10"]']) await assert.rejects(getNodeLts(snapshot));
+});
+
 test('prepending notes replaces that version once and preserves earlier releases', () => {
   const notes = "## What's Changed in v1.12.2 (2026-08-14)\n\n* fix(socketmap): relax limits by @DragonWork\n";
   const first = prependRelease('# Changelog\n\n' + oldNotes, notes, 'v1.12.2');
@@ -69,7 +100,7 @@ test('prepending notes replaces that version once and preserves earlier releases
 
 test('invalid overrides are rejected before invoking git-cliff', () => {
   for (const version of ['--help', '1.2.03', '1.2.3-01', '1.2.3\nextra']) {
-    assert.throws(() => prepareRelease('/unused', version, '/missing-git-cliff'), /Choose auto/);
+    assert.throws(() => prepareRelease('/unused', version, '/missing-git-cliff', engines), /Choose auto/);
   }
 });
 
@@ -82,16 +113,19 @@ test('Conventional Commits select patch, minor and major releases and exclude ch
   ]) {
     await t.test(version, t => {
       const { root } = fixture(t, [message, 'chore(release): update internal metadata']);
-      const meta = prepareRelease(root, 'auto', cliff);
+      const meta = prepareRelease(root, 'auto', cliff, engines);
       assert.equal(meta.version, version);
       assert(meta.notes.includes(`* ${message} by @DragonWork`));
       assert(!meta.notes.includes('chore'));
       assert(meta.notes.includes(`/compare/v1.12.1...v${version}`));
       applyPrepared(root, { ...meta, commit: meta.sourceCommit });
-      assert.equal(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version, version);
+      const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+      assert.equal(pkg.version, version);
+      assert.deepEqual(pkg.engines, { node: engines, npm: '*' });
       const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
       assert.equal(lock.version, version);
       assert.equal(lock.packages[''].version, version);
+      assert.deepEqual(lock.packages[''].engines, pkg.engines);
       for (const name of ['Cargo.toml', 'Cargo.lock'])
         assert(readFileSync(join(root, name), 'utf8').includes(`version = "${version}"`));
       assert(readFileSync(join(root, 'CHANGELOG.md'), 'utf8').endsWith(oldNotes));
@@ -108,9 +142,9 @@ test('manual bump modes and exact prerelease versions override automatic selecti
     ['major', '2.0.0'],
     ['v4.5.6-rc.1', '4.5.6-rc.1'],
   ]) {
-    assert.equal(prepareRelease(root, request, cliff).version, expected);
+    assert.equal(prepareRelease(root, request, cliff, engines).version, expected);
   }
-  assert.throws(() => prepareRelease(root, '1.12.1', cliff), /already exists/);
+  assert.throws(() => prepareRelease(root, '1.12.1', cliff, engines), /already exists/);
 });
 
 test('git-cliff renders the requested author, PR and compare-link format', { skip: !cliff }, t => {
@@ -144,7 +178,7 @@ test('git-cliff renders the requested author, PR and compare-link format', { ski
 test('preparation records only release files and rejects concurrent branch updates', { skip: !cliff }, async t => {
   offline(t);
   const { root } = fixture(t, ['fix: keep progress']);
-  const meta = prepareRelease(root, 'auto', cliff);
+  const meta = prepareRelease(root, 'auto', cliff, engines);
   let input!: CommitInput;
   t.mock.method(global, 'fetch', async (url: Parameters<typeof fetch>[0], options?: RequestInit) => {
     assert.equal(url, 'https://api.github.com/graphql');

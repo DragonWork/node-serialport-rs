@@ -417,8 +417,9 @@ test(
     const terminal = await pty(t);
     const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
     t.after(() => port.isOpen && port.close());
-    for (const size of [1, 1100]) {
-      const store = new ArrayBuffer(4, { maxByteLength: 2048 });
+    const maxByteLength = 32 * 1024;
+    for (const size of [1, maxByteLength]) {
+      const store = new ArrayBuffer(4, { maxByteLength });
       const parts: Buffer[] = Array(8).fill(Buffer.from('x'));
       const view = Buffer.from(store);
       parts[0] = view;
@@ -432,11 +433,11 @@ test(
           return Buffer.from('!');
         },
       });
-      await port.writev(parts);
-      await port.write(Buffer.from('.'));
+      const written = port.writev(parts).then(() => port.write(Buffer.from('.')));
       // Buffer.from(store) can produce a fixed-length or a length-tracking view.
       const expected = Buffer.from('A'.repeat(view.length) + 'xxxxxx!.');
-      assert.equal(await terminal.command(`read ${expected.length}`), expected.toString('hex'));
+      const [received] = await Promise.all([terminal.command(`read ${expected.length}`), written]);
+      assert.equal(received, expected.toString('hex'));
     }
   },
 );

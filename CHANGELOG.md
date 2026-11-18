@@ -1,5 +1,23 @@
 # Changelog
 
+## What's Changed in v1.0.0 (2026-11-18)
+
+* chore(deps): bump prettier from 3.9.10 to 3.10.1 in the compatible-npm-updates group (#33) by @dependabot[bot] in [#33](https://github.com/DragonWork/node-serialport-rs/pull/33)
+* build(deps): bump mio from 1.2.4 to 1.2.5 in the compatible-cargo-updates group (#32) by @dependabot[bot] in [#32](https://github.com/DragonWork/node-serialport-rs/pull/32)
+* build(rust): follow stable for development and releases by @DragonWork
+* refactor(rust): modernize resource handling for Rust 1.100 by @DragonWork
+* fix(windows): throttle empty reads across wakeups by @DragonWork
+* fix(serial): preserve terminal inline write errors by @DragonWork
+* perf(binding): pack small fragmented writes by @DragonWork
+* test(serial): read the PTY during resized writes by @DragonWork
+* build(node)!: support Node.js 22 through 26 by @DragonWork
+* build(deps): bump nix from 0.31.3 to 0.32.0 (#34) by @dependabot[bot] in [#34](https://github.com/DragonWork/node-serialport-rs/pull/34)
+* build(node): derive support from maintained LTS releases by @DragonWork
+* docs: remove internal guides by @DragonWork
+* docs: clarify Node.js LTS support by @DragonWork
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v0.7.3...v1.0.0
+
 ## What's Changed in v0.7.3 (2026-11-12)
 
 * fix(windows): retry empty serial reads (closes #31) by @DragonWork

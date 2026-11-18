@@ -28,7 +28,9 @@ and [DragonWork's follow-up callback-scope fix](https://github.com/serialport/bi
 
 ## Install
 
-Use a maintained Node.js LTS version. [View on npm](https://www.npmjs.com/package/serialport-rs).
+We support versions in Active LTS or Maintenance LTS according to the [official Node.js release schedule](https://github.com/nodejs/Release#release-schedule).
+
+Node.js 20 is outside official support, so npm warns by default on installation. The addon should still work there because it targets Node-API 8, which Node.js 20 provides. [View on npm](https://www.npmjs.com/package/serialport-rs).
 
 ```sh
 npm install serialport-rs

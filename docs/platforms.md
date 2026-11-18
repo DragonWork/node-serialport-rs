@@ -3,10 +3,7 @@
 
 # Native builds
 
-The addon supports Node.js 22 through 26 and targets Node-API 8. On Node.js 20, npm warns about the engine range by default.
-
-
-The release matrix defines 24 targets. Publication requires every build and the test jobs to succeed:
+The addon uses Node-API 8. Prebuilt binaries are available for these targets.
 
 | Platform | Architectures |
 | --- | --- |
@@ -18,10 +15,6 @@ The release matrix defines 24 targets. Publication requires every build and the 
 | FreeBSD | x64 |
 | illumos / SmartOS | x64 |
 
-Platform binaries use `native/<rust-target>/serialport-rs.node`. The loader selects architecture, libc and, where needed, byte order. Native binaries use the host's system libraries; a build for one platform is not interchangeable with another.
+The loader selects a binary for the host architecture, libc and byte order. FreeBSD, Android and RISC-V availability also depends on the Node.js distribution.
 
-Runtime CI covers Linux x64/ARM64, macOS ARM64 and Windows x64. Other matrix entries use cross-compilers or platform SDKs and require hardware validation before relying on driver-specific behavior. FreeBSD, Android and RISC-V support also depend on the Node version and distribution. The target set follows the [Node 22](https://github.com/nodejs/node/blob/v22.x/BUILDING.md#platform-list) and [Node 26](https://github.com/nodejs/node/blob/v26.x/BUILDING.md#platform-list) platform lists, [Rust target support](https://doc.rust-lang.org/rustc/platform-support.html), and available build toolchains.
-
-The transport tests on Linux and macOS use pseudo-terminals. Windows CI checks addon loading, portable API behavior and Rust unit tests; it does not exercise a real COM port. Physical UART validation still needs paired devices on each OS for data transfer, idle reads, write backpressure, drain, cancellation, unplug/replug, exclusive access, baud/parity/stop-bit settings, RTS/CTS, DTR and break. Compilation and PTY tests cannot establish those driver and electrical behaviors.
-
-The intersection is constrained by dependencies as well as CPU support. LoongArch64 and OpenHarmony currently fail in the transitive `nix 0.26.4` dependency; AIX additionally lacks a distributed Rust standard library and needs dependency ports. These platforms are not advertised as working prebuilds. Other Unix platforms may be buildable from source with a compatible Node, Rust toolchain and serial driver, but are not part of the configured release matrix.
+Runtime tests cover Linux x64 and ARM64, macOS ARM64 and Windows x64. Baud rates, modem control lines and disconnect behavior depend on the device and its driver.

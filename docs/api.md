@@ -50,6 +50,8 @@ Opening is automatic unless `autoOpen: false` is passed. Use `open(callback)` an
 
 The stream's `drain` event is different from the serial `drain(callback)` method. The event concerns JavaScript write buffering; the method waits for queued writes and then asks the OS to drain device output. A successful write callback alone does not mean the bytes have physically left the UART.
 
+Received buffers stay valid after close. A chunk may contain a partial frame or several frames. Keep write buffers unchanged until their callback or promise settles.
+
 ### Async client methods
 
 Streams also provide `openAsync()`, `closeAsync()`, `writeAsync(data, encoding?)`, `updateAsync(options)`, `setAsync(options?)`, `getAsync()`, `getBaudRateAsync()`, `flushAsync()`, and `drainAsync()`:
@@ -191,10 +193,3 @@ packets.on('error', error => console.error('Invalid SLIP frame:', error));
 ```
 
 Overflow uses the same `RangeError` and `ERR_SERIALPORT_FRAME_TOO_LARGE` code and releases buffered payload. A limit of zero permits only empty frames. Omitting the option retains unlimited frames, including the existing invalid-escape and trailing-frame behavior. It is a decoder option; `SlipEncoder` has no frame limit.
-
-## Native receive batching
-
-The Rust stream automatically groups already-ready follow-up reads into fewer
-native callbacks. Small partial reads keep their direct delivery path; no fill
-timer or tuning option is needed. Applications receive ordinary Buffer chunks and use the same
-stream API. See [native batching](native-batching.md) for details.

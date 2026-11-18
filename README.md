@@ -28,7 +28,7 @@ and [DragonWork's follow-up callback-scope fix](https://github.com/serialport/bi
 
 ## Install
 
-Supported Node.js versions are 22 through 26. [View on npm](https://www.npmjs.com/package/serialport-rs).
+Use a maintained Node.js LTS version. [View on npm](https://www.npmjs.com/package/serialport-rs).
 
 ```sh
 npm install serialport-rs
@@ -94,10 +94,8 @@ Serial I/O runs on a dedicated, bounded Rust worker pool. Idle reads do not depe
 on a heartbeat timer. Read-ahead and pending-operation queues are bounded; your
 application must still honor stream backpressure.
 
-The [architecture guide](docs/architecture.md)
-explains buffer ownership, worker lifetime, and recovery behavior. Reconnection
-and protocol recovery belong to the application. A blocked physical-output drain
-can also delay closing a port.
+Applications handle reconnection and protocol recovery. A blocked output drain
+can delay closing a port.
 
 Recorded Linux x64 and ARM64 pseudo-terminal comparisons show lower tail latency
 against a **patched C++ baseline that includes the callback-scope fix**. These
@@ -110,9 +108,7 @@ workloads, results, and reproduction commands are in the
 - [Migrating from SerialPort](docs/migration.md)
 - [Stream and binding API, options, and parsers](docs/api.md)
 - [Mock ports](docs/mocking.md)
-- [Architecture, memory ownership, and lifecycle](docs/architecture.md)
 - [Native build targets](docs/platforms.md)
-- [Development and checks](docs/development.md)
 - [Changelog](CHANGELOG.md)
 - [Benchmarks](bench/README.md)
 

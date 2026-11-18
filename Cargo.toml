@@ -31,6 +31,7 @@ serialport = { version = "4.10.1", default-features = false, features = ["usbpor
 windows-sys = { version = "0.61", features = ["Win32_Devices_Communication", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Registry"] }
 
 [dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["test-util"] }
 mio-serial = { version = "5.0.7", default-features = false }
 mio = { version = "1.2.4", default-features = false, features = ["os-poll"] }
 

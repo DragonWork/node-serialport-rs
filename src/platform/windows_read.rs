@@ -11,11 +11,14 @@ use std::{
 };
 use tokio::{
     io::{AsyncRead, ReadBuf},
-    time::{Sleep, sleep},
+    time::{Instant, Sleep, sleep},
 };
+
+const EMPTY_READ_BACKOFF: Duration = Duration::from_millis(1);
 
 #[derive(Default)]
 pub(super) struct ReadState {
+    last_empty: Option<Instant>,
     backoff: Option<Pin<Box<Sleep>>>,
 }
 
@@ -38,16 +41,26 @@ impl ReadState {
             let filled = buffer.filled().len();
             ready!(Pin::new(&mut *io).poll_read(cx, buffer))?;
             if buffer.filled().len() != filled {
+                self.last_empty = None;
                 return Poll::Ready(Ok(()));
             }
             cold_path();
             check()?;
+            // Keep the timestamp across Pending. Normal idle timeouts are far apart.
+            let now = Instant::now();
+            if self
+                .last_empty
+                .replace(now)
+                .is_some_and(|last| now - last < EMPTY_READ_BACKOFF)
+            {
+                break;
+            }
             // Mio has rearmed the read. Poll it to register a waker or return
             // already-arrived data without adding a timer to a normal timeout.
         }
         // A driver repeatedly completing empty reads must neither spin nor
         // synthesize EOF. Only this abnormal path needs a short backoff.
-        let mut backoff = Box::pin(sleep(Duration::from_millis(1)));
+        let mut backoff = Box::pin(sleep(EMPTY_READ_BACKOFF));
         if backoff.as_mut().poll(cx).is_ready() {
             cx.waker().wake_by_ref();
         }
@@ -84,6 +97,7 @@ mod tests {
     enum Completion {
         Empty,
         Pending,
+        Wake,
         Data(&'static [u8]),
         Error(i32),
     }
@@ -115,6 +129,10 @@ mod tests {
             this.polls += 1;
             match this.completions.pop_front() {
                 Some(Completion::Empty) => Poll::Ready(Ok(())),
+                Some(Completion::Wake) => {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                }
                 Some(Completion::Data(data)) => {
                     buffer.put_slice(data);
                     Poll::Ready(Ok(()))
@@ -192,6 +210,59 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
+        assert_eq!(buffer.filled(), b"reply");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rapid_empty_reads_are_throttled_across_wakeups() {
+        let mut state = ReadState::default();
+        let mut reader = Reader::new(
+            (0..16)
+                .flat_map(|_| [Completion::Empty, Completion::Wake])
+                .chain([Completion::Data(b"reply")]),
+        );
+        let mut bytes = [0; 8];
+        let mut buffer = ReadBuf::new(&mut bytes);
+        let start = tokio::time::Instant::now();
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            poll_fn(|cx| state.poll_read(&mut reader, cx, &mut buffer, || Ok(()))),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(
+            start.elapsed() >= Duration::from_millis(7),
+            "Empty reads spun across wakeups"
+        );
+        assert_eq!(buffer.filled(), b"reply");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ordinary_idle_timeouts_do_not_delay_the_next_byte() {
+        let mut state = ReadState::default();
+        let mut reader = Reader::default();
+        let mut bytes = [0; 8];
+        let mut buffer = ReadBuf::new(&mut bytes);
+        let mut cx = Context::from_waker(Waker::noop());
+        for _ in 0..2 {
+            reader
+                .completions
+                .extend([Completion::Empty, Completion::Pending]);
+            assert!(
+                state
+                    .poll_read(&mut reader, &mut cx, &mut buffer, || Ok(()))
+                    .is_pending()
+            );
+            tokio::time::advance(Duration::from_secs(60)).await;
+        }
+        reader
+            .completions
+            .extend([Completion::Empty, Completion::Data(b"reply")]);
+        assert_matches!(
+            state.poll_read(&mut reader, &mut cx, &mut buffer, || Ok(())),
+            Poll::Ready(Ok(()))
+        );
         assert_eq!(buffer.filled(), b"reply");
     }
 

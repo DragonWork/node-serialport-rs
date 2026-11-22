@@ -180,9 +180,62 @@ jobs:
           path: artifacts/
           if-no-files-found: error
 
+  packed:
+    needs: [targets, package]
+    name: Test packed addon on ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-26.04, target: x86_64-unknown-linux-musl}
+          - {runner: windows-11-arm, target: aarch64-pc-windows-msvc}
+    env:
+      EXPECTED_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.targets.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-package
+          path: artifacts/
+      - name: Prepare a clean consumer
+        shell: bash
+        run: |
+          mkdir consumer
+          cp artifacts/*.tar.gz test/packed.mjs consumer/
+          echo '{"private":true}' > consumer/package.json
+      - name: Install and load on Alpine
+        if: runner.os == 'Linux'
+        working-directory: consumer
+        env:
+          NODE_MAJOR: ${{ needs.targets.outputs.node-latest }}
+        run: |
+          tar -cf - . | docker run --rm -i -e EXPECTED_TARGET -w /consumer "node:${NODE_MAJOR}-alpine" sh -ec '
+            tar -xf -
+            npm install --offline --ignore-scripts --no-audit --no-fund ./*.tar.gz
+            node packed.mjs
+          '
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: runner.os == 'Windows'
+        with:
+          node-version: ${{ needs.targets.outputs.node-latest }}
+          architecture: arm64
+          package-manager-cache: false
+      - name: Install and load on Windows ARM64
+        if: runner.os == 'Windows'
+        working-directory: consumer
+        shell: bash
+        run: |
+          npm install --offline --ignore-scripts --no-audit --no-fund ./*.tar.gz
+          node packed.mjs
+
   publish:
     if: inputs.publish && github.repository == 'DragonWork/node-serialport-rs'
-    needs: [targets, package]
+    needs: [targets, package, packed]
     runs-on: ubuntu-26.04
     permissions:
       contents: write

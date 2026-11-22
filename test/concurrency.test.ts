@@ -16,6 +16,22 @@ const { RustBinding } = require('../lib/binding') as typeof import('../ts/lib/bi
 import { pty, call } from './helpers';
 const { isSharedArrayBuffer } = types;
 
+test('drains recover after a write hits the pending request limit', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => port.isOpen && port.close());
+  const backlog = Promise.all(Array.from({ length: 64 }, () => port.getBaudRate()));
+  const rejected = port.writev([Buffer.from('A'), Buffer.from('B')]);
+  await Promise.all([
+    assert.rejects(rejected, /Too many pending/),
+    assert.rejects(port.drain(), /Too many pending/),
+    backlog,
+  ]);
+  await port.drain();
+  await port.write(Buffer.from('C'));
+  assert.equal(await terminal.command('read 1'), '43');
+});
+
 test(
   'I/O workers start lazily, remain bounded and retire after close',
   { timeout: 10000, skip: process.platform !== 'linux' },
@@ -82,6 +98,19 @@ test('eight concurrent ports make independent progress while one writer stalls',
   );
   await Promise.all(ports.map(port => call(port, 'close')));
   await stalled;
+});
+
+test('an idle drain completes ahead of a later backpressured write', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => port.isOpen && port.close());
+  const payload = Buffer.alloc(64 * 1024, 0x5a);
+  await port.writev([]);
+  for (const write of [() => port.write(payload), () => port.writev([payload])]) {
+    const drained = port.drain();
+    const [received] = await Promise.all([drained.then(() => terminal.command(`read ${payload.length}`)), write()]);
+    assert.equal(received, payload.toString('hex'));
+  }
 });
 
 test('a full control backlog does not block incoming read credits', { timeout: 5000 }, async t => {

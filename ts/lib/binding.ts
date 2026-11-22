@@ -372,6 +372,7 @@ class BindingPort {
       }
       await this._writePromise;
     } finally {
+      this._writePromise = undefined;
       this._writing = false;
     }
   }
@@ -406,6 +407,7 @@ class BindingPort {
     try {
       await this._writePromise;
     } finally {
+      this._writePromise = undefined;
       this._writing = false;
     }
   }
@@ -431,7 +433,7 @@ class BindingPort {
     await this._request('flush');
   }
   async drain() {
-    await this._writePromise;
+    if (this._writePromise) await this._writePromise;
     await this._request('drain');
   }
 }

@@ -28,6 +28,30 @@ fn ioctl_result(result: libc::c_int) -> io::Result<()> {
     Ok(())
 }
 
+pub(crate) fn output_pending(port: &impl AsFd) -> io::Result<bool> {
+    #[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
+    let request = nix::request_code_read!(b't', 115, size_of::<libc::c_int>());
+    #[cfg(not(any(target_os = "netbsd", target_os = "openbsd")))]
+    let request = libc::TIOCOUTQ;
+    let mut bytes: libc::c_int = 0;
+    // SAFETY: TIOCOUTQ writes one c_int and the port owns the descriptor.
+    match ioctl_result(unsafe {
+        libc::ioctl(port.as_fd().as_raw_fd(), request as _, &raw mut bytes)
+    }) {
+        Ok(()) => Ok(bytes != 0),
+        Err(error)
+            if error.kind() == io::ErrorKind::Unsupported
+                || matches!(
+                    error.raw_os_error(),
+                    Some(libc::ENOTTY | libc::ENOSYS | libc::EOPNOTSUPP)
+                ) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 impl SerialStream {
     pub fn open(builder: &SerialPortBuilder) -> serialport::Result<Self> {
         // macOS PTYs can return ENOTTY before the caller retries with a POSIX speed.
@@ -97,15 +121,16 @@ impl SerialStream {
         ))
     }
 
-    // Physical output drain is invoked only on the bounded blocking pool.
-    pub fn drain_output(&mut self) -> io::Result<()> {
-        loop {
-            match termios::tcdrain(&self.io) {
-                // Signals may interrupt a slow drain repeatedly; this is a retry.
-                Err(nix::errno::Errno::EINTR) => continue,
-                result => return result.map_err(Into::into),
+    pub fn start_drain(&self) -> io::Result<tokio::task::JoinHandle<io::Result<()>>> {
+        let fd = self.as_fd().try_clone_to_owned()?;
+        Ok(tokio::task::spawn_blocking(move || {
+            loop {
+                match termios::tcdrain(&fd) {
+                    Err(nix::errno::Errno::EINTR) => continue,
+                    result => return result.map_err(Into::into),
+                }
             }
-        }
+        }))
     }
 
     pub fn control(&self) -> &TTYPort {
@@ -194,6 +219,19 @@ mod tests {
         let stream =
             crate::platform::open(&serialport::new(path, 115200).exclusive(false)).unwrap();
         (master, stream)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn unsupported_output_queue_probes_fall_back_but_hangups_fail() {
+        assert!(!output_pending(&std::fs::File::open("/dev/null").unwrap()).unwrap());
+        let (master, port) = pair();
+        assert!(!output_pending(&port).unwrap());
+        drop(master);
+        assert_eq!(
+            output_pending(&port).unwrap_err().raw_os_error(),
+            Some(libc::EIO)
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

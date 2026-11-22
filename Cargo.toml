@@ -21,7 +21,7 @@ tokio = { version = "1.54.1", default-features = false, features = ["rt", "net",
 serialport = { version = "4.10.1", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.32.0", default-features = false, features = ["fs", "term"] }
+nix = { version = "0.32.0", default-features = false, features = ["fs", "ioctl", "term"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Enable IOKit location metadata on macOS.

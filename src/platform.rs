@@ -10,11 +10,11 @@ use std::io;
 std::cfg_select! {
     unix => {
         mod unix;
-        pub(crate) use unix::SerialStream;
+        pub(crate) use unix::{SerialStream, output_pending};
     }
     windows => {
         mod windows;
-        pub(crate) use windows::SerialStream;
+        pub(crate) use windows::{SerialStream, output_pending};
     }
 }
 

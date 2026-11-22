@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    fs::OpenOptions,
+    fs::{File, OpenOptions},
     hint::cold_path,
     io,
     os::windows::{
         fs::OpenOptionsExt,
-        io::{AsRawHandle, FromRawHandle, IntoRawHandle, RawHandle},
+        io::{AsHandle, AsRawHandle, FromRawHandle, IntoRawHandle, RawHandle},
     },
     pin::Pin,
     task::{Context, Poll},
@@ -20,8 +20,9 @@ use tokio::{
 };
 use windows_sys::Win32::{
     Devices::Communication::{
-        COMMTIMEOUTS, ClearCommError, DCB, GetCommState, SetCommState, SetCommTimeouts,
+        COMMTIMEOUTS, COMSTAT, ClearCommError, DCB, GetCommState, SetCommState, SetCommTimeouts,
     },
+    Foundation::{ERROR_CALL_NOT_IMPLEMENTED, ERROR_INVALID_FUNCTION, ERROR_NOT_SUPPORTED},
     Storage::FileSystem::FILE_FLAG_OVERLAPPED,
 };
 
@@ -137,8 +138,9 @@ impl SerialStream {
         ))
     }
 
-    pub fn drain_output(&mut self) -> io::Result<()> {
-        io::Write::flush(&mut self.control)
+    pub fn start_drain(&self) -> io::Result<tokio::task::JoinHandle<io::Result<()>>> {
+        let file = File::from(self.io.as_handle().try_clone_to_owned()?);
+        Ok(tokio::task::spawn_blocking(move || file.sync_all()))
     }
 
     pub fn control(&self) -> &COMPort {
@@ -159,6 +161,28 @@ impl AsyncRead for SerialStream {
         let this = self.get_mut();
         this.read
             .poll_read(&mut this.io, cx, buffer, || check_status(&this.control))
+    }
+}
+
+pub(crate) fn output_pending(port: &SerialStream) -> io::Result<bool> {
+    let mut status = COMSTAT::default();
+    // SAFETY: control owns the COM handle and status is writable for the call.
+    if unsafe {
+        ClearCommError(
+            port.control.as_raw_handle(),
+            std::ptr::null_mut(),
+            &raw mut status,
+        )
+    } != 0
+    {
+        return Ok(status.cbOutQue != 0);
+    }
+    let error = io::Error::last_os_error();
+    match error.raw_os_error().map(|code| code as u32) {
+        Some(ERROR_CALL_NOT_IMPLEMENTED | ERROR_INVALID_FUNCTION | ERROR_NOT_SUPPORTED) => {
+            Ok(false)
+        }
+        _ => Err(error),
     }
 }
 

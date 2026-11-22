@@ -48,7 +48,7 @@ const { SerialPort, ReadlineParser } = require('serialport-rs');
 
 Opening is automatic unless `autoOpen: false` is passed. Use `open(callback)` and `close(callback)` for explicit lifecycle control. The stream supports `pipe()`, `pause()`, `resume()`, `cork()`, and normal Node.js backpressure. `write()` accepts buffers, strings, and arrays of bytes; when it returns `false`, wait for the stream's `drain` event before submitting more data.
 
-The stream's `drain` event is different from the serial `drain(callback)` method. The event concerns JavaScript write buffering; the method waits for queued writes and then asks the OS to drain device output. A successful write callback alone does not mean the bytes have physically left the UART.
+The stream's `drain` event concerns JavaScript write buffering. The serial `drain(callback)` method waits for queued writes and then asks the OS to drain device output. Incoming data can still be read during this wait. A successful write callback alone does not mean the bytes have physically left the UART.
 
 Received buffers stay valid after close. A chunk may contain a partial frame or several frames. Keep write buffers unchanged until their callback or promise settles.
 

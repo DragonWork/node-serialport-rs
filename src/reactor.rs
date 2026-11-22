@@ -6,6 +6,7 @@ use std::{
     future::poll_fn,
     hint::cold_path,
     io,
+    pin::Pin,
     sync::{Arc, atomic::Ordering},
     task::{Context, Poll, Waker},
     time::Duration,
@@ -29,6 +30,31 @@ struct ReadWindow {
     bytes: usize,
     slots: usize,
     size: usize,
+}
+
+enum PendingDrain {
+    Queue(Pin<Box<tokio::time::Sleep>>),
+    Driver(u32, tokio::task::JoinHandle<io::Result<()>>),
+}
+
+impl PendingDrain {
+    async fn wait(&mut self) -> Option<NativeEvent> {
+        match self {
+            Self::Queue(timer) => {
+                timer.await;
+                None
+            }
+            Self::Driver(id, task) => Some(
+                match task
+                    .await
+                    .unwrap_or_else(|error| Err(io::Error::other(error)))
+                {
+                    Ok(()) => NativeEvent::new(*id, "ok"),
+                    Err(error) => NativeEvent::error(*id, error),
+                },
+            ),
+        }
+    }
 }
 
 fn send(callback: &Callback, event: NativeEvent) -> bool {
@@ -101,7 +127,14 @@ pub(crate) async fn run(
             {
                 Ok(())
             } else {
-                run_open(receiver, control, callback).await
+                let mut drain = None;
+                let result = run_open(receiver, control, callback, &mut drain).await;
+                if let Some(PendingDrain::Driver(_, task)) = drain {
+                    // Cancel queued work. A running drain must release its handle before close.
+                    task.abort();
+                    let _ = task.await;
+                }
+                result
             }
         }
         Ok(Err(error)) => {
@@ -120,6 +153,7 @@ async fn run_open(
     mut receiver: mpsc::Receiver<Command>,
     control: &Arc<Control>,
     callback: &Callback,
+    drain: &mut Option<PendingDrain>,
 ) -> io::Result<()> {
     let mut commands = VecDeque::<Command>::new();
     let mut read = None::<(u32, usize)>;
@@ -136,7 +170,6 @@ async fn run_open(
         if control.stop.load(Ordering::Acquire) {
             return Ok(());
         }
-        let mut draining = false;
         while let Some(command) = commands.front() {
             if control.stop.load(Ordering::Acquire) {
                 return Ok(());
@@ -150,39 +183,27 @@ async fn run_open(
                     NativeEvent::new(command.id, "ok")
                 }
                 Operation::Drain => {
-                    if with_port(control, |port| {
-                        port.control().bytes_to_write().map_err(|error| {
-                            cold_path();
-                            io::Error::from(error)
-                        })
-                    })? != 0
-                    {
-                        draining = true;
+                    if drain.is_some() {
                         break;
                     }
-                    // Physical drain can block after the driver's queue becomes empty.
-                    let control = Arc::clone(control);
-                    let drained = tokio::task::spawn_blocking(move || {
-                        with_port(&control, |port| port.drain_output())
-                    })
-                    .await
-                    .map_err(|error| {
-                        cold_path();
-                        io::Error::other(error)
-                    })
-                    .flatten();
-                    match drained {
-                        Ok(()) => NativeEvent::new(command.id, "ok"),
+                    if with_port(control, |port| crate::platform::output_pending(port))? {
+                        *drain = Some(PendingDrain::Queue(Box::pin(tokio::time::sleep(
+                            Duration::from_millis(1),
+                        ))));
+                        break;
+                    }
+                    match with_port(control, |port| port.start_drain()) {
+                        Ok(task) => {
+                            *drain = Some(PendingDrain::Driver(command.id, task));
+                            break;
+                        }
                         Err(error) => NativeEvent::error(command.id, error),
                     }
                 }
                 _ => with_port(control, |port| operation(port, command))
                     .unwrap_or_else(|error| NativeEvent::error(command.id, error)),
             };
-            commands.pop_front();
-            // Release the completed command before JS can submit its successor.
-            control.pending_ops.fetch_sub(1, Ordering::Release);
-            if !send(callback, event) {
+            if !finish_command(&mut commands, control, callback, event) {
                 return Ok(());
             }
         }
@@ -205,6 +226,13 @@ async fn run_open(
         tokio::select! {
             biased;
             _ = control.changed.notified() => {},
+            event = async { drain.as_mut().unwrap().wait().await }, if drain.is_some() => {
+                *drain = None;
+                if let Some(event) = event
+                    && !finish_command(&mut commands, control, callback, event) {
+                    return Ok(());
+                }
+            },
             // Admission bounds ordered commands; never gate read-credit delivery
             // behind a blocked write and a full command backlog.
             command = receiver.recv() => {
@@ -270,10 +298,20 @@ async fn run_open(
                     if !sent { return Ok(()); }
                 } else { written += length; }
             },
-            // Only explicit drains use a timer; idle connections have no deadlines.
-            _ = async { tokio::time::sleep(Duration::from_millis(1)).await }, if draining => {},
         }
     }
+}
+
+fn finish_command(
+    commands: &mut VecDeque<Command>,
+    control: &Control,
+    callback: &Callback,
+    event: NativeEvent,
+) -> bool {
+    commands.pop_front();
+    // Release the completed command before JS can submit its successor.
+    control.pending_ops.fetch_sub(1, Ordering::Release);
+    send(callback, event)
 }
 
 fn send_read(callback: &Callback, buffer: &mut Vec<u8>, length: usize) -> bool {

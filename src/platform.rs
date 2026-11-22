@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::NativeOptions;
-use serialport::{SerialPort, SerialPortBuilder};
-#[cfg(windows)]
-use std::hint::cold_path;
+use serialport::SerialPort;
+#[cfg(unix)]
+use serialport::SerialPortBuilder;
 use std::io;
 
 std::cfg_select! {
@@ -25,6 +25,7 @@ pub(crate) mod windows_list;
 #[cfg(any(windows, test))]
 mod windows_read;
 
+#[cfg(unix)]
 pub(crate) fn open(builder: &SerialPortBuilder) -> io::Result<SerialStream> {
     let opened = SerialStream::open(builder);
     #[cfg(target_os = "macos")]
@@ -116,58 +117,57 @@ pub(crate) fn configure(port: &mut SerialStream, options: &NativeOptions) -> io:
     Ok(())
 }
 
-#[cfg(windows)]
-pub(crate) fn configure(port: &mut SerialStream, options: &NativeOptions) -> io::Result<()> {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Devices::Communication::{DCB, GetCommState, SetCommState};
+#[cfg(any(windows, test))]
+pub(crate) fn windows_device_path(path: &str) -> String {
+    if path.starts_with('\\') {
+        path.to_owned()
+    } else {
+        format!(r"\\.\{path}")
+    }
+}
 
-    let handle = port.as_raw_handle();
-    let mut settings = DCB {
-        DCBlength: std::mem::size_of::<DCB>() as u32,
-        ..Default::default()
-    };
-    // SAFETY: the port owns a live handle and settings is writable for the complete call.
-    (unsafe { GetCommState(handle, &raw mut settings) } != 0).ok_or_else(|| {
-        cold_path();
-        io::Error::last_os_error()
-    })?;
-    settings.BaudRate = options.baud_rate;
-    settings.ByteSize = options.data_bits as u8;
-    settings.Parity = match options.parity.as_str() {
+#[cfg(any(windows, test))]
+pub(crate) fn windows_format(options: &NativeOptions) -> io::Result<(u8, u8, u8)> {
+    use crate::error::invalid;
+    if !(5..=8).contains(&options.data_bits) {
+        return Err(invalid("Invalid dataBits"));
+    }
+    let parity = match options.parity.as_str() {
+        "none" => 0,
         "odd" => 1,
         "even" => 2,
         "mark" => 3,
         "space" => 4,
-        _ => 0,
+        _ => return Err(invalid("Invalid parity")),
     };
-    settings.StopBits = if options.stop_bits == 1.5 {
-        1
-    } else if options.stop_bits == 2.0 {
-        2
-    } else {
-        0
+    let stop = match options.stop_bits {
+        1.0 => 0,
+        1.5 => 1,
+        2.0 => 2,
+        _ => return Err(invalid("Invalid stopBits")),
     };
-    settings._bitfield = windows_rts_flags(
-        settings._bitfield,
-        options.rtscts,
-        options.rts_mode.as_ref(),
-    );
-    // DCB flag positions are defined by the Windows SDK (fOutX/fInX at 8/9).
-    for (bit, value) in [
-        (1, settings.Parity != 0),
-        // On Windows hupcl selects DTR on open, not the Unix close behavior.
-        (4, options.hupcl),
-        (5, false),
+    Ok((options.data_bits as u8, parity, stop))
+}
+
+#[cfg(any(windows, test))]
+pub(crate) fn windows_dcb_flags(flags: u32, options: &NativeOptions) -> u32 {
+    let mut flags = windows_rts_flags(flags, options.rtscts, options.rts_mode.as_ref());
+    for (bit, enabled) in [
+        (0, true), // fBinary
+        (1, options.parity != "none"),
+        (3, false), // fOutxDsrFlow
+        (4, options.dtr_on_open.unwrap_or(options.hupcl)),
+        (5, false), // manual DTR
+        (6, false), // fDsrSensitivity
         (8, options.xon),
         (9, options.xoff),
+        (10, false), // fErrorChar
+        (11, false), // fNull
+        (14, false), // fAbortOnError
     ] {
-        settings._bitfield = (settings._bitfield & !(1 << bit)) | (u32::from(value) << bit);
+        flags = (flags & !(1 << bit)) | (u32::from(enabled) << bit);
     }
-    // SAFETY: both the handle and DCB remain valid until this synchronous call returns.
-    (unsafe { SetCommState(handle, &raw const settings) } != 0).ok_or_else(|| {
-        cold_path();
-        io::Error::last_os_error()
-    })
+    flags
 }
 
 #[cfg(any(windows, test))]

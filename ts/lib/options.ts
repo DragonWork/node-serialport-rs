@@ -44,6 +44,8 @@ function validateOptions<O extends Partial<BindingOpenOptions>>(options: O): O &
 
 function validateRustOptions(options: RustOpenOptions) {
   const settings = validateOptions(options);
+  if (settings.dtrOnOpen !== undefined && typeof settings.dtrOnOpen !== 'boolean')
+    throw new TypeError('"dtrOnOpen" must be a boolean');
   if (settings.rtsMode !== undefined && !['handshake', 'enable', 'toggle'].includes(settings.rtsMode))
     throw new TypeError('Invalid rtsMode');
   for (const key of ['vmin', 'vtime'] as const) {

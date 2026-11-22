@@ -133,14 +133,16 @@ test(
   },
   async t => {
     const terminal = await pty(t);
-    const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
-    t.after(() => port.isOpen && port.close());
     const expected = {
       code: 'ENOTTY',
       errno: constants.errno.ENOTTY,
       message: 'Not a typewriter',
       path: terminal.path,
     };
+    const options = { path: terminal.path, baudRate: 115200 };
+    for (const dtrOnOpen of [false, true]) await assert.rejects(RustBinding.open({ ...options, dtrOnOpen }), expected);
+    const port = await RustBinding.open(options);
+    t.after(() => port.isOpen && port.close());
     await assert.rejects(port.set({ dtr: true }), expected);
     await assert.rejects(port.set({ dtr: false }), expected);
     await assert.rejects(port.get(), expected);

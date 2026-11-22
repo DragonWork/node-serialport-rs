@@ -126,6 +126,8 @@ export interface RustPort extends BindingPortInterface {
 }
 
 export interface RustOpenOptions extends BindingOpenOptions {
+  /** Set DTR while opening. On Windows this overrides the hupcl DTR default. */
+  dtrOnOpen?: boolean;
   /** Unix minimum read threshold in bytes, from 0 to 255. Defaults to 1. */
   vmin?: number;
   /** Unix terminal read timer in tenths of a second, from 0 to 255. Defaults to 0. */

@@ -30,6 +30,8 @@ test('native open errors carry a portable code and device path', async t => {
     });
   // @ts-expect-error Invalid modes must fail before device access.
   await assert.rejects(RustBinding.open({ path, baudRate: 9600, rtsMode: 'manual' }), TypeError);
+  // @ts-expect-error A DTR request must be boolean.
+  await assert.rejects(RustBinding.open({ path, baudRate: 9600, dtrOnOpen: 'false' }), TypeError);
   for (const key of ['vmin', 'vtime']) {
     for (const value of [-1, 256, 0.5, NaN, '4'])
       await assert.rejects(RustBinding.open({ path, baudRate: 9600, [key]: value }), TypeError);

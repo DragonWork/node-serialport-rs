@@ -7,13 +7,13 @@ use std::{
     io,
     os::windows::{
         fs::OpenOptionsExt,
-        io::{AsHandle, AsRawHandle, FromRawHandle, IntoRawHandle, RawHandle},
+        io::{AsHandle, AsRawHandle, FromRawHandle, IntoRawHandle},
     },
     pin::Pin,
     task::{Context, Poll},
 };
 
-use serialport::{COMPort, SerialPort, SerialPortBuilder};
+use serialport::{COMPort, SerialPort};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::windows::named_pipe::NamedPipeClient,
@@ -37,43 +37,35 @@ pub(crate) struct SerialStream {
 }
 
 impl SerialStream {
-    pub fn open(builder: &SerialPortBuilder) -> serialport::Result<Self> {
-        let port = COMPort::open(builder).inspect_err(|_| cold_path())?;
-        let name = port.name().ok_or_else(|| {
-            cold_path();
-            serialport::Error::new(serialport::ErrorKind::NoDevice, "Empty device name")
-        })?;
-        let mut settings = DCB {
-            DCBlength: size_of::<DCB>() as u32,
-            ..Default::default()
-        };
-        // SAFETY: port owns a live COM handle; settings is writable for this call.
-        (unsafe { GetCommState(port.as_raw_handle(), &raw mut settings) } != 0).ok_or_else(
-            || {
-                cold_path();
-                io::Error::last_os_error()
-            },
-        )?;
-        drop(port);
-
-        let path = if name.starts_with('\\') {
-            name
-        } else {
-            format!(r"\\.\{name}")
-        };
+    pub fn open(options: &crate::NativeOptions) -> io::Result<Self> {
+        let (bits, parity, stop) = super::windows_format(options)?;
+        let path = super::windows_device_path(&options.path);
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .share_mode(0)
             .custom_flags(FILE_FLAG_OVERLAPPED)
-            .open(path)
-            .inspect_err(|_| cold_path())?;
+            .open(path)?;
         let handle = file.as_raw_handle();
-        // SAFETY: file owns the COM handle and the fully initialized DCB remains live.
-        (unsafe { SetCommState(handle, &raw const settings) } != 0).ok_or_else(|| {
-            cold_path();
-            io::Error::last_os_error()
-        })?;
+        let mut settings = DCB {
+            DCBlength: size_of::<DCB>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: file owns the COM handle and settings is writable for this call.
+        (unsafe { GetCommState(handle, &raw mut settings) } != 0)
+            .ok_or_else(io::Error::last_os_error)?;
+        settings.BaudRate = options.baud_rate;
+        settings.ByteSize = bits;
+        settings.Parity = parity;
+        settings.StopBits = stop;
+        settings._bitfield = super::windows_dcb_flags(settings._bitfield, options);
+        settings.XonChar = 17;
+        settings.XoffChar = 19;
+        settings.ErrorChar = 0;
+        settings.EofChar = 26;
+        // SAFETY: the COM handle and the configured DCB remain valid for the call.
+        (unsafe { SetCommState(handle, &raw const settings) } != 0)
+            .ok_or_else(io::Error::last_os_error)?;
         // Return available bytes immediately; avoid extreme timeout values.
         // Empty completions are retried after checking device status.
         let timeouts = COMMTIMEOUTS {
@@ -219,11 +211,5 @@ impl AsyncWrite for SerialStream {
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.get_mut().io).poll_shutdown(cx)
-    }
-}
-
-impl AsRawHandle for SerialStream {
-    fn as_raw_handle(&self) -> RawHandle {
-        self.io.as_raw_handle()
     }
 }

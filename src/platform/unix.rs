@@ -104,20 +104,23 @@ impl SerialStream {
         unistd::write(&self.io, bytes).map_err(Into::into)
     }
 
+    fn set_line(&self, line: libc::c_int, enabled: bool) -> io::Result<()> {
+        let request = if enabled {
+            libc::TIOCMBIS
+        } else {
+            libc::TIOCMBIC
+        };
+        // SAFETY: the port owns the descriptor and both requests read one c_int.
+        syscall_result(unsafe { libc::ioctl(self.io.as_raw_fd(), request as _, &raw const line) })
+    }
+
+    pub fn set_dtr(&self, enabled: bool) -> io::Result<()> {
+        self.set_line(libc::TIOCM_DTR, enabled)
+    }
+
     pub fn set_signals(&self, flags: u32) -> io::Result<()> {
-        let fd = self.io.as_raw_fd();
-        for (line, enabled) in [
-            (libc::TIOCM_DTR, flags & 1 != 0),
-            (libc::TIOCM_RTS, flags & 2 != 0),
-        ] {
-            let request = if enabled {
-                libc::TIOCMBIS
-            } else {
-                libc::TIOCMBIC
-            };
-            // SAFETY: the port owns fd and both requests read one c_int.
-            syscall_result(unsafe { libc::ioctl(fd, request as _, &raw const line) })?;
-        }
+        self.set_dtr(flags & 1 != 0)?;
+        self.set_line(libc::TIOCM_RTS, flags & 2 != 0)?;
         let request = if flags & 4 != 0 {
             libc::TIOCSBRK
         } else {
@@ -125,7 +128,11 @@ impl SerialStream {
         };
         // SAFETY: the port owns fd and neither break request takes a payload.
         syscall_result(unsafe {
-            libc::ioctl(fd, request as _, std::ptr::null_mut::<libc::c_void>())
+            libc::ioctl(
+                self.io.as_raw_fd(),
+                request as _,
+                std::ptr::null_mut::<libc::c_void>(),
+            )
         })
     }
 

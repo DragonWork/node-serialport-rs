@@ -125,6 +125,7 @@ On macOS, USB `locationId` uses the eight-digit lowercase hexadecimal IOKit loca
 | `vmin`, `vtime` | `1`, `0` | Unix nonblocking read threshold (bytes) and timer (tenths of a second), each 0–255. Binding reads wait for data or disconnect even with `vmin: 0`. |
 | `xon`, `xoff`, `xany` | `false` | Software flow-control settings; platform support varies |
 | `hupcl` | `true` | Unix hang-up-on-close setting; Windows DTR-on-open setting |
+| `dtrOnOpen` | Unset | Set DTR on open. Defaults to the OS setting on Unix and `hupcl` on Windows. Drivers may briefly change DTR during open. |
 | `autoOpen` | `true` | Open during construction |
 | `highWaterMark` | `65536` | Node stream buffering threshold, in bytes |
 | `endOnClose` | `false` | Emit `end` when the port closes |

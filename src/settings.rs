@@ -1,36 +1,13 @@
 // Copyright 2026 DragonWork
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(unix)]
 use serialport::{DataBits, FlowControl, Parity, StopBits};
 use std::io;
 
 use crate::{NativeOptions, error::invalid, platform::SerialStream};
 
 pub(crate) fn open(options: &NativeOptions) -> io::Result<SerialStream> {
-    let data_bits = match options.data_bits {
-        5 => DataBits::Five,
-        6 => DataBits::Six,
-        7 => DataBits::Seven,
-        8 => DataBits::Eight,
-        _ => {
-            return Err(invalid("Invalid dataBits"));
-        }
-    };
-    let stop_bits = match options.stop_bits {
-        1.0 | 1.5 => StopBits::One,
-        2.0 => StopBits::Two,
-        _ => {
-            return Err(invalid("Invalid stopBits"));
-        }
-    };
-    let parity = match options.parity.as_str() {
-        "none" | "mark" | "space" => Parity::None,
-        "odd" => Parity::Odd,
-        "even" => Parity::Even,
-        _ => {
-            return Err(invalid("Invalid parity"));
-        }
-    };
     // Reject unsupported settings before opening a device can change its state.
     #[cfg(unix)]
     if options.stop_bits == 1.5 {
@@ -66,6 +43,42 @@ pub(crate) fn open(options: &NativeOptions) -> io::Result<SerialStream> {
     if options.baud_rate == 0 {
         return Err(invalid("Baud rate must be positive"));
     }
+    #[cfg(windows)]
+    {
+        SerialStream::open(options)
+    }
+    #[cfg(unix)]
+    {
+        open_unix(options)
+    }
+}
+
+#[cfg(unix)]
+fn open_unix(options: &NativeOptions) -> io::Result<SerialStream> {
+    let data_bits = match options.data_bits {
+        5 => DataBits::Five,
+        6 => DataBits::Six,
+        7 => DataBits::Seven,
+        8 => DataBits::Eight,
+        _ => {
+            return Err(invalid("Invalid dataBits"));
+        }
+    };
+    let stop_bits = match options.stop_bits {
+        1.0 => StopBits::One,
+        2.0 => StopBits::Two,
+        _ => {
+            return Err(invalid("Invalid stopBits"));
+        }
+    };
+    let parity = match options.parity.as_str() {
+        "none" | "mark" | "space" => Parity::None,
+        "odd" => Parity::Odd,
+        "even" => Parity::Even,
+        _ => {
+            return Err(invalid("Invalid parity"));
+        }
+    };
     let flow = if options.rtscts {
         FlowControl::Hardware
     } else if options.xon {
@@ -77,13 +90,15 @@ pub(crate) fn open(options: &NativeOptions) -> io::Result<SerialStream> {
         .data_bits(data_bits)
         .stop_bits(stop_bits)
         .parity(parity)
-        .flow_control(flow);
-    #[cfg(unix)]
-    let builder = builder.exclusive(options.lock);
+        .flow_control(flow)
+        .exclusive(options.lock);
     let mut port = crate::platform::open(&builder)?;
     crate::platform::configure(&mut port, options)?;
-    // Reapply custom speeds after changing the platform termios/DCB flags.
+    // Reapply custom speeds after changing the terminal flags.
     crate::platform::set_baud_rate(&mut port, options.baud_rate)?;
+    if let Some(level) = options.dtr_on_open {
+        port.set_dtr(level)?;
+    }
     Ok(port)
 }
 
@@ -101,12 +116,46 @@ mod tests {
             lock: true,
             rtscts: false,
             rts_mode: None,
+            dtr_on_open: None,
             vmin: None,
             vtime: None,
             xon: false,
             xoff: false,
             xany: false,
             hupcl: true,
+        }
+    }
+
+    #[test]
+    fn windows_open_preserves_driver_flags_and_applies_requested_lines() {
+        use crate::platform::{windows_dcb_flags, windows_device_path, windows_format};
+        assert_eq!(windows_device_path("COM12"), r"\\.\COM12");
+        assert_eq!(windows_device_path(r"\\.\COM12"), r"\\.\COM12");
+        assert_eq!(windows_device_path(r"\\?\port"), r"\\?\port");
+        for (hupcl, dtr_on_open, expected) in [
+            (true, None, true),
+            (false, None, false),
+            (true, Some(false), false),
+            (false, Some(true), true),
+        ] {
+            let options = NativeOptions {
+                hupcl,
+                dtr_on_open,
+                rtscts: true,
+                xoff: true,
+                parity: "mark".into(),
+                data_bits: 5,
+                stop_bits: 1.5,
+                ..invalid_path()
+            };
+            assert_eq!(windows_format(&options).unwrap(), (5, 3, 1));
+            let flags = windows_dcb_flags(u32::MAX, &options);
+            assert_eq!((flags >> 4) & 3, u32::from(expected));
+            assert_eq!((flags >> 12) & 3, 2);
+            assert_eq!(flags & 0x47, 7); // binary, parity and CTS flow, no DSR sensitivity
+            assert_eq!((flags >> 8) & 3, 2);
+            assert_eq!(flags & ((1 << 3) | (1 << 10) | (1 << 11) | (1 << 14)), 0);
+            assert_ne!(flags & (1 << 7), 0);
         }
     }
 

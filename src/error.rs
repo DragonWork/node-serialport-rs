@@ -11,10 +11,16 @@ pub(crate) struct ErrorDetails {
 
 impl From<io::Error> for ErrorDetails {
     fn from(error: io::Error) -> Self {
+        let errno = error.raw_os_error();
+        let (code, message) = match errno {
+            #[cfg(unix)]
+            Some(nix::libc::ENOTTY) => ("ENOTTY", nix::errno::Errno::ENOTTY.desc().to_owned()),
+            _ => (code(&error), error.to_string()),
+        };
         Self {
-            message: error.to_string(),
-            code: code(&error),
-            errno: error.raw_os_error(),
+            message,
+            code,
+            errno,
         }
     }
 }

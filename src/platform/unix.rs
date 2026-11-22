@@ -10,6 +10,7 @@ use std::{
 
 use nix::{
     fcntl::{FcntlArg, OFlag, fcntl},
+    libc,
     sys::termios,
     unistd,
 };
@@ -18,6 +19,13 @@ use tokio::io::{AsyncRead, AsyncWrite, Interest, ReadBuf, unix::AsyncFd};
 
 pub(crate) struct SerialStream {
     io: AsyncFd<TTYPort>,
+}
+
+fn ioctl_result(result: libc::c_int) -> io::Result<()> {
+    if result == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 impl SerialStream {
@@ -51,6 +59,42 @@ impl SerialStream {
     pub fn try_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         // An immediate write need not wait for Tokio to observe writability.
         unistd::write(&self.io, bytes).map_err(Into::into)
+    }
+
+    pub fn set_signals(&self, flags: u32) -> io::Result<()> {
+        let fd = self.io.as_raw_fd();
+        for (line, enabled) in [
+            (libc::TIOCM_DTR, flags & 1 != 0),
+            (libc::TIOCM_RTS, flags & 2 != 0),
+        ] {
+            let request = if enabled {
+                libc::TIOCMBIS
+            } else {
+                libc::TIOCMBIC
+            };
+            // SAFETY: the port owns fd and both requests read one c_int.
+            ioctl_result(unsafe { libc::ioctl(fd, request as _, &raw const line) })?;
+        }
+        let request = if flags & 4 != 0 {
+            libc::TIOCSBRK
+        } else {
+            libc::TIOCCBRK
+        };
+        // SAFETY: the port owns fd and neither break request takes a payload.
+        ioctl_result(unsafe { libc::ioctl(fd, request as _, std::ptr::null_mut::<libc::c_void>()) })
+    }
+
+    pub fn modem_status(&self) -> io::Result<(bool, bool, bool)> {
+        let mut lines: libc::c_int = 0;
+        // SAFETY: the port owns the descriptor and TIOCMGET writes one c_int.
+        ioctl_result(unsafe {
+            libc::ioctl(self.io.as_raw_fd(), libc::TIOCMGET as _, &raw mut lines)
+        })?;
+        Ok((
+            lines & libc::TIOCM_CTS != 0,
+            lines & libc::TIOCM_DSR != 0,
+            lines & libc::TIOCM_CAR != 0,
+        ))
     }
 
     // Physical output drain is invoked only on the bounded blocking pool.

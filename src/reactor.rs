@@ -412,20 +412,12 @@ fn operation(port: &mut SerialStream, command: &Command) -> io::Result<NativeEve
     match &command.operation {
         Operation::Update(baud_rate) => crate::platform::set_baud_rate(port, *baud_rate)?,
         Operation::GetBaudRate => event.baud_rate = Some(crate::platform::baud_rate(port)?),
-        Operation::Set(flags) => {
-            port.control_mut()
-                .write_data_terminal_ready(flags & 1 != 0)?;
-            port.control_mut().write_request_to_send(flags & 2 != 0)?;
-            if flags & 4 != 0 {
-                port.control().set_break()?;
-            } else {
-                port.control().clear_break()?;
-            }
-        }
+        Operation::Set(flags) => port.set_signals(*flags)?,
         Operation::Get => {
-            event.cts = Some(port.control_mut().read_clear_to_send()?);
-            event.dsr = Some(port.control_mut().read_data_set_ready()?);
-            event.dcd = Some(port.control_mut().read_carrier_detect()?);
+            let (cts, dsr, dcd) = port.modem_status()?;
+            event.cts = Some(cts);
+            event.dsr = Some(dsr);
+            event.dcd = Some(dcd);
         }
         Operation::Flush => port.control().clear(ClearBuffer::All)?,
         _ => {

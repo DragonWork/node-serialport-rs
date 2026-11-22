@@ -59,6 +59,7 @@ export interface BindingsErrorInterface extends Error {
   canceled?: boolean;
 }
 export type SerialPortErrorCode =
+  | 'ENOTTY'
   | 'ERR_SERIALPORT_NOT_FOUND'
   | 'ERR_SERIALPORT_PERMISSION_DENIED'
   | 'ERR_SERIALPORT_INVALID_ARGUMENT'

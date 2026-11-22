@@ -6,6 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { constants } from 'node:os';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { SerialPort, RustBinding, BindingsError } from '..';
@@ -123,6 +124,30 @@ test('binary duplex transfers and Promise continuations', { timeout: 5000 }, asy
   await call(port, 'close');
   assert.equal(port.isOpen, false);
 });
+
+test(
+  'unsupported Linux PTY modem controls report ENOTTY and leave the port usable',
+  {
+    skip: process.platform !== 'linux',
+    timeout: 5000,
+  },
+  async t => {
+    const terminal = await pty(t);
+    const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+    t.after(() => port.isOpen && port.close());
+    const expected = {
+      code: 'ENOTTY',
+      errno: constants.errno.ENOTTY,
+      message: 'Not a typewriter',
+      path: terminal.path,
+    };
+    await assert.rejects(port.set({ dtr: true }), expected);
+    await assert.rejects(port.set({ dtr: false }), expected);
+    await assert.rejects(port.get(), expected);
+    await port.write(Buffer.from('ok'));
+    assert.equal(await terminal.command('read 2'), '6f6b');
+  },
+);
 
 test('native operation callbacks retain their caller AsyncLocalStorage context', { timeout: 5000 }, async t => {
   const context = new AsyncLocalStorage();

@@ -118,6 +118,25 @@ impl SerialStream {
         self.io.try_write(bytes)
     }
 
+    pub fn set_signals(&mut self, flags: u32) -> io::Result<()> {
+        self.control.write_data_terminal_ready(flags & 1 != 0)?;
+        self.control.write_request_to_send(flags & 2 != 0)?;
+        if flags & 4 != 0 {
+            self.control.set_break()?;
+        } else {
+            self.control.clear_break()?;
+        }
+        Ok(())
+    }
+
+    pub fn modem_status(&mut self) -> io::Result<(bool, bool, bool)> {
+        Ok((
+            self.control.read_clear_to_send()?,
+            self.control.read_data_set_ready()?,
+            self.control.read_carrier_detect()?,
+        ))
+    }
+
     pub fn drain_output(&mut self) -> io::Result<()> {
         io::Write::flush(&mut self.control)
     }

@@ -32,6 +32,15 @@ class ByteQueue {
     return result;
   }
 
+  // Unconsumed data in this chunk starts at headOffset.
+  get headChunk(): Buffer {
+    return this.#chunks[this.#head] ?? EMPTY;
+  }
+
+  get headOffset(): number {
+    return this.#offset;
+  }
+
   take(length = this.length) {
     const result = this.peek(length);
     this.discard(length);

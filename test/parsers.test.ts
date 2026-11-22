@@ -367,6 +367,36 @@ test('length-prefixed frames emit an oversized header early and recover', async 
   ]);
 });
 
+test('length-prefixed frames resynchronize across noise and retain incomplete markers', async () => {
+  for (let width = 1; width <= 6; width++) {
+    const first = Buffer.from([0xaa, 0xaa, 0xbb, 0xaa, 0xbb, 0xcc]).subarray(0, width);
+    const other = Buffer.from(first);
+    other[width - 1] = 0xfe;
+    for (const multiple of [false, true]) {
+      const delimiter = multiple
+        ? [other.readUIntBE(0, width), first.readUIntBE(0, width)]
+        : first.readUIntBE(0, width);
+      const options = { delimiter, delimiterBytes: width, lengthOffset: width, packetOverhead: width + 1 };
+      const payload = Buffer.concat([other, Buffer.from([1, 7])]);
+      const frames = [
+        Buffer.concat([first, Buffer.from([payload.length]), payload]),
+        Buffer.concat([multiple ? other : first, Buffer.from([1, 9])]),
+      ];
+      const tail = first.subarray(0, width - 1);
+      const noise = Buffer.concat([tail, Buffer.alloc(4097, 0x27), tail, Buffer.from([0x42])]);
+      const input = Buffer.concat([noise, frames[0], noise, frames[1], noise, tail]);
+      const expected = tail.length ? [...frames, tail] : frames;
+      for (const size of [1, width + 1, 257, input.length]) {
+        assert.deepEqual(await parse(new PacketLengthParser(options), fragments(input, size)), expected);
+      }
+    }
+  }
+  const short = Buffer.from([0, 0, 0, 0xaa]);
+  Object.defineProperty(short, 'length', { value: 2 });
+  const frame = Buffer.from([0xaa, 1, 7]);
+  assert.deepEqual(await parse(new PacketLengthParser(), [short, frame]), [frame]);
+});
+
 test('space packets expose the header and secondary fields without recursive parsing', async () => {
   const frame = Buffer.from([0x09, 0x23, 0xc0, 0x07, 0, 4, 0x54, 0x41, 0x42, 0x43, 0x44]);
   const expected = {

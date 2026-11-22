@@ -11,6 +11,7 @@ const lines = Buffer.from(`${'x'.repeat(127)}\n`.repeat(32768));
 const packet = Buffer.alloc(1027, 0x31);
 packet[0] = 0xaa;
 packet.writeUInt16LE(1024, 1);
+const noisyPacket = Buffer.concat([Buffer.alloc(8192, 0x31), packet]);
 const slip = Buffer.alloc(4097, 0x31);
 slip[4096] = 0xc0;
 const escapedSlip = Buffer.concat([Buffer.alloc(4096, Buffer.from([0xdb, 0xdd])), Buffer.from([0xc0])]);
@@ -24,6 +25,13 @@ const cases = [
     { lengthBytes: 2, packetOverhead: 3, maxLen: 65535 },
     Buffer.concat(Array(256).fill(packet)),
     64,
+  ],
+  [
+    'length-prefixed packets after 8 KiB of noise',
+    'PacketLengthParser',
+    { lengthBytes: 2, packetOverhead: 3, maxLen: 65535 },
+    Buffer.concat(Array(128).fill(noisyPacket)),
+    4096,
   ],
   ['SLIP 4 KiB decode', 'SlipDecoder', {}, Buffer.concat(Array(64).fill(slip)), 64],
   ['SLIP aligned 4 KiB decode', 'SlipDecoder', {}, Buffer.concat(Array(64).fill(slip)), slip.length],

@@ -10,6 +10,7 @@ import { ByteQueue, integer } from './bytes';
 class PacketLengthParser extends Transform {
   #bytes = new ByteQueue();
   #delimiters: Set<number>;
+  #marker?: Buffer;
   #started = false;
   #length = 0;
   declare delimiterBytes: number;
@@ -35,26 +36,61 @@ class PacketLengthParser extends Transform {
     this.maxLen = integer(maxLen, 'maxLen', 0, Number.MAX_SAFE_INTEGER - packetOverhead);
     this.#delimiters = new Set(Array.isArray(delimiter) ? delimiter : [delimiter]);
     if (!this.#delimiters.size) throw new TypeError('delimiter must not be empty');
-    for (const value of this.#delimiters) integer(value, 'delimiter', 0, 2 ** (delimiterBytes * 8) - 1);
+    for (const value of this.#delimiters) {
+      integer(value, 'delimiter', 0, 2 ** (delimiterBytes * 8) - 1);
+      if (this.#delimiters.size === 1) {
+        this.#marker = Buffer.alloc(this.delimiterBytes);
+        this.#marker.writeUIntBE(value, 0, this.delimiterBytes);
+      }
+    }
+  }
+
+  #findDelimiter(span: Buffer, start: number, width: number): number {
+    if (this.#delimiters.has(span.readUIntBE(start, width))) return start;
+    if (this.#marker?.length === width) {
+      const index = span.indexOf(width === 1 ? this.#marker[0] : this.#marker, start + 1);
+      return index > span.length - width ? -1 : index;
+    }
+    for (let i = start + 1; i <= span.length - width; i++) {
+      if (this.#delimiters.has(span.readUIntBE(i, width))) return i;
+    }
+    return -1;
   }
 
   _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback) {
     this.#bytes.append(chunk);
     for (;;) {
+      let header: Buffer | undefined;
+      let headerOffset = 0;
       if (!this.#started) {
         while (this.#bytes.length >= this.delimiterBytes) {
-          if (this.#delimiters.has(this.#bytes.peek(this.delimiterBytes).readUIntBE(0, this.delimiterBytes))) {
+          const width = this.delimiterBytes;
+          let span = this.#bytes.headChunk;
+          let offset = this.#bytes.headOffset;
+          if (span.length - offset < width) {
+            span = this.#bytes.peek(width);
+            offset = 0;
+          }
+          const index = this.#findDelimiter(span, offset, width);
+          if (index !== -1) {
+            header = span;
+            headerOffset = index;
+            if (index !== offset) this.#bytes.discard(index - offset);
             this.#started = true;
             break;
           }
-          this.#bytes.discard(1);
+          // Keep the suffix which may begin a marker in the next chunk.
+          this.#bytes.discard(span.length - offset - width + 1);
         }
         if (!this.#started) break;
       }
       if (!this.#length) {
         const headerLength = Math.max(this.delimiterBytes + 1, this.lengthOffset + this.lengthBytes);
         if (this.#bytes.length < headerLength) break;
-        const payload = this.#bytes.peek(headerLength).readUIntLE(this.lengthOffset, this.lengthBytes);
+        const payload =
+          header && headerOffset + headerLength <= header.length
+            ? header.readUIntLE(headerOffset + this.lengthOffset, this.lengthBytes)
+            : this.#bytes.peek(headerLength).readUIntLE(this.lengthOffset, this.lengthBytes);
         // Preserve early emission of invalid lengths without buffering an impossible frame.
         this.#length = payload > this.maxLen ? headerLength : Math.max(headerLength, payload + this.packetOverhead);
       }

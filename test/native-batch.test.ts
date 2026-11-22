@@ -59,6 +59,26 @@ test('explicit binding reads keep their requested byte ranges', { timeout: 10000
   assert.equal((await port.readChunk(6)).toString(), 'second');
 });
 
+test(
+  'an explicit read uses its requested range after a short reply',
+  { skip: process.platform !== 'linux', timeout: 5000 },
+  async t => {
+    const terminal = await pty(t);
+    const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+    t.after(() => port.isOpen && port.close());
+    const short = port.readChunk(65536);
+    await terminal.command('write 5a');
+    const retained = await short;
+    const packet = Buffer.from(Array.from({ length: 768 }, (_, i) => i & 255));
+    await terminal.command(`write ${packet.toString('hex')}`);
+    assert.deepEqual(await port.readChunk(384), packet.subarray(0, 384));
+    const destination = Buffer.alloc(386, 0xcc);
+    assert.equal((await port.read(destination, 1, 384)).bytesRead, 384);
+    assert.deepEqual(destination, Buffer.concat([Buffer.from([0xcc]), packet.subarray(384), Buffer.from([0xcc])]));
+    assert.deepEqual(retained, Buffer.from('Z'));
+  },
+);
+
 test('a stalled pipe bounds read-ahead and resumes every byte in order', { timeout: 10000 }, async t => {
   const terminal = await pty(t);
   const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false, highWaterMark: 4096 });
@@ -237,11 +257,12 @@ test('native batches reuse their delivery callback for successive payloads', { t
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
   t.after(() => port.isOpen && port.close());
-  const primed = waitForBytes(port, 1);
   port.startReading(4096);
-  await terminal.command('write 5a');
-  await primed;
   for (let index = 0; index < 3; index++) {
+    // Prime each payload with a short read so every round exercises a native batch.
+    const primed = waitForBytes(port, 1);
+    await terminal.command('write 5a');
+    await primed;
     const payload = Buffer.alloc(512, 0xa5 + index);
     const done = waitForBytes(port, payload.length);
     await terminal.command(`write ${payload.toString('hex')}`);

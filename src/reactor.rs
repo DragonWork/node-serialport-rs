@@ -214,10 +214,9 @@ async fn run_open(
                 Operation::Write(data) => Some(&data[written..]),
                 _ => None,
             });
-        let read_length = read
-            .map(|(_, length)| length)
-            .or_else(|| (window.bytes > 0 && window.slots > 0).then_some(window.bytes));
-        let read_capacity = read_length.map(|length| length.min(window.size));
+        let read_capacity = read.map(|(_, length)| length).or_else(|| {
+            (window.bytes > 0 && window.slots > 0).then_some(window.bytes.min(window.size))
+        });
         if let Some(length) = read_capacity
             && read_buffer.len() < length
         {
@@ -261,7 +260,7 @@ async fn run_open(
             },
             ready = poll_fn(|cx| with_port(control, |port| {
                 Ok(transfers.poll(port, cx, read_capacity.map(|length| &mut read_buffer[..length]), write))
-            }).unwrap_or_else(|error| Poll::Ready(Err(error)))), if read_length.is_some() || write.is_some() => {
+            }).unwrap_or_else(|error| Poll::Ready(Err(error)))), if read_capacity.is_some() || write.is_some() => {
                 let (is_read, length) = match ready? {
                     Transfer::Read(length) => (true, length),
                     Transfer::Write(length) => (false, length),
@@ -271,10 +270,10 @@ async fn run_open(
                     return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Serial device disconnected"));
                 }
                 if is_read {
-                    let filled = Some(length) == read_capacity;
-                    window.size = if filled { (window.size * 2).min(crate::CHUNK_SIZE) }
-                        else { length.next_power_of_two().clamp(64, crate::CHUNK_SIZE) };
                     let sent = if streaming {
+                        let filled = Some(length) == read_capacity;
+                        window.size = if filled { (window.size * 2).min(crate::CHUNK_SIZE) }
+                            else { length.next_power_of_two().clamp(64, crate::CHUNK_SIZE) };
                         window.bytes -= length;
                         window.slots -= 1;
                         // Small partial reads normally drained the available input. Keep
@@ -291,8 +290,7 @@ async fn run_open(
                             io::Error::other("Unexpected read completion")
                         })?;
                         let mut event = NativeEvent::new(id, "read");
-                        read_buffer.truncate(length);
-                        event.data = Some(std::mem::take(&mut read_buffer).into());
+                        event.data = Some(crate::read_payload(&mut read_buffer, length).into());
                         send(callback, event)
                     };
                     if !sent { return Ok(()); }
@@ -343,6 +341,10 @@ fn send_ready_reads(
     // Charge successful followers to the same cooperative budget as poll_read.
     // This context never touches I/O readiness; the main poller owns its waker.
     let mut budget_context = Context::from_waker(Waker::noop());
+    // Distribute the remaining byte credit over the reads still allowed in this burst.
+    let bytes_per_read = window
+        .bytes
+        .div_ceil(window.slots.min(READ_BURST_LIMIT - 1));
     let collected = with_port(control, |port| {
         // One lock covers a bounded burst. A contending inline write is queued,
         // making pending_ops nonzero and ending collection at the next iteration.
@@ -357,7 +359,7 @@ fn send_ready_reads(
             let Poll::Ready(budget) = tokio::task::coop::poll_proceed(&mut budget_context) else {
                 break;
             };
-            let read_capacity = window.bytes.min(window.size);
+            let read_capacity = window.bytes.min(window.size.max(bytes_per_read));
             if read_buffer.len() < read_capacity {
                 read_buffer.resize(read_capacity, 0);
             }
@@ -389,12 +391,11 @@ fn send_ready_reads(
                 ));
             }
             window.size = if next_length == read_capacity {
-                (window.size * 2).min(crate::CHUNK_SIZE)
+                (next_length * 2).clamp(64, crate::CHUNK_SIZE)
             } else {
                 next_length.next_power_of_two().clamp(64, crate::CHUNK_SIZE)
             };
-            read_buffer.truncate(next_length);
-            let data = std::mem::take(read_buffer).into();
+            let data = crate::read_payload(read_buffer, next_length).into();
             if let Some(previous) = first.take() {
                 batch.reserve_exact(READ_BURST_LIMIT - 1);
                 batch.push(previous);

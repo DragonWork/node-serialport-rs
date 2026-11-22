@@ -56,14 +56,23 @@ pub(crate) enum CallbackEvent {
 impl CallbackEvent {
     pub fn read(buffer: &mut Vec<u8>, len: usize) -> Self {
         if len > INLINE_READ_CAPACITY {
-            buffer.truncate(len);
-            return Self::Read(std::mem::take(buffer).into());
+            return Self::Read(read_payload(buffer, len).into());
         }
         let mut bytes = [0; INLINE_READ_CAPACITY];
         bytes[..len].copy_from_slice(&buffer[..len]);
         // Retain initialized storage as well as capacity. The next read can
         // overwrite it without zero-filling the same allocation again.
         Self::InlineRead { bytes, len }
+    }
+}
+
+fn read_payload(buffer: &mut Vec<u8>, length: usize) -> Vec<u8> {
+    // A short reply can outlive the port. Keep the spare capacity for the next read.
+    if length < buffer.capacity() / 2 {
+        buffer[..length].to_vec()
+    } else {
+        buffer.truncate(length);
+        std::mem::take(buffer)
     }
 }
 
@@ -470,4 +479,18 @@ impl Task for ListTask {
 #[napi]
 pub fn list_ports() -> AsyncTask<ListTask> {
     AsyncTask::new(ListTask)
+}
+
+#[cfg(test)]
+#[test]
+fn short_read_payloads_release_spare_capacity_and_full_reads_transfer_ownership() {
+    let mut scratch = vec![0xa5; CHUNK_SIZE];
+    let original = scratch.as_ptr();
+    let short = read_payload(&mut scratch, 128);
+    assert_eq!(scratch.as_ptr(), original);
+    scratch.fill(0x5a);
+    assert_eq!(&short[..], &[0xa5; 128]);
+    let full = read_payload(&mut scratch, CHUNK_SIZE);
+    assert_eq!(full.as_ptr(), original);
+    assert_eq!(scratch.capacity(), 0);
 }

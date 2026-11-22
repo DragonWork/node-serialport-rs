@@ -92,6 +92,8 @@ pub struct NativeOptions {
     pub lock: bool,
     pub rtscts: bool,
     pub rts_mode: Option<RtsMode>,
+    pub vmin: Option<u8>,
+    pub vtime: Option<u8>,
     pub xon: bool,
     pub xoff: bool,
     pub xany: bool,

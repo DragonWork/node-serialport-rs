@@ -47,6 +47,13 @@ pub(crate) fn open(options: &NativeOptions) -> io::Result<SerialStream> {
         ));
     }
     #[cfg(windows)]
+    if options.vmin.unwrap_or(1) != 1 || options.vtime.unwrap_or(0) != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "vmin and vtime require Unix",
+        ));
+    }
+    #[cfg(windows)]
     if !options.lock {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -74,7 +81,7 @@ pub(crate) fn open(options: &NativeOptions) -> io::Result<SerialStream> {
     #[cfg(unix)]
     let builder = builder.exclusive(options.lock);
     let mut port = crate::platform::open(&builder)?;
-    crate::platform::configure(&port, options)?;
+    crate::platform::configure(&mut port, options)?;
     // Reapply custom speeds after changing the platform termios/DCB flags.
     crate::platform::set_baud_rate(&mut port, options.baud_rate)?;
     Ok(port)
@@ -94,6 +101,8 @@ mod tests {
             lock: true,
             rtscts: false,
             rts_mode: None,
+            vmin: None,
+            vtime: None,
             xon: false,
             xoff: false,
             xany: false,
@@ -135,11 +144,11 @@ mod tests {
 
         let (_master, mut slave) = TTYPort::pair().unwrap();
         slave.set_exclusive(false).unwrap();
-        for (xon, xoff, xany, hupcl) in [
-            (false, false, false, false),
-            (true, false, true, true),
-            (false, true, false, true),
-            (true, true, true, false),
+        for (xon, xoff, xany, hupcl, vmin, vtime) in [
+            (false, false, false, false, None, None),
+            (true, false, true, true, Some(0), Some(0)),
+            (false, true, false, true, Some(4), Some(1)),
+            (true, true, true, false, Some(255), Some(255)),
         ] {
             let options = NativeOptions {
                 path: slave.name().unwrap(),
@@ -148,6 +157,8 @@ mod tests {
                 xoff,
                 xany,
                 hupcl,
+                vmin,
+                vtime,
                 ..invalid_path()
             };
             let mut port = open(&options).unwrap();
@@ -178,11 +189,11 @@ mod tests {
                 );
                 assert_eq!(
                     settings.control_chars[SpecialCharacterIndices::VMIN as usize],
-                    1
+                    vmin.unwrap_or(1)
                 );
                 assert_eq!(
                     settings.control_chars[SpecialCharacterIndices::VTIME as usize],
-                    0
+                    vtime.unwrap_or(0)
                 );
             }
         }

@@ -4,7 +4,7 @@
 'use strict';
 
 import { types } from 'node:util';
-import { validateOptions, validateBaudRate, validateSetOptions } from './options';
+import { validateRustOptions, validateBaudRate, validateSetOptions } from './options';
 import type {
   RustOpenOptions,
   RustPort,
@@ -87,11 +87,7 @@ class BindingPort {
   declare _writePromise?: Promise<NativeEvent | void>;
 
   constructor(options: RustOpenOptions) {
-    const settings = validateOptions(options);
-    if (settings.rtsMode !== undefined && !['handshake', 'enable', 'toggle'].includes(settings.rtsMode))
-      throw new TypeError('Invalid rtsMode');
-    if (process.platform === 'win32') settings.rtsMode ??= 'handshake';
-    this.openOptions = Object.freeze(settings);
+    this.openOptions = Object.freeze(validateRustOptions(options));
     this.isOpen = false;
     this.onClose = undefined;
     this.onData = undefined;

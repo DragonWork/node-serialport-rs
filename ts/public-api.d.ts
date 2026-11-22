@@ -119,13 +119,17 @@ export interface BindingInterface<
 }
 
 export interface RustPort extends BindingPortInterface {
-  readonly openOptions: BindingPortInterface['openOptions'] & Readonly<Pick<RustOpenOptions, 'rtsMode'>>;
+  readonly openOptions: BindingPortInterface['openOptions'] & Readonly<RustOpenOptions>;
   readChunk(length: number): Promise<Buffer>;
   writev(buffers: readonly Buffer[]): Promise<void>;
   onClose?: (error: Error | null) => void;
 }
 
 export interface RustOpenOptions extends BindingOpenOptions {
+  /** Unix minimum read threshold in bytes, from 0 to 255. Defaults to 1. */
+  vmin?: number;
+  /** Unix terminal read timer in tenths of a second, from 0 to 255. Defaults to 0. */
+  vtime?: number;
   /** Windows RTS behavior when rtscts is enabled. Defaults to handshake. */
   rtsMode?: 'handshake' | 'enable' | 'toggle';
 }

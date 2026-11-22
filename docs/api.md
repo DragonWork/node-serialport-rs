@@ -122,6 +122,7 @@ On macOS, USB `locationId` uses the eight-digit lowercase hexadecimal IOKit loca
 | `lock` | `true` | Exclusive access; Windows rejects `false` |
 | `rtscts` | `false` | Hardware flow control |
 | `rtsMode` | `'handshake'` | With `rtscts` on Windows, `'handshake'` controls receive flow, `'enable'` holds RTS high, and `'toggle'` asserts RTS during transmission. |
+| `vmin`, `vtime` | `1`, `0` | Unix nonblocking read threshold (bytes) and timer (tenths of a second), each 0–255. Binding reads wait for data or disconnect even with `vmin: 0`. |
 | `xon`, `xoff`, `xany` | `false` | Software flow-control settings; platform support varies |
 | `hupcl` | `true` | Unix hang-up-on-close setting; Windows DTR-on-open setting |
 | `autoOpen` | `true` | Open during construction |

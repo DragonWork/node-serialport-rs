@@ -19,9 +19,10 @@ use tokio::io::{AsyncRead, AsyncWrite, Interest, ReadBuf, unix::AsyncFd};
 
 pub(crate) struct SerialStream {
     io: AsyncFd<TTYPort>,
+    pub(super) zero_minimum: bool,
 }
 
-fn ioctl_result(result: libc::c_int) -> io::Result<()> {
+fn syscall_result(result: libc::c_int) -> io::Result<()> {
     if result == -1 {
         return Err(io::Error::last_os_error());
     }
@@ -35,7 +36,7 @@ pub(crate) fn output_pending(port: &impl AsFd) -> io::Result<bool> {
     let request = libc::TIOCOUTQ;
     let mut bytes: libc::c_int = 0;
     // SAFETY: TIOCOUTQ writes one c_int and the port owns the descriptor.
-    match ioctl_result(unsafe {
+    match syscall_result(unsafe {
         libc::ioctl(port.as_fd().as_raw_fd(), request as _, &raw mut bytes)
     }) {
         Ok(()) => Ok(bytes != 0),
@@ -71,13 +72,31 @@ impl SerialStream {
             // SAFETY: TTYPort owns a valid descriptor that remains open and unchanged
             // while registered. Control operations never replace or close the port.
             io: unsafe { AsyncFd::register(port) }.map_err(io::Error::from)?,
+            zero_minimum: false,
         })
     }
 
     pub fn try_read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        self.io.try_io(Interest::READABLE, |_| {
-            unistd::read(&self.io, bytes).map_err(Into::into)
-        })
+        self.io
+            .try_io(Interest::READABLE, |_| self.read_available(bytes))
+    }
+
+    fn read_available(&self, bytes: &mut [u8]) -> io::Result<usize> {
+        let length = unistd::read(&self.io, &mut *bytes)?;
+        if length == 0 && self.zero_minimum && !bytes.is_empty() {
+            // VMIN=0 permits an empty read on a live terminal. Preserve real hangups.
+            let mut pollfd = libc::pollfd {
+                fd: self.io.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            // SAFETY: pollfd is writable for one descriptor and the timeout is zero.
+            syscall_result(unsafe { libc::poll(&raw mut pollfd, 1, 0) })?;
+            if pollfd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) == 0 {
+                return Err(io::ErrorKind::WouldBlock.into());
+            }
+        }
+        Ok(length)
     }
 
     pub fn try_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
@@ -97,7 +116,7 @@ impl SerialStream {
                 libc::TIOCMBIC
             };
             // SAFETY: the port owns fd and both requests read one c_int.
-            ioctl_result(unsafe { libc::ioctl(fd, request as _, &raw const line) })?;
+            syscall_result(unsafe { libc::ioctl(fd, request as _, &raw const line) })?;
         }
         let request = if flags & 4 != 0 {
             libc::TIOCSBRK
@@ -105,13 +124,15 @@ impl SerialStream {
             libc::TIOCCBRK
         };
         // SAFETY: the port owns fd and neither break request takes a payload.
-        ioctl_result(unsafe { libc::ioctl(fd, request as _, std::ptr::null_mut::<libc::c_void>()) })
+        syscall_result(unsafe {
+            libc::ioctl(fd, request as _, std::ptr::null_mut::<libc::c_void>())
+        })
     }
 
     pub fn modem_status(&self) -> io::Result<(bool, bool, bool)> {
         let mut lines: libc::c_int = 0;
         // SAFETY: the port owns the descriptor and TIOCMGET writes one c_int.
-        ioctl_result(unsafe {
+        syscall_result(unsafe {
             libc::ioctl(self.io.as_raw_fd(), libc::TIOCMGET as _, &raw mut lines)
         })?;
         Ok((
@@ -153,9 +174,7 @@ impl AsyncRead for SerialStream {
         }
         loop {
             let mut ready = ready!(self.io.poll_read_ready(cx))?;
-            match ready.try_io(|io| {
-                unistd::read(io, buffer.initialize_unfilled()).map_err(io::Error::from)
-            }) {
+            match ready.try_io(|_| self.read_available(buffer.initialize_unfilled())) {
                 Ok(Ok(length)) => {
                     buffer.advance(length);
                     return Poll::Ready(Ok(()));
@@ -232,6 +251,23 @@ mod tests {
             output_pending(&port).unwrap_err().raw_os_error(),
             Some(libc::EIO)
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_live_zero_minimum_read_rearms_and_a_hangup_finishes() {
+        let (master, mut port) = pair();
+        let mut settings = termios::tcgetattr(&port).unwrap();
+        settings.control_chars[termios::SpecialCharacterIndices::VMIN as usize] = 0;
+        termios::tcsetattr(&port, termios::SetArg::TCSANOW, &settings).unwrap();
+        port.zero_minimum = true;
+        let mut byte = [0];
+        assert_eq!(
+            port.read_available(&mut byte).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        drop(master);
+        assert_eq!(port.read_available(&mut byte).unwrap(), 0);
     }
 
     #[tokio::test(flavor = "current_thread")]

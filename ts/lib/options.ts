@@ -1,7 +1,7 @@
 // Copyright 2026 DragonWork
 // SPDX-License-Identifier: Apache-2.0
 
-import type { BindingOpenOptions, SetOptions } from '../public-api';
+import type { BindingOpenOptions, RustOpenOptions, SetOptions } from '../public-api';
 
 const defaults = {
   dataBits: 8,
@@ -42,6 +42,23 @@ function validateOptions<O extends Partial<BindingOpenOptions>>(options: O): O &
   return settings as O & Required<BindingOpenOptions>;
 }
 
+function validateRustOptions(options: RustOpenOptions) {
+  const settings = validateOptions(options);
+  if (settings.rtsMode !== undefined && !['handshake', 'enable', 'toggle'].includes(settings.rtsMode))
+    throw new TypeError('Invalid rtsMode');
+  for (const key of ['vmin', 'vtime'] as const) {
+    const value = settings[key];
+    if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 255))
+      throw new TypeError(`"${key}" must be an integer from 0 to 255`);
+  }
+  if (process.platform === 'win32') settings.rtsMode ??= 'handshake';
+  else {
+    settings.vmin ??= 1;
+    settings.vtime ??= 0;
+  }
+  return settings;
+}
+
 function validateSetOptions(options: SetOptions): SetOptions {
   const flags = snapshot(options);
   for (const key of ['dtr', 'rts', 'brk', 'cts', 'dsr'] as const) {
@@ -50,4 +67,4 @@ function validateSetOptions(options: SetOptions): SetOptions {
   return flags;
 }
 
-export { validateOptions, validateBaudRate, validateSetOptions };
+export { validateOptions, validateRustOptions, validateBaudRate, validateSetOptions };

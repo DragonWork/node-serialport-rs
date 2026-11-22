@@ -87,10 +87,13 @@ pub(crate) fn port_ids() -> std::collections::HashMap<std::path::PathBuf, String
 }
 
 #[cfg(unix)]
-pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Result<()> {
-    use nix::sys::termios::{self, ControlFlags, InputFlags, SetArg};
+pub(crate) fn configure(port: &mut SerialStream, options: &NativeOptions) -> io::Result<()> {
+    use nix::sys::termios::{self, ControlFlags, InputFlags, SetArg, SpecialCharacterIndices};
 
-    let mut settings = termios::tcgetattr(port)?;
+    let mut settings = termios::tcgetattr(&*port)?;
+    let minimum = options.vmin.unwrap_or(1);
+    settings.control_chars[SpecialCharacterIndices::VMIN as usize] = minimum;
+    settings.control_chars[SpecialCharacterIndices::VTIME as usize] = options.vtime.unwrap_or(0);
     settings.input_flags.set(InputFlags::IXON, options.xon);
     settings.input_flags.set(InputFlags::IXOFF, options.xoff);
     settings.input_flags.set(InputFlags::IXANY, options.xany);
@@ -108,12 +111,13 @@ pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Res
                 .set(ControlFlags::PARODD, options.parity == "mark");
         }
     }
-    termios::tcsetattr(port, SetArg::TCSANOW, &settings)?;
+    termios::tcsetattr(&*port, SetArg::TCSANOW, &settings)?;
+    port.zero_minimum = minimum == 0;
     Ok(())
 }
 
 #[cfg(windows)]
-pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Result<()> {
+pub(crate) fn configure(port: &mut SerialStream, options: &NativeOptions) -> io::Result<()> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Devices::Communication::{DCB, GetCommState, SetCommState};
 

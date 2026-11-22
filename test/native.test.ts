@@ -30,6 +30,10 @@ test('native open errors carry a portable code and device path', async t => {
     });
   // @ts-expect-error Invalid modes must fail before device access.
   await assert.rejects(RustBinding.open({ path, baudRate: 9600, rtsMode: 'manual' }), TypeError);
+  for (const key of ['vmin', 'vtime']) {
+    for (const value of [-1, 256, 0.5, NaN, '4'])
+      await assert.rejects(RustBinding.open({ path, baudRate: 9600, [key]: value }), TypeError);
+  }
   const unsupported = process.platform === 'win32' ? { lock: false } : { stopBits: 1.5 as const };
   await assert.rejects(RustBinding.open({ path, baudRate: 9600, ...unsupported }), {
     code: 'ERR_SERIALPORT_UNSUPPORTED',

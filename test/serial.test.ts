@@ -450,6 +450,40 @@ test('binding read copies only the requested range', { timeout: 5000 }, async t 
   await binding.close();
 });
 
+test(
+  'Linux VMIN waits for fragmented input and a zero minimum preserves hangups',
+  {
+    skip: process.platform !== 'linux',
+    timeout: 5000,
+  },
+  async t => {
+    const terminal = await pty(t);
+    const options = { path: terminal.path, baudRate: 115200 };
+    let port = await RustBinding.open({ ...options, vmin: 4, vtime: 0 });
+    t.after(() => port.isOpen && port.close());
+    let complete = false;
+    const frame = port.readChunk(8).then(data => {
+      complete = true;
+      return data;
+    });
+    await terminal.command('write 010203');
+    await port.getBaudRate();
+    assert.equal(complete, false);
+    await terminal.command('write 04');
+    assert.deepEqual(await frame, Buffer.from([1, 2, 3, 4]));
+    await port.close();
+    port = await RustBinding.open({ ...options, vmin: 0, vtime: 0 });
+    for (const byte of ['05', '06']) {
+      const read = port.readChunk(32);
+      await terminal.command(`write ${byte}`);
+      assert.deepEqual(await read, Buffer.from(byte, 'hex'));
+    }
+    const disconnected = assert.rejects(port.readChunk(32));
+    await terminal.hangup();
+    await disconnected;
+  },
+);
+
 test('pseudo-terminal baud rates can be queried and updated', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const binding = await RustBinding.open({ path: terminal.path, baudRate: 115200 });

@@ -93,6 +93,7 @@ mod tests {
             parity: "none".into(),
             lock: true,
             rtscts: false,
+            rts_mode: None,
             xon: false,
             xoff: false,
             xany: false,

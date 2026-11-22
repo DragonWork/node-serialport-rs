@@ -143,10 +143,14 @@ pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Res
     } else {
         0
     };
+    settings._bitfield = windows_rts_flags(
+        settings._bitfield,
+        options.rtscts,
+        options.rts_mode.as_ref(),
+    );
     // DCB flag positions are defined by the Windows SDK (fOutX/fInX at 8/9).
     for (bit, value) in [
         (1, settings.Parity != 0),
-        (2, options.rtscts),
         // On Windows hupcl selects DTR on open, not the Unix close behavior.
         (4, options.hupcl),
         (5, false),
@@ -160,4 +164,41 @@ pub(crate) fn configure(port: &SerialStream, options: &NativeOptions) -> io::Res
         cold_path();
         io::Error::last_os_error()
     })
+}
+
+#[cfg(any(windows, test))]
+fn windows_rts_flags(flags: u32, rtscts: bool, mode: Option<&crate::RtsMode>) -> u32 {
+    use crate::RtsMode;
+    // DCB.fOutxCtsFlow is bit 2 and fRtsControl occupies bits 12 and 13.
+    let flags = flags & !((1 << 2) | (3 << 12));
+    if !rtscts {
+        return flags;
+    }
+    let rts = match mode.unwrap_or(&RtsMode::Handshake) {
+        RtsMode::Enable => 1,
+        RtsMode::Handshake => 2,
+        RtsMode::Toggle => 3,
+    };
+    flags | (1 << 2) | (rts << 12)
+}
+
+#[cfg(test)]
+#[test]
+fn windows_rts_modes_preserve_other_dcb_flags() {
+    use crate::RtsMode;
+    for (mode, bits) in [
+        (None, 2),
+        (Some(RtsMode::Handshake), 2),
+        (Some(RtsMode::Enable), 1),
+        (Some(RtsMode::Toggle), 3),
+    ] {
+        for initial in [0, u32::MAX] {
+            let other = initial & !0x3004;
+            assert_eq!(
+                windows_rts_flags(initial, true, mode.as_ref()),
+                other | 4 | bits << 12
+            );
+            assert_eq!(windows_rts_flags(initial, false, mode.as_ref()), other);
+        }
+    }
 }

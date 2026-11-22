@@ -24,6 +24,12 @@ test('native open errors carry a portable code and device path', async t => {
     assert.equal(error.canceled, false);
     return true;
   });
+  for (const rtsMode of ['handshake', 'enable', 'toggle'] as const)
+    await assert.rejects(RustBinding.open({ path, baudRate: 9600, rtscts: true, rtsMode }), {
+      code: 'ERR_SERIALPORT_NOT_FOUND',
+    });
+  // @ts-expect-error Invalid modes must fail before device access.
+  await assert.rejects(RustBinding.open({ path, baudRate: 9600, rtsMode: 'manual' }), TypeError);
   const unsupported = process.platform === 'win32' ? { lock: false } : { stopBits: 1.5 as const };
   await assert.rejects(RustBinding.open({ path, baudRate: 9600, ...unsupported }), {
     code: 'ERR_SERIALPORT_UNSUPPORTED',

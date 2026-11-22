@@ -6,7 +6,8 @@
 import { types } from 'node:util';
 import { validateOptions, validateBaudRate, validateSetOptions } from './options';
 import type {
-  BindingOpenOptions,
+  RustOpenOptions,
+  RustPort,
   BindingsErrorOptions,
   SerialPortErrorCode,
   SetOptions,
@@ -62,7 +63,7 @@ interface Pending {
 
 class BindingPort {
   #writeScratch?: Buffer;
-  declare openOptions: Readonly<Required<BindingOpenOptions>>;
+  declare openOptions: RustPort['openOptions'];
   declare isOpen: boolean;
   declare onClose?: (error: Error | null) => void;
   declare onData?: (data: Buffer) => void;
@@ -85,8 +86,12 @@ class BindingPort {
   declare _native: NativeHandle | null;
   declare _writePromise?: Promise<NativeEvent | void>;
 
-  constructor(options: BindingOpenOptions) {
-    this.openOptions = Object.freeze(validateOptions(options));
+  constructor(options: RustOpenOptions) {
+    const settings = validateOptions(options);
+    if (settings.rtsMode !== undefined && !['handshake', 'enable', 'toggle'].includes(settings.rtsMode))
+      throw new TypeError('Invalid rtsMode');
+    if (process.platform === 'win32') settings.rtsMode ??= 'handshake';
+    this.openOptions = Object.freeze(settings);
     this.isOpen = false;
     this.onClose = undefined;
     this.onData = undefined;
@@ -451,7 +456,7 @@ const RustBinding = {
       friendlyName: port.friendlyName ?? undefined,
     }));
   },
-  open(options: BindingOpenOptions) {
+  open(options: RustOpenOptions) {
     try {
       const port = new BindingPort(options);
       port.opened.cancel = () => port.cancelOpen();

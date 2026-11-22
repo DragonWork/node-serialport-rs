@@ -41,7 +41,7 @@ const target: string | undefined = identity.target;
 // @ts-expect-error Runtime identification cannot be changed.
 version.arch = 'other';
 
-const serial = new SerialPort({ path: '/test', baudRate: 115200, autoOpen: false });
+const serial = new SerialPort({ path: '/test', baudRate: 115200, autoOpen: false, rtscts: true, rtsMode: 'handshake' });
 async function asyncClient(port: SerialPort) {
   await port.openAsync();
   await port.writeAsync(new Uint8Array([1, 2, 3]));

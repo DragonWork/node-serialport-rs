@@ -118,12 +118,17 @@ export interface BindingInterface<
 }
 
 export interface RustPort extends BindingPortInterface {
+  readonly openOptions: BindingPortInterface['openOptions'] & Readonly<Pick<RustOpenOptions, 'rtsMode'>>;
   readChunk(length: number): Promise<Buffer>;
   writev(buffers: readonly Buffer[]): Promise<void>;
   onClose?: (error: Error | null) => void;
 }
 
-export const RustBinding: BindingInterface<RustPort>;
+export interface RustOpenOptions extends BindingOpenOptions {
+  /** Windows RTS behavior when rtscts is enabled. Defaults to handshake. */
+  rtsMode?: 'handshake' | 'enable' | 'toggle';
+}
+export const RustBinding: BindingInterface<RustPort, RustOpenOptions>;
 export type AutoDetectTypes = typeof RustBinding;
 export function autoDetect(): AutoDetectTypes;
 export type PortInterfaceFromBinding<B extends BindingInterface> = Awaited<ReturnType<B['open']>>;

@@ -6,7 +6,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { endianness } from 'node:os';
-import type { BindingOpenOptions, SerialPortErrorCode } from '../public-api';
+import type { RustPort, SerialPortErrorCode } from '../public-api';
 
 export interface NativeEvent {
   kind: 'open' | 'close' | 'read' | 'ok' | 'error';
@@ -45,7 +45,7 @@ interface NativePortInfo {
 
 export interface NativeAddon {
   NativePort: new (
-    options: Required<BindingOpenOptions>,
+    options: RustPort['openOptions'],
     callback: (error: Error | null, event: Buffer | Buffer[] | NativeEvent) => void,
     allocator: (size: number) => Buffer,
   ) => NativeHandle;

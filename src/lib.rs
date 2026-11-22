@@ -75,6 +75,13 @@ fn pooled_read(allocator: &Function<'_, u32, Buffer>, data: &[u8]) -> Result<Buf
     Ok(buffer)
 }
 
+#[napi(string_enum = "lowercase")]
+pub enum RtsMode {
+    Handshake,
+    Enable,
+    Toggle,
+}
+
 #[napi(object)]
 pub struct NativeOptions {
     pub path: String,
@@ -84,6 +91,7 @@ pub struct NativeOptions {
     pub parity: String,
     pub lock: bool,
     pub rtscts: bool,
+    pub rts_mode: Option<RtsMode>,
     pub xon: bool,
     pub xoff: bool,
     pub xany: bool,

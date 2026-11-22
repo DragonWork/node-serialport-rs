@@ -256,7 +256,7 @@ jobs:
         run: |
           npm install --no-save --ignore-scripts --package-lock=false serialport@13.0.0
           node test/compare-parsers.js node_modules/serialport
-          SERIALPORT_REFERENCE_STREAM="$PWD/node_modules/@serialport/stream" node --enable-source-maps --expose-gc --test test/compatibility.test.js test/consumer.test.js
+          SERIALPORT_REFERENCE_STREAM="$PWD/node_modules/@serialport/stream" node --enable-source-maps --expose-gc --test test/compatibility.test.js
       - name: Check formatting
         if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.node == needs.node.outputs.latest
         run: npm run format:check

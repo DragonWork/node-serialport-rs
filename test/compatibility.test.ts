@@ -7,8 +7,8 @@ import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { setImmediate as nextTurn } from 'node:timers/promises';
-import { call, device, binding, type TestPort } from './helpers';
-import { SerialPortStream as CurrentStream, type SetOptions } from '..';
+import { call, device, binding, pty, type TestPort } from './helpers';
+import { RustBinding, SerialPortStream as CurrentStream, type SetOptions } from '..';
 
 const implementations: [string, typeof CurrentStream][] = [['serialport-rs', CurrentStream]];
 if (process.env.SERIALPORT_REFERENCE_STREAM) {
@@ -144,4 +144,55 @@ for (const [name, SerialPortStream] of implementations) {
     assert.equal(Buffer.concat(received).toString(), 'tail');
     assert.equal(port.isOpen, true);
   });
+}
+
+for (const operation of ['read', 'write']) {
+  test(
+    `original serialport stream reports a Rust binding ${operation} disconnect`,
+    {
+      skip: !process.env.SERIALPORT_REFERENCE_STREAM,
+      timeout: 5000,
+    },
+    async t => {
+      const { SerialPortStream } = require(process.env.SERIALPORT_REFERENCE_STREAM!);
+      const terminal = await pty(t);
+      const port = new SerialPortStream({
+        path: terminal.path,
+        baudRate: 115200,
+        binding: RustBinding,
+        autoOpen: false,
+      });
+      t.after(() => port.isOpen && call(port, 'close'));
+      port.on('error', () => {});
+      let closes = 0;
+      port.on('close', () => closes++);
+      await call(port, 'open');
+      const closed = new Promise<Error & { disconnected: boolean }>(resolve => port.once('close', resolve));
+      if (operation === 'read') {
+        const data = once(port, 'data');
+        await terminal.command('write 01');
+        assert.equal((await data)[0][0], 1);
+        port.resume();
+      }
+      await terminal.hangup();
+      if (operation === 'write') await assert.rejects(call(port, 'write', Buffer.alloc(128 * 1024)));
+      assert.equal((await closed).disconnected, true);
+      assert.equal(closes, 1);
+      assert.equal(port.isOpen, false);
+      if (operation === 'write') {
+        // The original stream destroys itself after any write error, including with its mock binding.
+        await new Promise(setImmediate);
+        assert.equal(port.destroyed, true);
+        return;
+      }
+      const replacement = await pty(t);
+      port.settings.path = replacement.path;
+      await call(port, 'open');
+      const data = once(port, 'data');
+      await replacement.command('write abcd');
+      assert.equal((await data)[0].toString('hex'), 'abcd');
+      await call(port, 'close');
+      assert.equal(closes, 2);
+    },
+  );
 }

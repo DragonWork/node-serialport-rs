@@ -314,6 +314,108 @@ test('destroying during a failed close does not resume pending I/O', async t => 
   assert.equal(port.isOpen, false);
 });
 
+test('idle drains skip empty writes and wait for an actual empty write in flight', async t => {
+  const gate = deferred();
+  let holding = false;
+  let writes = 0;
+  let drains = 0;
+  const port = stream(
+    device({
+      async write() {
+        writes++;
+        if (holding) await gate.promise;
+      },
+      async drain() {
+        drains++;
+      },
+    }),
+  );
+  t.after(() => port.destroy());
+  await port.openAsync();
+  await port.drainAsync();
+  assert.equal(writes, 0);
+  holding = true;
+  const write = port.writeAsync(Buffer.alloc(0));
+  const drain = port.drainAsync();
+  await nextTurn();
+  assert.equal(drains, 1);
+  gate.resolve();
+  await Promise.all([write, drain]);
+  assert.equal(drains, 2);
+});
+
+test('writes through a custom binding wait for an idle drain', async t => {
+  const gate = deferred();
+  const seen: string[] = [];
+  const port = stream(
+    device({
+      async drain() {
+        seen.push('drain');
+        await gate.promise;
+      },
+      async write(data) {
+        seen.push(data.toString());
+      },
+    }),
+  );
+  t.after(() => port.destroy());
+  await port.openAsync();
+  const drained = port.drainAsync();
+  const written = port.writeAsync('later');
+  await nextTurn();
+  const pending = seen.slice();
+  gate.resolve();
+  await Promise.all([drained, written]);
+  assert.deepEqual(pending, ['drain']);
+  assert.deepEqual(seen, ['drain', 'later']);
+});
+
+test('a failed drain inside a write batch leaves following writes usable', async t => {
+  const failure = new Error('driver drain failed');
+  const seen: string[] = [];
+  const port = stream(
+    device({
+      async writev(data) {
+        seen.push(Buffer.concat(data).toString());
+      },
+      async drain() {
+        seen.push('drain');
+        throw failure;
+      },
+    }),
+  );
+  t.after(() => port.destroy());
+  await port.openAsync();
+  port.cork();
+  const first = port.writeAsync('A');
+  const drained = assert.rejects(port.drainAsync(), error => error === failure);
+  const last = port.writeAsync('B');
+  port.uncork();
+  await Promise.all([first, drained, last]);
+  assert.deepEqual(seen, ['A', 'drain', 'B']);
+  assert(port.isOpen && port.writable);
+});
+
+test('a custom batch handler can complete a queued drain', async t => {
+  let drains = 0;
+  const port = stream(
+    device({
+      async drain() {
+        drains++;
+      },
+    }),
+  );
+  port._writev = (_chunks, callback) => callback();
+  t.after(() => port.destroy());
+  await port.openAsync();
+  port.cork();
+  const written = port.writeAsync('A');
+  const drained = port.drainAsync();
+  port.uncork();
+  await Promise.all([written, drained]);
+  assert.equal(drains, 1);
+});
+
 test('synchronous control failures reach callbacks asynchronously and leave the port usable', async t => {
   for (const [method, args] of [
     ['update', [{ baudRate: 9600 }]],

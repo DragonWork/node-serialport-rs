@@ -113,6 +113,41 @@ test('an idle drain completes ahead of a later backpressured write', { timeout: 
   }
 });
 
+test('an idle stream drain completes before a later backpressured write', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
+  port.on('error', () => {});
+  t.after(() => port.destroy());
+  await port.openAsync();
+  const payload = Buffer.alloc(64 * 1024, 0x5a);
+  const drained = port.drainAsync();
+  const [received] = await Promise.all([
+    drained.then(() => terminal.command(`read ${payload.length}`)),
+    port.writeAsync(payload),
+  ]);
+  assert.equal(received, payload.toString('hex'));
+});
+
+test('corked drains finish before later writes, including before open', { timeout: 5000 }, async t => {
+  for (const openFirst of [true, false]) {
+    const terminal = await pty(t);
+    const port = new SerialPort({ path: terminal.path, baudRate: 115200, autoOpen: false });
+    port.on('error', () => {});
+    t.after(() => port.destroy());
+    if (openFirst) await port.openAsync();
+    const payload = Buffer.alloc(64 * 1024, 0x5a);
+    port.cork();
+    const first = port.writeAsync('A');
+    const drained = port.drainAsync();
+    const last = port.writeAsync(payload);
+    port.uncork();
+    if (!openFirst) await port.openAsync();
+    assert.equal(await terminal.command('read 1'), '41');
+    const [received] = await Promise.all([drained.then(() => terminal.command(`read ${payload.length}`)), first, last]);
+    assert.equal(received, payload.toString('hex'));
+  }
+});
+
 test('a full control backlog does not block incoming read credits', { timeout: 5000 }, async t => {
   const terminal = await pty(t);
   const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });

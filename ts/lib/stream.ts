@@ -7,7 +7,7 @@ import { Duplex } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import { AsyncResource } from 'node:async_hooks';
 import { addAbortListener } from 'node:events';
-import { RustBinding } from './binding';
+import { BindingPort, RustBinding } from './binding';
 import { validateOptions } from './options';
 import type {
   BindingInterface,
@@ -73,13 +73,15 @@ class DisconnectedError extends Error {
 }
 
 class SerialPortStream extends Duplex {
+  #writing = false;
+  #drains?: Map<Buffer, (port: RuntimePort) => Promise<void>>;
   declare settings: Required<Omit<StreamSettings, 'signal'>> & Pick<StreamSettings, 'signal'>;
   declare opening: boolean;
   declare closing: boolean;
   declare port?: RuntimePort;
   declare _readRequested: boolean;
   declare _readPort?: RuntimePort;
-  declare _waitingWrite?: [Buffer, string, WriteCallback];
+  declare _waitingWrite?: { resume: () => void; callback: WriteCallback };
   declare _closeCallbacks: ErrorCallback[];
   declare _closeError: Error | null;
   declare _opening?: Promise<RuntimePort> & { cancel?: () => void };
@@ -206,7 +208,7 @@ class SerialPortStream extends Duplex {
   _failWaitingWrite(error: Error) {
     const waiting = this._waitingWrite;
     this._waitingWrite = undefined;
-    if (waiting) waiting[2](error);
+    waiting?.callback(error);
   }
 
   _resumeIO() {
@@ -214,7 +216,7 @@ class SerialPortStream extends Duplex {
     if (this._waitingWrite) {
       const waiting = this._waitingWrite;
       this._waitingWrite = undefined;
-      this._write(...waiting);
+      waiting.resume();
     }
     if (this._readRequested) this._read(this.readableHighWaterMark);
   }
@@ -280,13 +282,25 @@ class SerialPortStream extends Duplex {
 
   _write(data: Buffer, encoding: string, callback: WriteCallback) {
     if (!this.isOpen) {
-      this._waitingWrite = [data, encoding, callback];
+      this._waitingWrite = { resume: () => this._write(data, encoding, callback), callback };
       return;
     }
     const port = this.port!;
-    bindingCall(() => port.write(data)).then(
-      () => callback(null),
-      error => this._writeError(port, error, callback),
+    const drain = this.#drains?.get(data);
+    this._writeToPort(port, drain ? () => drain(port) : () => port.write(data), callback);
+  }
+
+  _writeToPort(port: RuntimePort, operation: () => Promise<void>, callback: WriteCallback) {
+    this.#writing = true;
+    bindingCall(operation).then(
+      () => {
+        this.#writing = false;
+        callback(null);
+      },
+      error => {
+        this.#writing = false;
+        this._writeError(port, error, callback);
+      },
     );
   }
 
@@ -298,15 +312,39 @@ class SerialPortStream extends Duplex {
   }
 
   _writev(chunks: { chunk: Buffer; encoding: BufferEncoding }[], callback: WriteCallback) {
+    if (this.#drains) {
+      if (!this.isOpen) {
+        this._waitingWrite = { resume: () => this._writev(chunks, callback), callback };
+        return;
+      }
+      const port = this.port!;
+      this._writeToPort(port, () => this.#writeWithDrains(port, chunks), callback);
+      return;
+    }
     if (!this.isOpen || !this.port!.writev) {
       this._write(Buffer.concat(chunks.map(({ chunk }) => chunk)), 'buffer', callback);
       return;
     }
     const port = this.port!;
-    bindingCall(() => port.writev!(chunks.map(({ chunk }) => chunk))).then(
-      () => callback(null),
-      error => this._writeError(port, error, callback),
-    );
+    this._writeToPort(port, () => port.writev!(chunks.map(({ chunk }) => chunk)), callback);
+  }
+
+  async #writeWithDrains(port: RuntimePort, chunks: { chunk: Buffer }[]) {
+    let buffers: Buffer[] = [];
+    const write = () => (port.writev ? port.writev(buffers) : port.write(Buffer.concat(buffers)));
+    for (const { chunk } of chunks) {
+      const drain = this.#drains?.get(chunk);
+      if (!drain) {
+        buffers.push(chunk);
+        continue;
+      }
+      if (buffers.length) {
+        await write();
+        buffers = [];
+      }
+      await drain(port);
+    }
+    if (buffers.length) await write();
   }
 
   _read(length: number) {
@@ -395,7 +433,53 @@ class SerialPortStream extends Duplex {
     if (this.writableEnded) {
       // Wait for final writes without submitting a write after end().
       finished(this, { readable: false, cleanup: true }).then(() => drained(), drained);
-    } else this.write(Buffer.alloc(0), drained);
+    } else if (
+      this.port instanceof BindingPort &&
+      this.isOpen &&
+      this.writable &&
+      !this.#writing &&
+      !this._waitingWrite &&
+      !this.writableCorked &&
+      !this.writableLength
+    ) {
+      // The native command queue also orders writes submitted before this drain resolves.
+      drained();
+    } else {
+      this.#queueDrain().then(
+        () => callback?.call(this, null),
+        error => this._report(error, callback),
+      );
+    }
+  }
+
+  #queueDrain() {
+    const marker = Buffer.alloc(0);
+    const drains = (this.#drains ??= new Map());
+    return new Promise<void>((resolve, reject) => {
+      let submitted = false;
+      // Settle this request at its position in the writable queue, even if Node
+      // puts a later, backpressured write in the same _writev batch.
+      drains.set(marker, (port: RuntimePort) => {
+        submitted = true;
+        return bindingCall(() => port.drain()).then(resolve, reject);
+      });
+      const finished = (error?: Error | null) => {
+        drains.delete(marker);
+        if (!drains.size) this.#drains = undefined;
+        if (error) reject(error);
+        // A subclass can consume the marker in its own _write or _writev.
+        else if (!submitted)
+          this._operation(
+            port => port.drain(),
+            error => (error ? reject(error) : resolve()),
+          );
+      };
+      try {
+        super.write(marker, finished);
+      } catch (error) {
+        finished(asError(error));
+      }
+    });
   }
 
   _promise<T>(invoke: (callback: (error?: Error | null, value?: T) => void) => unknown): Promise<T> {

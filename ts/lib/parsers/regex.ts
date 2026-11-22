@@ -8,6 +8,7 @@ import { StringDecoder } from 'node:string_decoder';
 import type { RegexParserOptions } from '../../public-api';
 
 class RegexParser extends Transform {
+  #encoding: BufferEncoding;
   #decoder: StringDecoder;
   #tail = '';
   declare regex: RegExp;
@@ -16,6 +17,7 @@ class RegexParser extends Transform {
     super({ ...options, encoding });
     if (regex === undefined) throw new TypeError('regex is required');
     this.regex = regex instanceof RegExp ? regex : new RegExp(String(regex));
+    this.#encoding = encoding;
     this.#decoder = new StringDecoder(encoding);
   }
 
@@ -24,12 +26,12 @@ class RegexParser extends Transform {
     const text = this.#tail + decoded;
     const pieces = text.split(this.regex);
     this.#tail = pieces.pop() ?? '';
-    for (const piece of pieces) this.push(piece);
+    for (const piece of pieces) this.push(piece, this.#encoding);
     callback();
   }
 
   _flush(callback: TransformCallback) {
-    this.push(this.#tail + this.#decoder.end());
+    this.push(this.#tail + this.#decoder.end(), this.#encoding);
     this.#tail = '';
     callback();
   }

@@ -213,6 +213,19 @@ test('regex decoding keeps UTF-8 characters intact across every byte boundary', 
     assert.deepEqual(await parse<string>(new RegexParser({ regex }), fragments(bytes, 1)), ['Grüße', '🔌', '完了']);
 });
 
+test('regex frames and trailing text preserve the selected encoding', async () => {
+  for (const [encoding, first, last] of [
+    ['utf16le', '雪🔌', '水'],
+    ['latin1', 'café', 'olé'],
+  ] as const) {
+    const input = Buffer.from(`${first}|${last}`, encoding);
+    assert.deepEqual(await parse<string>(new RegexParser({ regex: /\|/, encoding }), fragments(input, 1)), [
+      first,
+      last,
+    ]);
+  }
+});
+
 test('regex decoding preserves order when a string follows an incomplete UTF-8 buffer', async () => {
   const parser = new RegexParser({ regex: ';', decodeStrings: false });
   assert.deepEqual(await parse<string>(parser, [Buffer.from([0xc3]), 'A;']), ['�A']);

@@ -471,6 +471,26 @@ test(
   },
 );
 
+test('packed and vectored writes snapshot shared bytes at the size boundary', { timeout: 5000 }, async t => {
+  const terminal = await pty(t);
+  const port = await RustBinding.open({ path: terminal.path, baudRate: 115200 });
+  t.after(() => port.isOpen && port.close());
+  const scalar = t.mock.method(port._native!, 'write');
+  const vector = t.mock.method(port._native!, 'writev');
+  for (const size of [4096, 4097]) {
+    const shared = Buffer.from(new SharedArrayBuffer(513)).fill(0x5a);
+    const parts = Array.from({ length: 8 }, (_, i) => shared.subarray(i & 1, (i & 1) + 512));
+    parts[7] = shared.subarray(0, size - 7 * 512);
+    const control = port.getBaudRate();
+    const write = port.writev(Object.freeze(parts));
+    shared.fill(0);
+    const [bytes] = await Promise.all([terminal.command(`read ${size}`), control, write]);
+    assert.equal(bytes, '5a'.repeat(size));
+  }
+  assert.equal(scalar.mock.callCount(), 1);
+  assert.equal(vector.mock.callCount(), 1);
+});
+
 test(
   'fragmented writes use the actual lengths of views resized during submission',
   {

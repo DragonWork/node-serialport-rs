@@ -18,7 +18,7 @@ const { isSharedArrayBuffer } = types;
 let native: NativeAddon | undefined;
 const loadNative = (): NativeAddon => (native ??= (require('./native') as typeof import('./native')).loadNative());
 const CHUNK_SIZE = 64 * 1024;
-const PACKED_WRITE_SIZE = 1024;
+const PACKED_WRITE_SIZE = 4096;
 const READ_SLOTS = 32;
 const RESOLVED = Promise.resolve();
 const localStores = new WeakSet();
@@ -244,11 +244,13 @@ class BindingPort {
       else if (op === 'write') completed = this._native!.write(id, localBuffer(data as Buffer), this._ordered === 1);
       else if (op === 'writev') {
         const buffers = data as Buffer[];
-        for (let i = 0; i < buffers.length; i++) buffers[i] = localBuffer(buffers[i]);
+        // Packing snapshots shared views into private storage before Rust borrows it.
         const packed = buffers.length >= 8 && value <= PACKED_WRITE_SIZE ? this.#packWrite(buffers, value) : undefined;
-        completed = packed
-          ? this._native!.write(id, packed, this._ordered === 1)
-          : this._native!.writev(id, buffers, value, this._ordered === 1);
+        if (packed) completed = this._native!.write(id, packed, this._ordered === 1);
+        else {
+          for (let i = 0; i < buffers.length; i++) buffers[i] = localBuffer(buffers[i]);
+          completed = this._native!.writev(id, buffers, value, this._ordered === 1);
+        }
       } else this._native!.request(id, op, value);
       if (completed) {
         this._ordered--;

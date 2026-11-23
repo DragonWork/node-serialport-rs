@@ -115,6 +115,7 @@ pub struct NativeSetOptions {
     pub dtr: Option<bool>,
     pub rts: Option<bool>,
     pub brk: Option<bool>,
+    pub low_latency: Option<bool>,
 }
 
 #[napi(object, object_from_js = false)]
@@ -129,6 +130,7 @@ pub struct NativeEvent {
     pub cts: Option<bool>,
     pub dsr: Option<bool>,
     pub dcd: Option<bool>,
+    pub low_latency: Option<bool>,
     pub baud_rate: Option<u32>,
 }
 
@@ -314,6 +316,7 @@ impl NativePort {
                 dtr: Some(value & 1 != 0),
                 rts: Some(value & 2 != 0),
                 brk: Some(value & 4 != 0),
+                low_latency: (value & 8 != 0).then_some(value & 16 != 0),
             }),
             "get" => Operation::Get,
             "getBaudRate" => Operation::GetBaudRate,

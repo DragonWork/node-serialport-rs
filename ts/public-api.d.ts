@@ -51,6 +51,7 @@ export interface PortStatus {
   cts: boolean;
   dsr: boolean;
   dcd: boolean;
+  lowLatency?: boolean;
 }
 export interface BaudRateResult {
   baudRate: number;
@@ -87,6 +88,7 @@ export interface SetOptions {
   brk?: boolean;
   cts?: boolean;
   dsr?: boolean;
+  lowLatency?: boolean;
 }
 export interface UpdateOptions {
   baudRate: number;

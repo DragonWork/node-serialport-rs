@@ -63,13 +63,15 @@ function validateRustOptions(options: RustOpenOptions) {
 
 function validateSetOptions(options: SetOptions): SetOptions {
   const flags = snapshot(options);
-  for (const key of ['dtr', 'rts', 'brk', 'cts', 'dsr'] as const) {
+  for (const key of ['dtr', 'rts', 'brk', 'cts', 'dsr', 'lowLatency'] as const) {
     if (flags[key] !== undefined && typeof flags[key] !== 'boolean') throw new TypeError(`Invalid ${key}`);
   }
   return flags;
 }
 
 function modemOptions(flags: SetOptions, open?: Pick<RustOpenOptions, 'rtscts' | 'rtsMode'>): SetOptions {
+  if (flags.lowLatency !== undefined && flags.dtr === undefined && flags.rts === undefined && flags.brk === undefined)
+    return flags;
   const automaticRts = open?.rtscts && (process.platform !== 'win32' || open.rtsMode !== 'enable');
   const lines: SetOptions = { brk: false, cts: false, dtr: true, rts: true, ...flags };
   if (automaticRts && flags.rts === undefined) delete lines.rts;

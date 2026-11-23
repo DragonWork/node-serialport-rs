@@ -22,11 +22,19 @@ pub(crate) struct SerialStream {
     pub(super) zero_minimum: bool,
 }
 
-fn syscall_result(result: libc::c_int) -> io::Result<()> {
+pub(super) fn syscall_result(result: libc::c_int) -> io::Result<()> {
     if result == -1 {
         return Err(io::Error::last_os_error());
     }
     Ok(())
+}
+
+pub(super) fn unsupported_ioctl(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::Unsupported
+        || matches!(
+            error.raw_os_error(),
+            Some(libc::ENOTTY | libc::ENOSYS | libc::EOPNOTSUPP)
+        )
 }
 
 pub(crate) fn output_pending(port: &impl AsFd) -> io::Result<bool> {
@@ -40,15 +48,7 @@ pub(crate) fn output_pending(port: &impl AsFd) -> io::Result<bool> {
         libc::ioctl(port.as_fd().as_raw_fd(), request as _, &raw mut bytes)
     }) {
         Ok(()) => Ok(bytes != 0),
-        Err(error)
-            if error.kind() == io::ErrorKind::Unsupported
-                || matches!(
-                    error.raw_os_error(),
-                    Some(libc::ENOTTY | libc::ENOSYS | libc::EOPNOTSUPP)
-                ) =>
-        {
-            Ok(false)
-        }
+        Err(error) if unsupported_ioctl(&error) => Ok(false),
         Err(error) => Err(error),
     }
 }

@@ -451,12 +451,29 @@ fn operation(port: &mut SerialStream, command: &Command) -> io::Result<NativeEve
     match &command.operation {
         Operation::Update(baud_rate) => crate::platform::set_baud_rate(port, *baud_rate)?,
         Operation::GetBaudRate => event.baud_rate = Some(crate::platform::baud_rate(port)?),
-        Operation::Set(options) => port.set_signals(options)?,
+        Operation::Set(options) => {
+            #[cfg(not(target_os = "linux"))]
+            if options.low_latency == Some(true) {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "lowLatency requires Linux",
+                ));
+            }
+            port.set_signals(options)?;
+            #[cfg(target_os = "linux")]
+            if let Some(enabled) = options.low_latency {
+                crate::platform::linux::set_low_latency(port, enabled)?;
+            }
+        }
         Operation::Get => {
             let (cts, dsr, dcd) = port.modem_status()?;
             event.cts = Some(cts);
             event.dsr = Some(dsr);
             event.dcd = Some(dcd);
+            #[cfg(target_os = "linux")]
+            {
+                event.low_latency = Some(crate::platform::linux::low_latency(port));
+            }
         }
         Operation::Flush => port.control().clear(ClearBuffer::All)?,
         _ => {

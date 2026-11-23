@@ -135,6 +135,8 @@ Available control methods are `update({ baudRate }, callback)`, `set({ dtr, rts,
 
 With hardware flow control, `set()` leaves driver-managed RTS alone unless you explicitly pass `rts`.
 
+On Linux, `set({ lowLatency: true })` enables driver low-latency mode when supported. Pass `false` to disable it. Setting it alone preserves modem lines and break. Modem status reports `lowLatency: false` when the driver cannot report the flag.
+
 See [index.d.ts](../index.d.ts) for the exported types and method signatures.
 
 ## Promise-based binding API

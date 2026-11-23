@@ -32,6 +32,7 @@ class VirtualDevice {
   declare echo: boolean;
   declare record: boolean;
   declare maxReadSize: number;
+  declare lowLatency?: boolean;
   declare readyData?: Buffer;
   declare info: PortInfo;
   declare openOpt?: Required<BindingOpenOptions>;
@@ -235,17 +236,19 @@ class MockPortBinding {
   }
 
   async set(options: SetOptions) {
-    validateSetOptions(options);
+    const { lowLatency } = validateSetOptions(options);
     this.#check();
     await nextTick();
     this.#check();
+    if (lowLatency !== undefined) this.port.lowLatency = lowLatency;
   }
 
   async get() {
     this.#check();
     await nextTick();
     this.#check();
-    return { cts: true, dsr: false, dcd: false };
+    const status = { cts: true, dsr: false, dcd: false };
+    return this.port.lowLatency === undefined ? status : { ...status, lowLatency: this.port.lowLatency };
   }
   async getBaudRate() {
     this.#check();

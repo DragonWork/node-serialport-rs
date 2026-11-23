@@ -206,6 +206,12 @@ test('mock controls, flushing and read validation are asynchronous and isolated 
   assert.equal(a.openOptions.baudRate, 9600);
   await a.set({ dtr: true, rts: false });
   assert.deepEqual(await a.get(), { cts: true, dsr: false, dcd: false });
+  await a.set({ lowLatency: true });
+  await a.set({ dtr: true });
+  assert.equal((await a.get()).lowLatency, true);
+  assert.equal((await b.get()).lowLatency, undefined);
+  await a.set({ lowLatency: false });
+  assert.equal((await a.get()).lowLatency, false);
   await assert.rejects(a.read(Buffer.alloc(1), -1, 1), RangeError);
   await assert.rejects(a.update({ baudRate: 0 }), TypeError);
   // @ts-expect-error Exercise runtime validation for malformed flags.

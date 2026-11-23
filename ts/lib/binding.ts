@@ -423,14 +423,15 @@ class BindingPort {
 
   async set(options: SetOptions = {}) {
     const flags = modemOptions(validateSetOptions(options), this.openOptions);
-    if (Object.hasOwn(flags, 'rts')) {
+    if (flags.lowLatency === undefined && Object.hasOwn(flags, 'rts')) {
       await this._request('set', Number(flags.dtr) | (Number(flags.rts) << 1) | (Number(flags.brk) << 2));
     } else await this._request('set', 0, flags);
   }
 
   async get() {
-    const { cts, dsr, dcd } = (await this._request('get'))!;
-    return { cts: cts!, dsr: dsr!, dcd: dcd! };
+    const { cts, dsr, dcd, lowLatency } = (await this._request('get'))!;
+    const status = { cts: cts!, dsr: dsr!, dcd: dcd! };
+    return typeof lowLatency === 'boolean' ? { ...status, lowLatency } : status;
   }
   async getBaudRate() {
     return { baudRate: (await this._request('getBaudRate'))!.baudRate! };

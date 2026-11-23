@@ -151,6 +151,22 @@ test(
   },
 );
 
+test('Linux driver-only updates leave modem lines alone', { skip: process.platform !== 'linux' }, async t => {
+  const terminal = await pty(t);
+  const options = { path: terminal.path, baudRate: 115200 };
+  const port = await RustBinding.open(options);
+  t.after(() => port.isOpen && port.close());
+  await port.set({ lowLatency: false });
+  await assert.rejects(port.set({ lowLatency: true }), { code: 'ENOTTY' });
+  await assert.rejects(port.set({ lowLatency: false, dtr: false }), { code: 'ENOTTY' });
+  await port.close();
+  const stream = new SerialPort({ ...options, autoOpen: false });
+  t.after(() => stream.destroy());
+  await stream.openAsync();
+  await stream.setAsync({ lowLatency: false });
+  await assert.rejects(stream.setAsync({ brk: true, lowLatency: false }), { code: 'ENOTTY' });
+});
+
 test('native operation callbacks retain their caller AsyncLocalStorage context', { timeout: 5000 }, async t => {
   const context = new AsyncLocalStorage();
   t.after(() => context.disable());

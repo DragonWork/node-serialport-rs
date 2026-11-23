@@ -18,6 +18,7 @@ export interface NativeEvent {
   cts?: boolean;
   dsr?: boolean;
   dcd?: boolean;
+  lowLatency?: boolean;
   baudRate?: number;
 }
 

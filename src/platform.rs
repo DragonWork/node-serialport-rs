@@ -18,6 +18,8 @@ std::cfg_select! {
     }
 }
 
+#[cfg(target_os = "linux")]
+pub(crate) mod linux;
 #[cfg(any(target_os = "macos", test))]
 pub(crate) mod macos_list;
 #[cfg(any(windows, test))]

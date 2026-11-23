@@ -24,6 +24,7 @@ test('modem defaults respect driver-managed RTS and explicit line requests', () 
     assert.equal(Object.hasOwn(modemOptions({ rts: undefined }, open), 'rts'), manual);
     assert.equal(modemOptions({ rts: false }, open).rts, false);
     assert.equal(modemOptions({ rts: true }, open).rts, true);
+    assert.deepEqual(modemOptions({ lowLatency: false }, open), { lowLatency: false });
   }
 });
 

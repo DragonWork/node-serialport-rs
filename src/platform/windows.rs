@@ -20,7 +20,8 @@ use tokio::{
 };
 use windows_sys::Win32::{
     Devices::Communication::{
-        COMMTIMEOUTS, COMSTAT, ClearCommError, DCB, GetCommState, SetCommState, SetCommTimeouts,
+        COMMTIMEOUTS, COMSTAT, ClearCommError, DCB, GetCommModemStatus, GetCommState, MS_CTS_ON,
+        MS_DSR_ON, MS_RLSD_ON, SetCommState, SetCommTimeouts,
     },
     Foundation::{ERROR_CALL_NOT_IMPLEMENTED, ERROR_INVALID_FUNCTION, ERROR_NOT_SUPPORTED},
     Storage::FileSystem::FILE_FLAG_OVERLAPPED,
@@ -126,11 +127,15 @@ impl SerialStream {
         Ok(())
     }
 
-    pub fn modem_status(&mut self) -> io::Result<(bool, bool, bool)> {
+    pub fn modem_status(&self) -> io::Result<(bool, bool, bool)> {
+        let mut lines = 0;
+        // SAFETY: the port owns the COM handle and lines is writable for the call.
+        (unsafe { GetCommModemStatus(self.control.as_raw_handle(), &raw mut lines) } != 0)
+            .ok_or_else(io::Error::last_os_error)?;
         Ok((
-            self.control.read_clear_to_send()?,
-            self.control.read_data_set_ready()?,
-            self.control.read_carrier_detect()?,
+            lines & MS_CTS_ON != 0,
+            lines & MS_DSR_ON != 0,
+            lines & MS_RLSD_ON != 0,
         ))
     }
 

@@ -37,6 +37,14 @@ pub(super) fn unsupported_ioctl(error: &io::Error) -> bool {
         )
 }
 
+fn ignore_unsupported_break(error: io::Error) -> io::Result<()> {
+    if error.raw_os_error() == Some(libc::EOPNOTSUPP) {
+        Ok(())
+    } else {
+        Err(error)
+    }
+}
+
 pub(crate) fn output_pending(port: &impl AsFd) -> io::Result<bool> {
     #[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
     let request = nix::request_code_read!(b't', 115, size_of::<libc::c_int>());
@@ -137,6 +145,7 @@ impl SerialStream {
                 std::ptr::null_mut::<libc::c_void>(),
             )
         })
+        .or_else(ignore_unsupported_break)
     }
 
     pub fn modem_status(&self) -> io::Result<(bool, bool, bool)> {
@@ -248,6 +257,15 @@ mod tests {
         let stream =
             crate::platform::open(&serialport::new(path, 115200).exclusive(false)).unwrap();
         (master, stream)
+    }
+
+    #[test]
+    fn break_control_ignores_only_eopnotsupp() {
+        assert!(ignore_unsupported_break(io::Error::from_raw_os_error(libc::EOPNOTSUPP)).is_ok());
+        for errno in [libc::EIO, libc::ENOTTY, libc::ENOSYS] {
+            let error = ignore_unsupported_break(io::Error::from_raw_os_error(errno)).unwrap_err();
+            assert_eq!(error.raw_os_error(), Some(errno));
+        }
     }
 
     #[cfg(target_os = "linux")]

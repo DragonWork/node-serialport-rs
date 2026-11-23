@@ -6,7 +6,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { endianness } from 'node:os';
-import type { RustPort, SerialPortErrorCode } from '../public-api';
+import type { RustPort, SerialPortErrorCode, SetOptions } from '../public-api';
 
 export interface NativeEvent {
   kind: 'open' | 'close' | 'read' | 'ok' | 'error';
@@ -27,6 +27,7 @@ export interface NativeHandle {
   readCredit(bytes: number, slots: number): void;
   write(id: number, data: Buffer, inline: boolean): boolean;
   writev(id: number, data: Buffer[], length?: number, inline?: boolean): boolean;
+  set(id: number, options: SetOptions): void;
   request(id: number, operation: ControlOperation, value: number): void;
 }
 

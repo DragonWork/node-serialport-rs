@@ -133,6 +133,8 @@ On macOS, USB `locationId` uses the eight-digit lowercase hexadecimal IOKit loca
 
 Available control methods are `update({ baudRate }, callback)`, `set({ dtr, rts, brk }, callback)`, `get(callback)`, `getBaudRate(callback)`, `flush(callback)`, and `drain(callback)`. `get()` returns CTS, DSR, and DCD status. `getBaudRate()` queries the driver, while the `baudRate` property reflects the stream's requested setting. `flush()` discards unread input and output that the OS has not transmitted. Device drivers may reject unsupported control operations or serial settings.
 
+With hardware flow control, `set()` leaves driver-managed RTS alone unless you explicitly pass `rts`.
+
 See [index.d.ts](../index.d.ts) for the exported types and method signatures.
 
 ## Promise-based binding API

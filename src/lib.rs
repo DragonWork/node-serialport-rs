@@ -110,6 +110,13 @@ pub struct NativeOptions {
     pub hupcl: bool,
 }
 
+#[napi(object, object_to_js = false)]
+pub struct NativeSetOptions {
+    pub dtr: Option<bool>,
+    pub rts: Option<bool>,
+    pub brk: Option<bool>,
+}
+
 #[napi(object, object_from_js = false)]
 #[derive(Default)]
 pub struct NativeEvent {
@@ -291,10 +298,23 @@ impl NativePort {
     }
 
     #[napi]
+    pub fn set(&self, id: u32, options: NativeSetOptions) -> Result<()> {
+        self.enqueue(Command {
+            id,
+            operation: Operation::Set(options),
+        })
+    }
+
+    #[napi]
     pub fn request(&self, id: u32, op: String, value: u32) -> Result<()> {
         let operation = match op.as_str() {
             "update" => Operation::Update(value),
-            "set" => Operation::Set(value),
+            // Complete modem updates use the original three-bit mask.
+            "set" => Operation::Set(NativeSetOptions {
+                dtr: Some(value & 1 != 0),
+                rts: Some(value & 2 != 0),
+                brk: Some(value & 4 != 0),
+            }),
             "get" => Operation::Get,
             "getBaudRate" => Operation::GetBaudRate,
             "flush" => Operation::Flush,

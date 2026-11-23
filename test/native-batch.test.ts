@@ -297,6 +297,9 @@ test('queued native deliveries preserve mixed chunk order and stop on close', as
     writev(): never {
       assert.fail('Unexpected vectored write');
     }
+    set(): never {
+      assert.fail('Unexpected modem control');
+    }
     request(): never {
       assert.fail('Unexpected control request');
     }

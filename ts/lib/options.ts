@@ -69,4 +69,11 @@ function validateSetOptions(options: SetOptions): SetOptions {
   return flags;
 }
 
-export { validateOptions, validateRustOptions, validateBaudRate, validateSetOptions };
+function modemOptions(flags: SetOptions, open?: Pick<RustOpenOptions, 'rtscts' | 'rtsMode'>): SetOptions {
+  const automaticRts = open?.rtscts && (process.platform !== 'win32' || open.rtsMode !== 'enable');
+  const lines: SetOptions = { brk: false, cts: false, dtr: true, rts: true, ...flags };
+  if (automaticRts && flags.rts === undefined) delete lines.rts;
+  return lines;
+}
+
+export { modemOptions, validateOptions, validateRustOptions, validateBaudRate, validateSetOptions };

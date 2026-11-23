@@ -8,7 +8,7 @@ import { finished } from 'node:stream/promises';
 import { AsyncResource } from 'node:async_hooks';
 import { addAbortListener } from 'node:events';
 import { BindingPort, RustBinding } from './binding';
-import { validateOptions } from './options';
+import { modemOptions, validateOptions } from './options';
 import type {
   BindingInterface,
   BindingOpenOptions,
@@ -413,8 +413,8 @@ class SerialPortStream extends Duplex {
     );
   }
   set(options?: SetOptions, callback?: ErrorCallback) {
-    const flags = { brk: false, cts: false, dtr: true, rts: true, ...options };
-    this._operation(port => port.set(flags), callback);
+    const flags = { ...options };
+    this._operation(port => port.set(port instanceof BindingPort ? flags : modemOptions(flags)), callback);
   }
   get(callback?: ModemBitsCallback) {
     this._operation(port => port.get(), callback);

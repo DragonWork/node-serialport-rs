@@ -6,7 +6,7 @@ pub(crate) enum Operation {
     ReadCredit { bytes: usize, slots: usize },
     Write(Vec<u8>),
     Update(u32),
-    Set(u32),
+    Set(crate::NativeSetOptions),
     Get,
     GetBaudRate,
     Flush,

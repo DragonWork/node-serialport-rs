@@ -13,6 +13,20 @@ const { loadNative, selectTarget } = require('../lib/native') as typeof import('
 import { SerialPort, RustBinding, BindingsError } from '..';
 const targets = require('../lib/targets.json') as (Parameters<typeof selectTarget>[0] & { target: string })[];
 
+test('modem defaults respect driver-managed RTS and explicit line requests', () => {
+  const { modemOptions } = require('../lib/options') as typeof import('../ts/lib/options');
+  assert.deepEqual(modemOptions({}), { brk: false, cts: false, dtr: true, rts: true });
+  assert(Object.hasOwn(modemOptions({ rts: undefined }), 'rts'));
+  for (const rtsMode of ['handshake', 'toggle', 'enable'] as const) {
+    const open = { rtscts: true, rtsMode };
+    const manual = process.platform === 'win32' && rtsMode === 'enable';
+    assert.equal(modemOptions({ dtr: false }, open).rts, manual ? true : undefined);
+    assert.equal(Object.hasOwn(modemOptions({ rts: undefined }, open), 'rts'), manual);
+    assert.equal(modemOptions({ rts: false }, open).rts, false);
+    assert.equal(modemOptions({ rts: true }, open).rts, true);
+  }
+});
+
 test('native open errors carry a portable code and device path', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'serialport-errors-'));
   t.after(() => rmSync(directory, { recursive: true }));

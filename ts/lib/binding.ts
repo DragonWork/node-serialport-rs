@@ -4,7 +4,7 @@
 'use strict';
 
 import { types } from 'node:util';
-import { validateRustOptions, validateBaudRate, validateSetOptions } from './options';
+import { modemOptions, validateRustOptions, validateBaudRate, validateSetOptions } from './options';
 import type {
   RustOpenOptions,
   RustPort,
@@ -231,7 +231,7 @@ class BindingPort {
   _request(
     op: ControlOperation | 'read' | 'write' | 'writev',
     value = 0,
-    data?: Buffer | Buffer[],
+    data?: Buffer | Buffer[] | SetOptions,
   ): Promise<NativeEvent | void> {
     if (!this.isOpen || this._closing) return Promise.reject(canceled());
     if (this._pending.size >= 64) return Promise.reject(new Error('Too many pending serial operations'));
@@ -251,7 +251,8 @@ class BindingPort {
           for (let i = 0; i < buffers.length; i++) buffers[i] = localBuffer(buffers[i]);
           completed = this._native!.writev(id, buffers, value, this._ordered === 1);
         }
-      } else this._native!.request(id, op, value);
+      } else if (op === 'set' && data) this._native!.set(id, data as SetOptions);
+      else this._native!.request(id, op, value);
       if (completed) {
         this._ordered--;
         return RESOLVED;
@@ -421,8 +422,10 @@ class BindingPort {
   }
 
   async set(options: SetOptions = {}) {
-    const flags = { dtr: true, rts: true, brk: false, ...validateSetOptions(options) };
-    await this._request('set', Number(flags.dtr) | (Number(flags.rts) << 1) | (Number(flags.brk) << 2));
+    const flags = modemOptions(validateSetOptions(options), this.openOptions);
+    if (Object.hasOwn(flags, 'rts')) {
+      await this._request('set', Number(flags.dtr) | (Number(flags.rts) << 1) | (Number(flags.brk) << 2));
+    } else await this._request('set', 0, flags);
   }
 
   async get() {

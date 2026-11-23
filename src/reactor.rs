@@ -451,7 +451,7 @@ fn operation(port: &mut SerialStream, command: &Command) -> io::Result<NativeEve
     match &command.operation {
         Operation::Update(baud_rate) => crate::platform::set_baud_rate(port, *baud_rate)?,
         Operation::GetBaudRate => event.baud_rate = Some(crate::platform::baud_rate(port)?),
-        Operation::Set(flags) => port.set_signals(*flags)?,
+        Operation::Set(options) => port.set_signals(options)?,
         Operation::Get => {
             let (cts, dsr, dcd) = port.modem_status()?;
             event.cts = Some(cts);

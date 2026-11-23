@@ -118,14 +118,17 @@ impl SerialStream {
         self.set_line(libc::TIOCM_DTR, enabled)
     }
 
-    pub fn set_signals(&self, flags: u32) -> io::Result<()> {
-        self.set_dtr(flags & 1 != 0)?;
-        self.set_line(libc::TIOCM_RTS, flags & 2 != 0)?;
-        let request = if flags & 4 != 0 {
-            libc::TIOCSBRK
-        } else {
-            libc::TIOCCBRK
+    pub fn set_signals(&self, options: &crate::NativeSetOptions) -> io::Result<()> {
+        if let Some(dtr) = options.dtr {
+            self.set_dtr(dtr)?;
+        }
+        if let Some(rts) = options.rts {
+            self.set_line(libc::TIOCM_RTS, rts)?;
+        }
+        let Some(brk) = options.brk else {
+            return Ok(());
         };
+        let request = if brk { libc::TIOCSBRK } else { libc::TIOCCBRK };
         // SAFETY: the port owns fd and neither break request takes a payload.
         syscall_result(unsafe {
             libc::ioctl(

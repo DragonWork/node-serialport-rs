@@ -111,13 +111,17 @@ impl SerialStream {
         self.io.try_write(bytes)
     }
 
-    pub fn set_signals(&mut self, flags: u32) -> io::Result<()> {
-        self.control.write_data_terminal_ready(flags & 1 != 0)?;
-        self.control.write_request_to_send(flags & 2 != 0)?;
-        if flags & 4 != 0 {
-            self.control.set_break()?;
-        } else {
-            self.control.clear_break()?;
+    pub fn set_signals(&mut self, options: &crate::NativeSetOptions) -> io::Result<()> {
+        if let Some(dtr) = options.dtr {
+            self.control.write_data_terminal_ready(dtr)?;
+        }
+        if let Some(rts) = options.rts {
+            self.control.write_request_to_send(rts)?;
+        }
+        match options.brk {
+            Some(true) => self.control.set_break()?,
+            Some(false) => self.control.clear_break()?,
+            None => {}
         }
         Ok(())
     }

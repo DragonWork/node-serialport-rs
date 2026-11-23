@@ -1,5 +1,27 @@
 # Changelog
 
+## What's Changed in v1.1.0 (2026-11-23)
+
+* test: remove one-off adapter check by @DragonWork
+* fix(binding): queue idle drains before later writes by @DragonWork
+* fix(parsers): preserve regex frame encoding by @DragonWork
+* fix(windows): honor RTS flow control modes by @DragonWork
+* fix(unix): preserve modem control errno (closes #35) by @DragonWork
+* fix(serial): keep reads live during output drain by @DragonWork
+* feat(unix): support terminal read thresholds by @DragonWork
+* feat(serial): configure DTR on a single device open by @DragonWork
+* ci(release): test packed addons on Alpine and Windows ARM64 by @DragonWork
+* fix(stream): order drains around buffered writes by @DragonWork
+* perf(serial): size reads to available receive capacity by @DragonWork
+* perf(binding): pack fragmented writes in one pass by @DragonWork
+* perf(parsers): scan packet delimiters by buffer span by @DragonWork
+* fix(serial): respect driver-managed RTS by @DragonWork
+* feat(linux): support driver low-latency mode by @DragonWork
+* perf(windows): read modem status in one call by @DragonWork
+* fix(unix): allow EOPNOTSUPP for break control (closes #36) by @Azq2
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v1.0.0...v1.1.0
+
 ## What's Changed in v1.0.0 (2026-11-18)
 
 * chore(deps): bump prettier from 3.9.10 to 3.10.1 in the compatible-npm-updates group (#33) by @dependabot[bot] in [#33](https://github.com/DragonWork/node-serialport-rs/pull/33)

@@ -416,11 +416,7 @@ fn operation(port: &mut SerialStream, command: &Command) -> io::Result<NativeEve
             port.control_mut()
                 .write_data_terminal_ready(flags & 1 != 0)?;
             port.control_mut().write_request_to_send(flags & 2 != 0)?;
-            if flags & 4 != 0 {
-                port.control().set_break()?;
-            } else {
-                port.control().clear_break()?;
-            }
+            crate::platform::set_break(port, flags & 4 != 0)?;
         }
         Operation::Get => {
             event.cts = Some(port.control_mut().read_clear_to_send()?);

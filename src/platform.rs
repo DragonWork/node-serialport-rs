@@ -56,6 +56,23 @@ pub(crate) fn set_baud_rate(port: &mut SerialStream, baud_rate: u32) -> io::Resu
         .map_err(Into::into)
 }
 
+pub(crate) fn set_break(port: &SerialStream, enabled: bool) -> io::Result<()> {
+    let result = if enabled {
+        port.control().set_break()
+    } else {
+        port.control().clear_break()
+    };
+    #[cfg(unix)]
+    if let Err(error) = &result
+        // serialport::Error keeps only the errno text, not its number.
+        // Linux cdc_acm rejects TIOCSBRK/TIOCCBRK for devices without break support.
+        && error.description == nix::errno::Errno::EOPNOTSUPP.desc()
+    {
+        return Ok(());
+    }
+    result.map_err(Into::into)
+}
+
 pub(crate) fn baud_rate(port: &SerialStream) -> io::Result<u32> {
     let baud_rate = port.control().baud_rate()?;
     #[cfg(target_os = "macos")]

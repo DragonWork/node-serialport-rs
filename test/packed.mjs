@@ -11,6 +11,7 @@ assert(target);
 assert.equal(require('serialport-rs').SerialPort, SerialPort);
 assert.equal(version.target, target);
 assert(Array.isArray(await SerialPort.list()));
-const binary = require.resolve(`serialport-rs/native/${target}/serialport-rs.node`);
+const source = process.env.NATIVE_PACKAGE || 'serialport-rs/native';
+const binary = createRequire(require.resolve('serialport-rs')).resolve(`${source}/${target}/serialport-rs.node`);
 assert(require.cache[binary], `Expected the installed addon at ${binary}`);
 console.log(`serialport-rs ${version.version} loaded ${target} on Node ${process.version}`);

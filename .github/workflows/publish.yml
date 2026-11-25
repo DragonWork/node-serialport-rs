@@ -172,7 +172,7 @@ jobs:
           merge-multiple: true
           path: native/
       - run: npm ci --ignore-scripts
-      - name: Validate and pack the complete release archive
+      - name: Pack platform packages, JS package and offline archive
         run: npm run pack:release -- artifacts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -189,8 +189,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {runner: ubuntu-26.04, target: x86_64-unknown-linux-musl}
-          - {runner: windows-11-arm, target: aarch64-pc-windows-msvc}
+          - {runner: ubuntu-26.04, target: x86_64-unknown-linux-musl, alpine: true}
+          - {runner: ubuntu-26.04, target: x86_64-unknown-linux-gnu, arch: x64}
+          - {runner: macos-latest, target: aarch64-apple-darwin, arch: arm64}
+          - {runner: windows-11-arm, target: aarch64-pc-windows-msvc, arch: arm64}
     env:
       EXPECTED_TARGET: ${{ matrix.target }}
     steps:
@@ -202,36 +204,21 @@ jobs:
         with:
           name: npm-package
           path: artifacts/
-      - name: Prepare a clean consumer
-        shell: bash
-        run: |
-          mkdir consumer
-          cp artifacts/*.tar.gz test/packed.mjs consumer/
-          echo '{"private":true}' > consumer/package.json
       - name: Install and load on Alpine
-        if: runner.os == 'Linux'
-        working-directory: consumer
+        if: matrix.alpine
         env:
           NODE_MAJOR: ${{ needs.targets.outputs.node-latest }}
         run: |
-          tar -cf - . | docker run --rm -i -e EXPECTED_TARGET -w /consumer "node:${NODE_MAJOR}-alpine" sh -ec '
-            tar -xf -
-            npm install --offline --ignore-scripts --no-audit --no-fund ./*.tar.gz
-            node packed.mjs
-          '
+          docker run --rm -e EXPECTED_TARGET -v "$PWD:/project:ro" -w /project "node:${NODE_MAJOR}-alpine" npm run test:packed
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: runner.os == 'Windows'
+        if: '!matrix.alpine'
         with:
           node-version: ${{ needs.targets.outputs.node-latest }}
-          architecture: arm64
+          architecture: ${{ matrix.arch }}
           package-manager-cache: false
-      - name: Install and load on Windows ARM64
-        if: runner.os == 'Windows'
-        working-directory: consumer
-        shell: bash
-        run: |
-          npm install --offline --ignore-scripts --no-audit --no-fund ./*.tar.gz
-          node packed.mjs
+      - name: Install and load the registry and offline packages
+        if: '!matrix.alpine'
+        run: npm run test:packed
 
   publish:
     if: inputs.publish && github.repository == 'DragonWork/node-serialport-rs'
@@ -256,7 +243,7 @@ jobs:
         with:
           name: npm-package
           path: artifacts/
-      - name: Publish the verified archive with OIDC and provenance
+      - name: Publish and verify native packages before publishing serialport-rs
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/publish-release.js artifacts/release.json

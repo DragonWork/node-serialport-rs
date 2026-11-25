@@ -36,6 +36,8 @@ Node.js 20 is outside official support, so npm warns by default on installation.
 npm install serialport-rs
 ```
 
+npm installs the matching `@serialport-rs` native package automatically. For offline installs, download the self-contained archive from the [GitHub release](https://github.com/DragonWork/node-serialport-rs/releases).
+
 ## Quick start
 
 Save this as `example.mjs`. Set the device path, baud rate, and line delimiter to

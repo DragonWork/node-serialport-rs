@@ -113,9 +113,20 @@ function isolatedLoader({
   arch = 'arm64',
   glibc = true,
   exists = (_candidate: string): boolean => true,
+  resolve = (name: string) => require.resolve(name),
 } = {}) {
   const module = { exports: {} as typeof import('../ts/lib/native') };
   let loaded;
+  const load = (name: string) => {
+    if (name === 'node:fs') return { existsSync: exists };
+    if (name === './targets.json') return targets;
+    if (name === './platform-package.cjs') return require('../lib/platform-package.cjs');
+    if (name.endsWith('.node')) {
+      loaded = name;
+      return { NativePort: class {} };
+    }
+    return require(name);
+  };
   runInNewContext(readFileSync(require.resolve('../lib/native'), 'utf8'), {
     module,
     exports: module.exports,
@@ -126,15 +137,7 @@ function isolatedLoader({
       config: { variables: {} },
       report: { getReport: () => ({ header: { glibcVersionRuntime: glibc && '2.31' } }) },
     },
-    require(name: string) {
-      if (name === 'node:fs') return { existsSync: exists };
-      if (name === './targets.json') return targets;
-      if (name.endsWith('.node')) {
-        loaded = name;
-        return { NativePort: class {} };
-      }
-      return require(name);
-    },
+    require: Object.assign(load, { resolve }),
   });
   module.exports.loadNative();
   return loaded;
@@ -174,8 +177,14 @@ test('packaged loading distinguishes glibc and musl and prefers a local build', 
     const target = `aarch64-unknown-linux-${glibc ? 'gnu' : 'musl'}`;
     const file = join(__dirname, '../native', target, 'serialport-rs.node');
     assert.equal(isolatedLoader({ glibc, exists: candidate => candidate === file }), file);
+    const module = `@serialport-rs/linux-arm64-${glibc ? 'gnu' : 'musl'}/${target}/serialport-rs.node`;
+    assert.equal(isolatedLoader({ glibc, exists: () => false, resolve: name => name }), module);
   }
-  assert.throws(() => isolatedLoader({ exists: () => false }), /No serialport-rs native build/);
+  assert.throws(
+    () => isolatedLoader({ exists: () => false }),
+    /Missing @serialport-rs\/linux-arm64-gnu.*--include=optional/,
+  );
+  assert.throws(() => isolatedLoader({ platform: 'unknown', exists: () => false }), /No serialport-rs native build/);
 });
 
 test('release validation accepts this binary and rejects a mismatched architecture', () => {

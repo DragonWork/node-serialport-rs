@@ -7,6 +7,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 const { publishRelease, jsonResponse, liveApi } = require('../scripts/publish-release');
 const { packInfo, checkFiles } = require('../scripts/package-release');
+const native = { name: '@serialport-rs/linux-x64-gnu', filename: 'native.tgz', integrity: 'sha512-native' };
+const parent = { name: 'serialport-rs', filename: 'parent.tgz', integrity: 'sha512-parent' };
+const immediate = async () => {};
 
 const meta = {
   name: 'serialport-rs',
@@ -14,6 +17,7 @@ const meta = {
   tag: 'v1.2.3',
   commit: 'a'.repeat(40),
   filename: 'serialport-rs-1.2.3.tar.gz',
+  packages: [native, parent],
   integrity: 'sha512-package',
   sha256: 'b'.repeat(64),
   distTag: 'latest',
@@ -22,6 +26,7 @@ const meta = {
 
 function provider(overrides = {}) {
   const calls: string[] = [];
+  const registry = new Map<string, { dist: { integrity: string } }>();
   const draft = { id: 1, draft: true, target_commitish: meta.commit, assets: [], body: meta.notes };
   return {
     calls,
@@ -29,8 +34,8 @@ function provider(overrides = {}) {
       async tagCommit() {
         return null;
       },
-      async npmPackage() {
-        return null;
+      async npmPackage(pkg: typeof parent) {
+        return registry.get(pkg.name);
       },
       async release() {
         return null;
@@ -45,8 +50,12 @@ function provider(overrides = {}) {
       async upload() {
         calls.push('upload');
       },
-      async publishNpm() {
-        calls.push('npm');
+      async publishNpm(pkg: typeof parent) {
+        calls.push('publish ' + pkg.name);
+        registry.set(pkg.name, { dist: { integrity: pkg.integrity } });
+      },
+      async verifyNpm(pkg: typeof parent) {
+        calls.push('verify ' + pkg.name);
       },
       async publishDraft() {
         calls.push('publish');
@@ -58,8 +67,16 @@ function provider(overrides = {}) {
 
 test('release publication follows archive upload and npm success', async () => {
   const { api, calls } = provider();
-  await publishRelease(meta, api);
-  assert.deepEqual(calls, ['draft', 'upload', 'npm', 'publish']);
+  await publishRelease(meta, api, immediate);
+  assert.deepEqual(calls, [
+    'draft',
+    'upload',
+    'publish ' + native.name,
+    'verify ' + native.name,
+    'publish ' + parent.name,
+    'verify ' + parent.name,
+    'publish',
+  ]);
 });
 
 test('npm failure leaves the release unpublished and a retry reuses its draft', async () => {
@@ -69,18 +86,41 @@ test('npm failure leaves the release unpublished and a retry reuses its draft', 
       throw failure;
     },
   });
-  await assert.rejects(publishRelease(meta, first.api), error => error === failure);
+  await assert.rejects(publishRelease(meta, first.api, immediate), error => error === failure);
   assert.deepEqual(first.calls, ['draft', 'upload']);
   const retry = provider({
     async release() {
       return { id: 1, draft: true, target_commitish: meta.commit };
     },
-    async npmPackage() {
-      return { dist: { integrity: meta.integrity } };
+    async npmPackage(pkg: typeof parent) {
+      return { dist: { integrity: pkg.integrity } };
     },
   });
-  await publishRelease(meta, retry.api);
-  assert.deepEqual(retry.calls, ['notes', 'upload', 'publish']);
+  await publishRelease(meta, retry.api, immediate);
+  assert.deepEqual(retry.calls, ['notes', 'upload', 'verify ' + native.name, 'verify ' + parent.name, 'publish']);
+});
+
+test('an ambiguous native publish is verified before publishing the parent', async () => {
+  const { api, calls } = provider();
+  const publish = api.publishNpm;
+  api.publishNpm = async pkg => {
+    await publish(pkg);
+    if (pkg.name === native.name) throw new Error('connection dropped after upload');
+  };
+  await publishRelease(meta, api, immediate);
+  assert.equal(calls.filter(call => call === 'publish ' + native.name).length, 1);
+  assert(calls.indexOf('verify ' + native.name) < calls.indexOf('publish ' + parent.name));
+});
+
+test('a native tarball readback failure prevents parent publication', async () => {
+  const { api, calls } = provider({
+    async verifyNpm() {
+      throw new Error('registry tarball differs');
+    },
+  });
+  await assert.rejects(publishRelease(meta, api, immediate), /registry tarball differs/);
+  assert(!calls.includes('publish ' + parent.name));
+  assert(!calls.includes('publish'));
 });
 
 test('tag and npm version collisions fail before any release mutation', async () => {
@@ -112,15 +152,15 @@ test('completed immutable releases are verified without rewriting assets or tags
     async tagCommit() {
       return meta.commit;
     },
-    async npmPackage() {
-      return { dist: { integrity: meta.integrity } };
+    async npmPackage(pkg: typeof parent) {
+      return { dist: { integrity: pkg.integrity } };
     },
     async release() {
       return { draft: false, assets: [{ name: meta.filename, digest: `sha256:${meta.sha256}` }] };
     },
   });
   await publishRelease(meta, api);
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, ['verify ' + native.name, 'verify ' + parent.name]);
 });
 
 test('authentication and server errors cannot be mistaken for absent releases', async t => {

@@ -61,6 +61,7 @@
     "build:tests": "tsc -p tsconfig.tests.json && tsc -p tsconfig.tests.json --noEmit false --noCheck --noResolve --rootDir test --outDir test",
     "pretest": "npm run build:js && npm run build:tests",
     "test": "node --enable-source-maps --expose-gc --test test/*.test.js",
+    "test:packed": "node test/packed-install.mjs",
     "check:types": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.types.json && tsc -p tsconfig.tests.json",
     "format": "prettier --write \"**/*.{js,ts,json}\"",
     "format:check": "prettier --check \"**/*.{js,ts,json}\"",

@@ -8,15 +8,46 @@ const { execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { readFileSync } = require('node:fs');
 const { basename, dirname, join, resolve } = require('node:path');
+const { setTimeout: sleep } = require('node:timers/promises');
+const targets = require('../lib/targets.json');
+const platformPackage = require('../lib/platform-package.cjs');
 
-async function publishRelease(meta, api) {
+async function registered(pkg, api) {
+  const entry = await api.npmPackage(pkg);
+  assert(
+    !entry || entry.dist?.integrity === pkg.integrity,
+    `${pkg.name} already exists with different contents; retry with the original package artifact`,
+  );
+  return entry;
+}
+
+async function publishVerified(pkg, entry, api, wait) {
+  let accepted = false;
+  let attempts = 0;
+  let failure;
+  for (let poll = 0; !entry; poll++) {
+    if (poll === 12) throw new Error(`Could not verify publication of ${pkg.name}`, { cause: failure });
+    if (!accepted && attempts < 3) {
+      attempts++;
+      try {
+        await api.publishNpm(pkg);
+        accepted = true;
+      } catch (error) {
+        failure = error;
+      }
+    }
+    await wait(Math.min(1000 * 2 ** poll, 30000));
+    entry = await registered(pkg, api);
+    if (!entry && !accepted && attempts === 3) throw failure;
+  }
+  await api.verifyNpm(pkg, entry);
+}
+
+async function publishRelease(meta, api, wait = sleep) {
   const tagCommit = await api.tagCommit();
   assert(!tagCommit || tagCommit === meta.commit, 'Release tag points to a different commit');
-  const published = await api.npmPackage();
-  assert(
-    !published || published.dist?.integrity === meta.integrity,
-    'Version already exists with different contents; retry with the original package artifact',
-  );
+  const entries = new Map();
+  for (const pkg of meta.packages) entries.set(pkg.name, await registered(pkg, api));
   let release = await api.release();
   if (release && !release.draft) {
     assert(
@@ -28,18 +59,45 @@ async function publishRelease(meta, api) {
       assert.equal(release.target_commitish, meta.commit, 'Draft belongs to a different commit');
       if (release.body !== meta.notes) await api.updateDraftNotes(release);
     } else release = await api.createDraft();
-    await api.upload(release);
+    const uploaded = release.assets?.some(
+      asset => asset.name === meta.filename && asset.digest === `sha256:${meta.sha256}`,
+    );
+    if (!uploaded) await api.upload(release);
   }
-  if (!published) await api.publishNpm();
+  const publish = pkg => publishVerified(pkg, entries.get(pkg.name), api, wait);
+  const natives = meta.packages.slice(0, -1);
+  // Let npm process several tarballs while polling their public versions.
+  for (let i = 0; i < natives.length; i += 5) {
+    const results = await Promise.allSettled(natives.slice(i, i + 5).map(publish));
+    for (const result of results) if (result.status === 'rejected') throw result.reason;
+  }
+  await publish(meta.packages.at(-1));
   // Publishing the GitHub release is last: assets are complete and npm has succeeded.
   if (release.draft) await api.publishDraft(release);
 }
 
+async function request(url, options = {}, missing = false) {
+  const method = options.method || 'GET';
+  for (let attempt = 0; ; attempt++) {
+    let response;
+    try {
+      response = await fetch(url, { ...options, signal: AbortSignal.timeout(30000) });
+    } catch (error) {
+      if (method !== 'GET' || attempt === 3) throw error;
+    }
+    if (response) {
+      if (response.ok) return response;
+      if (missing && response.status === 404) return null;
+      if (method !== 'GET' || attempt === 3 || (response.status < 500 && ![404, 429].includes(response.status)))
+        throw new Error(`${method} ${url}: HTTP ${response.status}`);
+    }
+    await sleep(1000 * 2 ** attempt);
+  }
+}
+
 async function jsonResponse(url, options = {}, missing = false) {
-  const response = await fetch(url, { ...options, signal: AbortSignal.timeout(30000) });
-  if (missing && response.status === 404) return null;
-  if (!response.ok) throw new Error(`${options.method || 'GET'} ${url}: HTTP ${response.status}`);
-  return response.json();
+  const response = await request(url, options, missing);
+  return response ? response.json() : null;
 }
 
 function liveApi(meta, archive, repository, token) {
@@ -69,12 +127,25 @@ function liveApi(meta, archive, repository, token) {
       assert.equal(object.type, 'commit', 'Tag must resolve to a commit');
       return object.sha;
     },
-    npmPackage() {
+    npmPackage(pkg) {
       return jsonResponse(
-        `https://registry.npmjs.org/${encodeURIComponent(meta.name)}/${encodeURIComponent(meta.version)}`,
-        {},
+        `https://registry.npmjs.org/${pkg.name.replace('/', '%2f')}/${encodeURIComponent(meta.version)}?verify=${Date.now()}`,
+        { cache: 'no-store' },
         true,
       );
+    },
+    async verifyNpm(pkg, entry) {
+      assert.equal(entry.name, pkg.name);
+      assert.equal(entry.version, meta.version);
+      const url = new URL(entry.dist.tarball);
+      assert.equal(url.origin, 'https://registry.npmjs.org');
+      const bytes = await (await request(url)).arrayBuffer();
+      assert.equal(
+        'sha512-' + createHash('sha512').update(Buffer.from(bytes)).digest('base64'),
+        pkg.integrity,
+        `Registry tarball differs for ${pkg.name}`,
+      );
+      console.log(`Verified ${pkg.name}@${meta.version}`);
     },
     async release() {
       const published = await github(`releases/tags/${tag}`, {}, true);
@@ -108,12 +179,12 @@ function liveApi(meta, archive, repository, token) {
         stdio: 'inherit',
       });
     },
-    publishNpm() {
+    publishNpm(pkg) {
       execFileSync(
         'npm',
         [
           'publish',
-          archive,
+          join(dirname(archive), pkg.filename),
           '--ignore-scripts',
           '--registry=https://registry.npmjs.org',
           '--access=public',
@@ -154,6 +225,17 @@ async function main(file) {
   const bytes = readFileSync(archive);
   assert.equal(meta.integrity, `sha512-${createHash('sha512').update(bytes).digest('base64')}`);
   assert.equal(meta.sha256, createHash('sha256').update(bytes).digest('hex'));
+  const names = [...new Set(targets.map(platformPackage)), meta.name];
+  assert.deepEqual(
+    meta.packages.map(pkg => pkg.name),
+    names,
+    'Expected every native package followed by the parent',
+  );
+  for (const pkg of meta.packages) {
+    assert.equal(pkg.filename, `${pkg.name.replace(/^@/, '').replace('/', '-')}-${meta.version}.tgz`);
+    const data = readFileSync(join(dirname(file), pkg.filename));
+    assert.equal(pkg.integrity, 'sha512-' + createHash('sha512').update(data).digest('base64'), pkg.name);
+  }
   await publishRelease(meta, liveApi(meta, archive, process.env.GITHUB_REPOSITORY, process.env.GH_TOKEN));
 }
 

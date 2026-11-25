@@ -62,6 +62,7 @@ interface TargetSelection {
   endian?: string;
 }
 const targets = require('./targets.json') as (TargetSelection & { target: string })[];
+const platformPackage: (target: TargetSelection) => string = require('./platform-package.cjs');
 let detectedTarget: Readonly<TargetSelection & { target?: string }> | undefined;
 
 function selectTarget({ platform, arch, libc, arm = 7, endian = endianness() }: TargetSelection): string | undefined {
@@ -101,12 +102,18 @@ function runtimeTarget() {
 function loadNative(): NativeAddon {
   const local = join(__dirname, '../native/serialport-rs.node');
   if (existsSync(local)) return require(local);
-  const { platform, arch, target } = runtimeTarget();
-  const binary = target && join(__dirname, '..', 'native', target, 'serialport-rs.node');
-  if (!binary || !existsSync(binary)) {
-    throw new Error(
-      `No serialport-rs native build for ${target || `${platform}/${arch}`}. Build this package with npm run build.`,
-    );
+  const host = runtimeTarget();
+  if (!host.target) throw new Error(`No serialport-rs native build for ${host.platform}/${host.arch}.`);
+  const file = `${host.target}/serialport-rs.node`;
+  const bundled = join(__dirname, '..', 'native', file);
+  if (existsSync(bundled)) return require(bundled);
+  const name = platformPackage(host);
+  let binary: string;
+  try {
+    binary = require.resolve(`${name}/${file}`);
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== 'MODULE_NOT_FOUND') throw cause;
+    throw new Error(`Missing ${name} for ${host.target}. Install with npm install --include=optional.`, { cause });
   }
   return require(binary);
 }

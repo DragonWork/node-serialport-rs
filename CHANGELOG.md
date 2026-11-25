@@ -1,5 +1,13 @@
 # Changelog
 
+## What's Changed in v1.2.0 (2026-11-25)
+
+* chore(deps): update Rust dependencies by @DragonWork
+* feat(packaging): publish platform-specific native addons by @DragonWork
+* fix(release): reuse prepared release notes on retries by @DragonWork
+
+**Full Changelog**: https://github.com/DragonWork/node-serialport-rs/compare/v1.1.0...v1.2.0
+
 ## What's Changed in v1.1.0 (2026-11-23)
 
 * test: remove one-off adapter check by @DragonWork

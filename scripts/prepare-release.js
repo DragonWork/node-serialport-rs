@@ -40,14 +40,22 @@ function prepareRelease(root, request, cliff, engines) {
   assert(semver.test(version), 'Choose auto, patch, minor, major, or an exact SemVer version');
   const tag = `v${version}`;
   assert(!git(root, ['tag', '--list', tag]), `Tag ${tag} already exists; retry the original publication job instead`);
-  const notes = run(['--tag', tag, '--strip', 'all']) + '\n';
-  assert(/^\* /m.test(notes), 'No changelog entries; chore-only changes do not need a release');
   const files = Object.fromEntries(
     releaseFiles
       .filter(name => existsSync(join(root, name)))
       .map(name => [name, readFileSync(join(root, name), 'utf8')]),
   );
   const pkg = JSON.parse(files['package.json']);
+  // A checked-in release keeps its reviewed notes and date when CI starts or is retried later.
+  const prepared =
+    pkg.version === version && git(root, ['log', '-1', '--format=%s']) === `chore(release): prepare ${tag}`;
+  const notes = prepared
+    ? files['CHANGELOG.md']
+        .slice(header.length)
+        .split(/\n(?=## What's Changed in )/)[0]
+        .trimEnd() + '\n'
+    : run(['--tag', tag, '--strip', 'all']) + '\n';
+  assert(/^\* /m.test(notes), 'No changelog entries; chore-only changes do not need a release');
   const lock = JSON.parse(files['package-lock.json']);
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[''].version, pkg.version);

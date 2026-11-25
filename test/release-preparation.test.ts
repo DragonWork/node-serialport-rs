@@ -147,6 +147,18 @@ test('manual bump modes and exact prerelease versions override automatic selecti
   assert.throws(() => prepareRelease(root, '1.12.1', cliff, engines), /already exists/);
 });
 
+test('a checked-in release reuses its notes and date on a later dispatch', { skip: !cliff }, t => {
+  offline(t);
+  const { root, git } = fixture(t, ['feat: split native addons']);
+  const first = prepareRelease(root, '1.13.0', cliff, engines);
+  applyPrepared(root, { ...first, commit: first.sourceCommit });
+  git(['add', '.']);
+  git(['-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'chore(release): prepare v1.13.0']);
+  const retry = prepareRelease(root, '1.13.0', '/unused-git-cliff', engines);
+  assert.equal(retry.notes, first.notes);
+  assert.deepEqual(retry.files, first.files);
+});
+
 test('git-cliff renders the requested author, PR and compare-link format', { skip: !cliff }, t => {
   const { root } = fixture(t, ['build(deps): update dependencies', 'fix(socketmap): relax limits\n\nDetails']);
   const timestamp = Date.UTC(2026, 7, 14) / 1000;

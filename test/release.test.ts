@@ -56,6 +56,7 @@ function provider(overrides = {}) {
       },
       async verifyNpm(pkg: typeof parent) {
         calls.push('verify ' + pkg.name);
+        return true;
       },
       async publishDraft() {
         calls.push('publish');
@@ -121,6 +122,37 @@ test('a native tarball readback failure prevents parent publication', async () =
   await assert.rejects(publishRelease(meta, api, immediate), /registry tarball differs/);
   assert(!calls.includes('publish ' + parent.name));
   assert(!calls.includes('publish'));
+});
+
+test('a public manifest can precede its tarball without republishing or exposing the parent', async t => {
+  const real = liveApi(meta, '/unused', 'DragonWork/node-serialport-rs', 'unused');
+  t.mock.method(global, 'fetch', async () => new Response(null, { status: 404 }));
+  const { api, calls } = provider();
+  const verify = api.verifyNpm;
+  let delayed = true;
+  api.verifyNpm = async pkg => {
+    if (pkg.name === native.name && delayed) {
+      delayed = false;
+      calls.push('tarball pending');
+      return real.verifyNpm(pkg, {
+        name: pkg.name,
+        version: meta.version,
+        dist: { tarball: 'https://registry.npmjs.org/native.tgz' },
+      });
+    }
+    return verify(pkg);
+  };
+  await publishRelease(meta, api, immediate);
+  assert.deepEqual(calls, [
+    'draft',
+    'upload',
+    'publish ' + native.name,
+    'tarball pending',
+    'verify ' + native.name,
+    'publish ' + parent.name,
+    'verify ' + parent.name,
+    'publish',
+  ]);
 });
 
 test('tag and npm version collisions fail before any release mutation', async () => {

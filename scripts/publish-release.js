@@ -25,8 +25,12 @@ async function publishVerified(pkg, entry, api, wait) {
   let accepted = false;
   let attempts = 0;
   let failure;
-  for (let poll = 0; !entry; poll++) {
-    if (poll === 12) throw new Error(`Could not verify publication of ${pkg.name}`, { cause: failure });
+  for (let poll = 0; ; poll++) {
+    if (entry) {
+      accepted = true;
+      if (await api.verifyNpm(pkg, entry)) return;
+    }
+    if (poll === 32) throw new Error(`Timed out waiting for the public tarball for ${pkg.name}`, { cause: failure });
     if (!accepted && attempts < 3) {
       attempts++;
       try {
@@ -40,7 +44,6 @@ async function publishVerified(pkg, entry, api, wait) {
     entry = await registered(pkg, api);
     if (!entry && !accepted && attempts === 3) throw failure;
   }
-  await api.verifyNpm(pkg, entry);
 }
 
 async function publishRelease(meta, api, wait = sleep) {
@@ -66,11 +69,9 @@ async function publishRelease(meta, api, wait = sleep) {
   }
   const publish = pkg => publishVerified(pkg, entries.get(pkg.name), api, wait);
   const natives = meta.packages.slice(0, -1);
-  // Let npm process several tarballs while polling their public versions.
-  for (let i = 0; i < natives.length; i += 5) {
-    const results = await Promise.allSettled(natives.slice(i, i + 5).map(publish));
-    for (const result of results) if (result.status === 'rejected') throw result.reason;
-  }
+  // npm accepts uploads before distributing their tarballs. Let every native upload enter that queue.
+  const results = await Promise.allSettled(natives.map(publish));
+  for (const result of results) if (result.status === 'rejected') throw result.reason;
   await publish(meta.packages.at(-1));
   // Publishing the GitHub release is last: assets are complete and npm has succeeded.
   if (release.draft) await api.publishDraft(release);
@@ -139,13 +140,17 @@ function liveApi(meta, archive, repository, token) {
       assert.equal(entry.version, meta.version);
       const url = new URL(entry.dist.tarball);
       assert.equal(url.origin, 'https://registry.npmjs.org');
-      const bytes = await (await request(url)).arrayBuffer();
+      url.searchParams.set('verify', Date.now());
+      const response = await request(url, { cache: 'no-store' }, true);
+      if (!response) return false;
+      const bytes = await response.arrayBuffer();
       assert.equal(
         'sha512-' + createHash('sha512').update(Buffer.from(bytes)).digest('base64'),
         pkg.integrity,
         `Registry tarball differs for ${pkg.name}`,
       );
       console.log(`Verified ${pkg.name}@${meta.version}`);
+      return true;
     },
     async release() {
       const published = await github(`releases/tags/${tag}`, {}, true);

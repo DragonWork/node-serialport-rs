@@ -71,7 +71,7 @@
     "prepack": "npm run build:js && node scripts/check-package.js"
   },
   "devDependencies": {
-    "@types/node": "26.6.6",
+    "@types/node": "26.6.10",
     "prettier": "3.10.1",
     "typescript": "7.0.2"
   }
